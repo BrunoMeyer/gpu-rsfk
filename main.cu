@@ -64,7 +64,8 @@ P_side = P.dot(H) > H_bias
 
 
 #define typepoints float
-#define MAX_DEPTH 15
+#define MAX_DEPTH 9
+#define RANDOM_SEED 42
 
 typedef struct TreeNode {
     // // A normal vector and a point of the hyperplane is sufficiently to represent it
@@ -96,7 +97,6 @@ void init_TreeNode(TreeNode* n, int node_index, TreeNode* tree, unsigned int* po
 // }
 
 
-#define RANDOM_SEED 42
 
 
 __global__
@@ -376,7 +376,8 @@ int main(int argc,char* argv[]) {
         int l = rand() % N;
         // printf("%d ",i);
         for(int j=0; j < D; ++j){
-            points[i*D+j] = l + (l>N/2)*N/2;
+            // points[i*D+j] = l + (l>N/2)*N/2;
+            points[i*D+j] = rand() % N;
             // printf("%f ", points[i*D+j]);
         }
         // printf("\n");
@@ -440,26 +441,26 @@ int main(int argc,char* argv[]) {
     } 
     set<int>::iterator it; 
     
-    // for (it = s.begin(); it != s.end(); ++it){
-    //     int l = (int) *it; 
-    //     int count_cluster = 0;
-    //     for(int i=0; i < N; ++i){
-    //         if(labels[i] == l) count_cluster++;
-    //     }
-    //     std::vector<typepoints> X_axis(count_cluster);
-    //     std::vector<typepoints> Y_axis(count_cluster);
+    for (it = s.begin(); it != s.end(); ++it){
+        int l = (int) *it; 
+        int count_cluster = 0;
+        for(int i=0; i < N; ++i){
+            if(labels[i] == l) count_cluster++;
+        }
+        std::vector<typepoints> X_axis(count_cluster);
+        std::vector<typepoints> Y_axis(count_cluster);
         
-    //     int j =0;
-    //     for(int i=0; i < N; ++i){
-    //         if(labels[i] == l){
-    //             X_axis[j] = points[i*D];
-    //             Y_axis[j] = points[i*D + 1];
-    //             ++j;
-    //         }
-    //     }
-    //     plt::scatter<typepoints,typepoints>(X_axis, Y_axis,5.0,{
-    //         {"alpha", "0.9"}
-    //     });
-    // }
-    // plt::show();
+        int j =0;
+        for(int i=0; i < N; ++i){
+            if(labels[i] == l){
+                X_axis[j] = points[i*D];
+                Y_axis[j] = points[i*D + 1];
+                ++j;
+            }
+        }
+        plt::scatter<typepoints,typepoints>(X_axis, Y_axis,5.0,{
+            {"alpha", "0.9"}
+        });
+    }
+    plt::show();
 }
