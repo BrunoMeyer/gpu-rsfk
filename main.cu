@@ -21,9 +21,12 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
+// #include <cooperative_groups.h>
+// namespace cg = cooperative_groups;
+
+
 #include "matplotlibcpp.h"
 namespace plt = matplotlibcpp;
- 
 
 #include <iostream> 
 #include <stdio.h>
@@ -64,7 +67,7 @@ P_side = P.dot(H) > H_bias
 
 
 #define typepoints float
-#define MAX_DEPTH 9
+#define MAX_DEPTH 11
 #define RANDOM_SEED 42
 
 typedef struct TreeNode {
@@ -110,6 +113,17 @@ void test_random(){
     printf("%d\n",curand(&r) % 100);
     printf("%d\n",curand(&r) % 100);
     printf("%d\n",curand(&r) % 100);
+}
+
+
+#define MAX_K 1024
+__global__
+void
+test_dynamic_vec_reg(int s){
+    // register int* arr = new int[s];
+    register int arr[MAX_K];
+    for(int i=0; i < s; ++i) arr[i] = i*10; 
+    for(int i=0; i < s; ++i) printf("%d\n",arr[i]); 
 }
 
 __global__
@@ -196,16 +210,16 @@ int check_hyperplane_side(unsigned int node_idx, int p, typepoints* tree, typepo
 
 __global__
 void build_tree(typepoints* tree, unsigned int* points_parent, bool* is_leaf, typepoints* points, int* actual_depth, int N, int D){
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
     curandState_t r; 
-    curand_init(RANDOM_SEED+threadIdx.x, /* the seed controls the sequence of random values that are produced */
+    curand_init(RANDOM_SEED+tid, /* the seed controls the sequence of random values that are produced */
             blockIdx.x, /* the sequence number is only important with multiple cores */
-            threadIdx.x, /* the offset is how much extra we advance in the sequence for each call, can be 0 */
+            tid, /* the offset is how much extra we advance in the sequence for each call, can be 0 */
             //   &states[blockIdx.x]);
             &r);
 
 
     int p1, p2;
-
     // Sample two random points
 
     // int nodes_to_process = 1; // Root
@@ -217,7 +231,7 @@ void build_tree(typepoints* tree, unsigned int* points_parent, bool* is_leaf, ty
     
     
 
-    if(threadIdx.x == 0){
+    if(tid == 0){
         p1 = curand(&r) % N;
         p2 = p1;
         // Ensure that two different points was sampled
@@ -230,20 +244,17 @@ void build_tree(typepoints* tree, unsigned int* points_parent, bool* is_leaf, ty
         *actual_depth = 1;
     }
     
-    __syncthreads();
-    
-    
 
+    __syncthreads();
     while(*actual_depth < MAX_DEPTH){
         
         // Set nodes parent in the new depth
-        for(p = threadIdx.x; p < N; p+=blockDim.x){
+        for(p = tid; p < N; p+=blockDim.x*gridDim.x){
             // Heap left and right nodes are separeted by 1
             if(!is_leaf[points_parent[p]]){
                 int right_child = check_hyperplane_side(points_parent[p], p, tree, points, D);
                 // printf("\t%d %d <<\n", points_parent[p], right_child);
                 points_parent[p] = HEAP_LEFT(points_parent[p])+right_child;
-
             }
         }
         __syncthreads();
@@ -256,13 +267,14 @@ void build_tree(typepoints* tree, unsigned int* points_parent, bool* is_leaf, ty
         // __syncthreads();
         
         // Create new nodes
-        if(threadIdx.x < pow(2,*actual_depth)){
+        // if(tid < pow(2,*actual_depth)){
+        for(int nid=tid; nid < pow(2,*actual_depth); nid+=blockDim.x*gridDim.x){
             node_thread = 0; // start on root
             unsigned int bit_mask = 1;
             // Each thread find the node index to be created
             for(unsigned int i=1; i <= *actual_depth; ++i){
                 // printf("%d %d %d << \n", ((threadIdx.x & bit_mask) != 0), threadIdx.x, bit_mask);
-                node_thread = HEAP_LEFT(node_thread) + ((threadIdx.x & bit_mask) != 0);
+                node_thread = HEAP_LEFT(node_thread) + ((nid & bit_mask) != 0);
                 bit_mask = pow(2,i);
             }
 
@@ -312,7 +324,6 @@ void build_tree(typepoints* tree, unsigned int* points_parent, bool* is_leaf, ty
                 is_leaf[node_thread] = true;
             }
         }
-
         __syncthreads();
 
         if(threadIdx.x == 0){
@@ -353,6 +364,7 @@ int countDistinct(int* arr, int n)
 
 int main(int argc,char* argv[]) {
     // test_random<<<1,1>>>();
+    // test_dynamic_vec_reg<<<1,1>>>(15);
     // cudaDeviceSynchronize();
     // return 0;
 
@@ -414,10 +426,11 @@ int main(int argc,char* argv[]) {
     thrust::device_vector<unsigned int> device_points_parent(sizeof(unsigned int) * N, 0);
 
     const int nt = 1024;
+    const int mp = 1;
     auto t_start = std::chrono::high_resolution_clock::now();
     double elapsed_time_ms;
 
-    build_tree<<<1,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+    build_tree<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
                          thrust::raw_pointer_cast(device_points_parent.data()),
                          thrust::raw_pointer_cast(device_is_leaf.data()),
                          thrust::raw_pointer_cast(device_points.data()),
@@ -429,38 +442,41 @@ int main(int argc,char* argv[]) {
     printf("Build Tree Kernel takes %lf seconds\n", elapsed_time_ms/1000);
 
     CudaTest("Build Tree Kernel failed!");   
-    thrust::copy(device_points_parent.begin(), device_points_parent.begin() + N, labels.begin());
 
-    total_labels = countDistinct(labels.data(),N);
-    std::cout << "Total clusters: " << total_labels << std::endl;
 
-    set<int> s; 
+
+    // thrust::copy(device_points_parent.begin(), device_points_parent.begin() + N, labels.begin());
+
+    // total_labels = countDistinct(labels.data(),N);
+    // std::cout << "Total clusters: " << total_labels << std::endl;
+
+    // set<int> s; 
   
-    for (int i = 0; i < N; i++) { 
-        s.insert(labels[i]); 
-    } 
-    set<int>::iterator it; 
+    // for (int i = 0; i < N; i++) { 
+    //     s.insert(labels[i]); 
+    // } 
+    // set<int>::iterator it; 
     
-    for (it = s.begin(); it != s.end(); ++it){
-        int l = (int) *it; 
-        int count_cluster = 0;
-        for(int i=0; i < N; ++i){
-            if(labels[i] == l) count_cluster++;
-        }
-        std::vector<typepoints> X_axis(count_cluster);
-        std::vector<typepoints> Y_axis(count_cluster);
+    // for (it = s.begin(); it != s.end(); ++it){
+    //     int l = (int) *it; 
+    //     int count_cluster = 0;
+    //     for(int i=0; i < N; ++i){
+    //         if(labels[i] == l) count_cluster++;
+    //     }
+    //     std::vector<typepoints> X_axis(count_cluster);
+    //     std::vector<typepoints> Y_axis(count_cluster);
         
-        int j =0;
-        for(int i=0; i < N; ++i){
-            if(labels[i] == l){
-                X_axis[j] = points[i*D];
-                Y_axis[j] = points[i*D + 1];
-                ++j;
-            }
-        }
-        plt::scatter<typepoints,typepoints>(X_axis, Y_axis,5.0,{
-            {"alpha", "0.9"}
-        });
-    }
-    plt::show();
+    //     int j =0;
+    //     for(int i=0; i < N; ++i){
+    //         if(labels[i] == l){
+    //             X_axis[j] = points[i*D];
+    //             Y_axis[j] = points[i*D + 1];
+    //             ++j;
+    //         }
+    //     }
+    //     plt::scatter<typepoints,typepoints>(X_axis, Y_axis,5.0,{
+    //         {"alpha", "0.9"}
+    //     });
+    // }
+    // plt::show();
 }
