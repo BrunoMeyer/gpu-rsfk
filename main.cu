@@ -69,6 +69,8 @@ P_side = P.dot(H) > H_bias
 #define typepoints float
 // #define MAX_DEPTH 11
 #define RANDOM_SEED 42
+#define MAX_K 1024
+#define MAX_K_TREE 1024
 
 typedef struct TreeNode {
     // // A normal vector and a point of the hyperplane is sufficiently to represent it
@@ -116,7 +118,7 @@ void test_random(){
 }
 
 
-#define MAX_K 1024
+
 __global__
 void
 test_dynamic_vec_reg(int s){
@@ -345,8 +347,22 @@ void build_tree_init(typepoints* tree, unsigned int* points_parent, bool* is_lea
 
 
 __global__
-void build_tree_update_parents(typepoints* tree, unsigned int* points_parent, bool* is_leaf, typepoints* points, int* actual_depth, int N, int D){
+void build_tree_update_parents(typepoints* tree,
+                               unsigned int* points_parent,
+                               bool* is_leaf,
+                               int* device_sample_points,
+                               int* device_child_count,
+                               typepoints* points,
+                               int* actual_depth,
+                               int N, int D){
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    curandState_t r; 
+    curand_init(RANDOM_SEED+tid, // the seed controls the sequence of random values that are produced
+            blockIdx.x,  // the sequence number is only important with multiple cores 
+            tid,  // the offset is how much extra we advance in the sequence for each call, can be 0 
+            //   &states[blockIdx.x]);
+            &r);
+
     int right_child, p;
 
     // Set nodes parent in the new depth
@@ -356,11 +372,54 @@ void build_tree_update_parents(typepoints* tree, unsigned int* points_parent, bo
             right_child = check_hyperplane_side(points_parent[p], p, tree, points, D);
             points_parent[p] = HEAP_LEFT(points_parent[p])+right_child;
         }
+        atomicAdd(&device_child_count[points_parent[p]],1);
+        device_sample_points[2*points_parent[p] + curand(&r) % 2] = p;
     }
 }
 
 __global__
-void build_tree_create_nodes(typepoints* tree, unsigned int* points_parent, bool* is_leaf, typepoints* points, int* actual_depth, int N, int D){
+void build_tree_post_update_parents(typepoints* tree,
+                               unsigned int* points_parent,
+                               bool* is_leaf,
+                               int* device_sample_points,
+                               int* device_child_count,
+                               typepoints* points,
+                               int* actual_depth,
+                               int N, int D){
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+
+    int p;
+
+    
+    // Set nodes parent in the new depth
+    for(p = tid; p < N; p+=blockDim.x*gridDim.x){
+        // device_sample_points[2*points_parent[p]] = p;
+        // device_sample_points[2*points_parent[p]+1] = p;
+
+        if(device_child_count[points_parent[p]] <= 32){
+            is_leaf[points_parent[p]] = true;
+        }
+        // Heap left and right nodes are separeted by 1
+        if(device_sample_points[2*points_parent[p]]     == -1 &&
+           device_sample_points[2*points_parent[p] + 1] != p){
+                device_sample_points[2*points_parent[p]] = p;
+        }
+        if(device_sample_points[2*points_parent[p] + 1] == -1 &&
+           device_sample_points[2*points_parent[p]]     != p){
+                device_sample_points[2*points_parent[p]+1] = p;
+        }
+    }
+}
+
+__global__
+void build_tree_create_nodes(typepoints* tree,
+                             unsigned int* points_parent,
+                             bool* is_leaf,
+                             int* device_sample_points,
+                             int* device_child_count,
+                             typepoints* points,
+                             int* actual_depth,
+                             int N, int D){
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     curandState_t r; 
     curand_init(RANDOM_SEED+tid, // the seed controls the sequence of random values that are produced
@@ -384,28 +443,30 @@ void build_tree_create_nodes(typepoints* tree, unsigned int* points_parent, bool
 
 
         if(!is_leaf[HEAP_PARENT(node_thread)]){
-            p1 = curand(&r) % N;
-            int init_p_search = p1;
-            while(points_parent[p1] != node_thread){
-                p1=((p1+1)%N);
-                if(p1 == init_p_search){
-                    p1 = -1;
-                    break;
-                }
-            }
+            p1 = device_sample_points[2*node_thread];
+            // p1 = curand(&r) % N;
+            // int init_p_search = p1;
+            // while(p1 != -1 && points_parent[p1] != node_thread){
+            //     p1=((p1+1)%N);
+            //     if(p1 == init_p_search){
+            //         p1 = -1;
+            //         break;
+            //     }
+            // }
+            p2 = device_sample_points[2*node_thread + 1];
             // p2 = curand(&r) % N;
-            p2 = p1+1 % N;
-            if(p1 == p2) p2=(p2+1)%N;
+            // p2 = p1+1 % N;
+            // if(p1 == p2) p2=(p2+1)%N;
 
             // Ensure that two different points was sampled
-            init_p_search = p2;
-            while(p1 == p2  || points_parent[p2] != node_thread){
-                p2=((p2+1)%N);
-                if(p2 == init_p_search){
-                    p2 = -1;
-                    break;
-                }
-            }
+            // init_p_search = p2;
+            // while(p2 != -1 && (p1 == p2  || points_parent[p2] != node_thread)){
+            //     p2=((p2+1)%N);
+            //     if(p2 == init_p_search){
+            //         p2 = -1;
+            //         break;
+            //     }
+            // }
             if(p1 != -1 && p2 != -1){
                 create_node(node_thread, p1, p2, tree, points, D);
             }
@@ -534,6 +595,8 @@ int main(int argc,char* argv[]) {
     // thrust::device_vector<TreeNode> device_tree(sizeof(TreeNode) * (MAX_NODES));
     thrust::device_vector<typepoints> device_tree((D + 1)*sizeof(typepoints) * (MAX_NODES));
     thrust::device_vector<bool> device_is_leaf(sizeof(bool) * MAX_NODES, false);
+    thrust::device_vector<int> device_sample_points(sizeof(int) * MAX_NODES*2);
+    thrust::device_vector<int> device_child_count(sizeof(int) * MAX_NODES, 0);
     thrust::device_vector<int> device_actual_depth(sizeof(int) * 1,0);
     thrust::device_vector<unsigned int> device_points_parent(sizeof(unsigned int) * N, 0);
 
@@ -565,11 +628,23 @@ int main(int argc,char* argv[]) {
 
     total_cron.start();
     for(int i=1; i < MAX_DEPTH; ++i){
+        thrust::fill(device_sample_points.begin(), device_sample_points.end(), -1);
         cudaDeviceSynchronize();
         update_parents_cron.start();
         build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
                                    thrust::raw_pointer_cast(device_points_parent.data()),
                                    thrust::raw_pointer_cast(device_is_leaf.data()),
+                                   thrust::raw_pointer_cast(device_sample_points.data()),
+                                   thrust::raw_pointer_cast(device_child_count.data()),
+                                   thrust::raw_pointer_cast(device_points.data()),
+                                   thrust::raw_pointer_cast(device_actual_depth.data()),
+                                   N, D);
+        cudaDeviceSynchronize();
+        build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+                                   thrust::raw_pointer_cast(device_points_parent.data()),
+                                   thrust::raw_pointer_cast(device_is_leaf.data()),
+                                   thrust::raw_pointer_cast(device_sample_points.data()),
+                                   thrust::raw_pointer_cast(device_child_count.data()),
                                    thrust::raw_pointer_cast(device_points.data()),
                                    thrust::raw_pointer_cast(device_actual_depth.data()),
                                    N, D);
@@ -581,6 +656,8 @@ int main(int argc,char* argv[]) {
         build_tree_create_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
                                    thrust::raw_pointer_cast(device_points_parent.data()),
                                    thrust::raw_pointer_cast(device_is_leaf.data()),
+                                   thrust::raw_pointer_cast(device_sample_points.data()),
+                                   thrust::raw_pointer_cast(device_child_count.data()),
                                    thrust::raw_pointer_cast(device_points.data()),
                                    thrust::raw_pointer_cast(device_actual_depth.data()),
                                    N, D);
