@@ -87,9 +87,10 @@ P_side = P.dot(H) > H_bias
 
 #define typepoints float
 // #define MAX_DEPTH 11
-#define RANDOM_SEED 42
+// #define RANDOM_SEED 42
+#define RANDOM_SEED 0
 #define MAX_K 1024
-#define MAX_TREE_CHILD 128
+#define MAX_TREE_CHILD 64
 
 typedef struct TreeNode
 {
@@ -242,7 +243,7 @@ int check_hyperplane_side(unsigned int node_idx, int p, typepoints* tree, typepo
 
 
 __global__
-void build_tree_init(typepoints* tree, unsigned int* points_parent, bool* is_leaf, typepoints* points, int* actual_depth, int N, int D)
+void build_tree_init(typepoints* tree, unsigned int* points_parent, int* device_child_count, bool* is_leaf, typepoints* points, int* actual_depth, int N, int D)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     curandState_t r; 
@@ -269,6 +270,7 @@ void build_tree_init(typepoints* tree, unsigned int* points_parent, bool* is_lea
         *actual_depth = 1;
 
         is_leaf[0] = false;
+        device_child_count[0] = N;
     }
 
     
@@ -299,11 +301,17 @@ void build_tree_update_parents(typepoints* tree,
     for(p = tid; p < N; p+=blockDim.x*gridDim.x){
         // Heap left and right nodes are separeted by 1
         // printf(">%d %d\n", points_parent[p], is_leaf[points_parent[p]]);
-        if(!is_leaf[points_parent[p]]){
+        // if(is_leaf[points_parent[p]]){
+        if(device_child_count[points_parent[p]] > MAX_TREE_CHILD){
             right_child = check_hyperplane_side(points_parent[p], p, tree, points, D);
             points_parent[p] = HEAP_LEFT(points_parent[p])+right_child;
             atomicAdd(&device_child_count[points_parent[p]],1);
-            device_sample_points[2*points_parent[p] + curand(&r) % 2] = p;
+            // device_sample_points[2*points_parent[p] + curand(&r) % 2] = p;
+            if(device_sample_points[2*points_parent[p]] == -1){
+                device_sample_points[2*points_parent[p]] = N;
+            }
+            atomicMin(&device_sample_points[2*points_parent[p]], p);
+            atomicMax(&device_sample_points[2*points_parent[p] + 1], p);
         }
         __syncwarp();
         // __syncthreads();
@@ -335,14 +343,14 @@ void build_tree_post_update_parents(typepoints* tree,
         }
 
         // Heap left and right nodes are separeted by 1
-        if(device_sample_points[2*points_parent[p]]     == -1 &&
-           device_sample_points[2*points_parent[p] + 1] != p){
-                device_sample_points[2*points_parent[p]] = p;
-        }
-        if(device_sample_points[2*points_parent[p] + 1] == -1 &&
-           device_sample_points[2*points_parent[p]]     != p){
-                device_sample_points[2*points_parent[p]+1] = p;
-        }
+        // if(device_sample_points[2*points_parent[p]]     == -1 &&
+        //    device_sample_points[2*points_parent[p] + 1] != p){
+        //         device_sample_points[2*points_parent[p]] = p;
+        // }
+        // if(device_sample_points[2*points_parent[p] + 1] == -1 &&
+        //    device_sample_points[2*points_parent[p]]     != p){
+        //         device_sample_points[2*points_parent[p]+1] = p;
+        // }
     }
 }
 
@@ -378,11 +386,12 @@ void build_tree_create_nodes(typepoints* tree,
         }
 
         int parent_id = HEAP_PARENT(node_thread);
-        if(!is_leaf[parent_id]){
+        // if(is_leaf[parent_id] && device_child_count[parent_id] > MAX_TREE_CHILD){
+        if(device_child_count[node_thread] > MAX_TREE_CHILD){
             p1 = device_sample_points[2*node_thread];
             // p1 = curand(&r) % N;
-            // int init_p_search = p1;
-            // while(p1 != -1 && points_parent[p1] != node_thread){
+            // int init_p_search = p1 != -1 ? p1 : 0;
+            // while(points_parent[p1] != node_thread){
             //     p1=((p1+1)%N);
             //     if(p1 == init_p_search){
             //         p1 = -1;
@@ -395,8 +404,8 @@ void build_tree_create_nodes(typepoints* tree,
             // if(p1 == p2) p2=(p2+1)%N;
 
             // Ensure that two different points was sampled
-            // init_p_search = p2;
-            // while(p2 != -1 && (p1 == p2  || points_parent[p2] != node_thread)){
+            // init_p_search = p2 != -1 ? p2 : 0;
+            // while((p1 == p2  || points_parent[p2] != node_thread)){
             //     p2=((p2+1)%N);
             //     if(p2 == init_p_search){
             //         p2 = -1;
@@ -407,11 +416,14 @@ void build_tree_create_nodes(typepoints* tree,
                 create_node(node_thread, p1, p2, tree, points, D);
                 is_leaf[parent_id] = false;
                 // is_leaf[node_thread] = true;
-                // printf("AAAAAAAAAAAAA\n");
+                if(device_child_count[parent_id] > 2500) printf("%d\n", device_child_count[parent_id]);
             }
-            // else{
-            //     printf("BBBBBBBBBBBBB\n");
-            // }
+            else{
+                // if(device_child_count[parent_id] > 200)
+                printf("%d %d %d | %d %d\n",*actual_depth, parent_id, device_child_count[parent_id], p1,p2);
+                device_child_count[parent_id] = 0;
+                // printf("BBBBBBBBBBBBB\n");
+            }
         }
     }
     
@@ -458,13 +470,12 @@ build_tree_max_leaf_size(int* max_leaf_size, bool* is_leaf, int* device_child_co
     //     s_max_leaf_size = 0;
     // }
     // __syncthreads();
-    
-    if(tid < max_nodes && is_leaf[tid]){
-        // printf("%d %d\n",tid, device_child_count[tid]);
-        // atomicMax(&s_max_leaf_size, device_child_count[tid]);
-        atomicMax(max_leaf_size, device_child_count[tid]);
+    for(int node=tid; node < max_nodes; node+=blockDim.x*gridDim.x){
+        if(is_leaf[node]){
+            // atomicMax(&s_max_leaf_size, device_child_count[tid]);
+            atomicMax(max_leaf_size, device_child_count[node]);
+        }
     }
-    
     // __syncthreads();
     // if(threadIdx.x == 0){
     //     atomicMax(max_leaf_size, s_max_leaf_size);
@@ -500,6 +511,120 @@ void build_tree_bucket_points(typepoints* tree,
     }
 }
 
+__device__
+inline
+float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
+{
+    typepoints ret = 0.0f;
+    typepoints diff;
+
+    for(int i=0; i < D; ++i){
+        diff = v1[i] - v2[i];
+        ret += diff;
+    }
+
+    return ret;
+}
+
+__global__
+void compute_knn_from_buckets(typepoints* tree,
+                               unsigned int* points_parent,
+                               bool* is_leaf,
+                               int* device_sample_points,
+                               int* device_child_count,
+                               typepoints* points,
+                               int* actual_depth,
+                               int* bucket_nodes,
+                               int* knn_indices,
+                               typepoints* knn_sqr_dist,
+                               int N, int D, int max_bucket_size, int K)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int parent_id, bucket_size, max_id_point, tmp_point;
+    typepoints max_dist_val, tmp_dist_val;
+    // __shared__ int local_knn_indices[];
+    // __shared__ typepoints local_knn_sqr_dist[];
+    // extern __shared__ int local_knn_indices[];
+    // extern __shared__ typepoints local_knn_sqr_dist[];
+    int local_knn_indices[MAX_TREE_CHILD];
+    typepoints local_knn_sqr_dist[MAX_TREE_CHILD];
+
+    for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
+        parent_id = points_parent[p];
+        bucket_size = device_child_count[parent_id];
+        // __syncthreads();
+        for(int i=0; i < K; ++i){
+            local_knn_indices[i] = knn_indices[p*K+i];
+            local_knn_sqr_dist[i] = knn_sqr_dist[p*K+i];
+        }
+        // __syncthreads();
+
+        // TODO: Run a first scan?
+        max_id_point = 0;
+        max_dist_val = local_knn_sqr_dist[0];
+
+        // for(int j=1; j < K; ++j){
+        //     if(local_knn_sqr_dist[j] > max_dist_val){
+        //         // tmp_dist_val = local_knn_sqr_dist[j];
+        //         max_id_point = j;
+        //         max_dist_val = local_knn_sqr_dist[j];
+        //     }
+        // }
+        
+        for(int i=0; i < bucket_size; ++i){
+            tmp_point = bucket_nodes[max_bucket_size*parent_id + i];
+            if(p == tmp_point) continue;
+
+            tmp_dist_val = euclidean_distance_sqr(&points[tmp_point], &points[p], D);
+            if(tmp_dist_val < max_dist_val){
+                local_knn_indices[max_id_point] = tmp_point;
+                local_knn_sqr_dist[max_id_point] = tmp_dist_val;
+
+                max_dist_val = tmp_dist_val;
+                for(int j=0; j < K; ++j){
+                    if(local_knn_sqr_dist[j] > max_dist_val){
+                        // tmp_dist_val = local_knn_sqr_dist[j];
+                        max_id_point = j;
+                        max_dist_val = local_knn_sqr_dist[j];
+                    }
+                }
+            }
+
+            // __syncthreads();
+        }
+        // __syncthreads();
+        for(int i=0; i < K; ++i){
+            knn_indices[p*K+i]  = local_knn_indices[i];
+            knn_sqr_dist[p*K+i] = local_knn_sqr_dist[i];
+        }
+        // __syncthreads();
+        
+    }
+}
+
+
+__global__
+void summary_tree(typepoints* tree,
+                  bool* is_leaf,
+                  int* device_child_count,
+                  int* leaf_subtree_count,
+                  typepoints* points,
+                  int N, int D, int max_nodes)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+
+
+    for(int i=tid; i < max_nodes; ++i){
+        int node = i;
+        while(node>0){
+            if(is_leaf[i]){
+                atomicAdd(&leaf_subtree_count[node], 1);
+            }
+            node = HEAP_PARENT(node);
+            // __syncthreads();
+        }
+    }
+}
 
 int countDistinct(int* arr, int n) 
 { 
@@ -554,8 +679,8 @@ int main(int argc,char* argv[]) {
     // return 0;
 
     // srand (time(NULL));
-    if(argc < 5){
-        std::cout << "Error. run with ./binary <Total of points> <Dimensions> <Max Depth> <Verbose>" << std::endl;
+    if(argc < 6){
+        std::cout << "Error. run with ./binary <Total of points> <Dimensions> <Max Depth> <Verbose> <Dataset ID>" << std::endl;
         return 1;
     }
     srand(RANDOM_SEED);
@@ -564,6 +689,7 @@ int main(int argc,char* argv[]) {
     int D = atoi(argv[2]);
     int MAX_DEPTH = atoi(argv[3]);
     int VERBOSE = atoi(argv[4]);
+    int DS = atoi(argv[5]);
 
     std::cout << N << std::endl;
     std::cout << D << std::endl;
@@ -576,12 +702,31 @@ int main(int argc,char* argv[]) {
     std::vector<int> labels(N*D);
     int total_labels = 2;
 
+    int l;
+    string type_init;
+    if(DS == 0){
+        type_init = "SPLITED_LINE";
+    }
+    if(DS == 1){
+        type_init = "UNIFORM_SQUARE";
+    }
+
     for(int i=0; i < N; ++i){
-        int l = rand() % N;
+        if(type_init == "UNIFORM_SQUARE"){
+            l = rand() % N;
+        }
+        if(type_init == "SPLITED_LINE"){
+            l = i;
+        }
+
         // printf("%d ",i);
         for(int j=0; j < D; ++j){
-            // points[i*D+j] = l + (l>N/2)*N/2;
-            points[i*D+j] = rand() % N;
+            if(type_init == "UNIFORM_SQUARE"){
+                points[i*D+j] = rand() % N;
+            }
+            if(type_init == "SPLITED_LINE"){
+                points[i*D+j] = l + (l>N/2)*N/2;
+            }
             // printf("%f ", points[i*D+j]);
         }
         // printf("\n");
@@ -639,10 +784,13 @@ int main(int argc,char* argv[]) {
 
     build_tree_init<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
                                thrust::raw_pointer_cast(device_points_parent.data()),
+                               thrust::raw_pointer_cast(device_child_count.data()),
                                thrust::raw_pointer_cast(device_is_leaf.data()),
                                thrust::raw_pointer_cast(device_points.data()),
                                thrust::raw_pointer_cast(device_actual_depth.data()),
                                N, D);
+    cudaDeviceSynchronize();
+    CudaTest((char *)"build_tree_init Kernel failed!");
 
     if(VERBOSE >= 1){
         std::cout << std::endl;
@@ -668,6 +816,7 @@ int main(int argc,char* argv[]) {
                                    thrust::raw_pointer_cast(device_actual_depth.data()),
                                    N, D);
         cudaDeviceSynchronize();
+        CudaTest((char *)"build_tree_update_parents Kernel failed!");
         build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
                                    thrust::raw_pointer_cast(device_points_parent.data()),
                                    thrust::raw_pointer_cast(device_is_leaf.data()),
@@ -678,7 +827,7 @@ int main(int argc,char* argv[]) {
                                    N, D);
         cudaDeviceSynchronize();
         update_parents_cron.stop();
-        CudaTest((char *)"build_tree_update_parents Kernel failed!");
+        CudaTest((char *)"build_tree_post_update_parents Kernel failed!");
         
         create_nodes_cron.start();
         build_tree_create_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
@@ -694,6 +843,7 @@ int main(int argc,char* argv[]) {
         CudaTest((char *)"build_tree_create_nodes Kernel failed!");
 
         build_tree_utils<<<1,1>>>(thrust::raw_pointer_cast(device_actual_depth.data()));
+        cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_utils Kernel failed!");
 
         if(VERBOSE >= 1){
@@ -701,33 +851,35 @@ int main(int argc,char* argv[]) {
         }
     }
 
+    // thrust::fill(device_child_count.begin(), device_child_count.end(), 0);
 
-    // cudaDeviceSynchronize();
-    // update_parents_cron.start();
-    // build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
-    //                             thrust::raw_pointer_cast(device_points_parent.data()),
-    //                             thrust::raw_pointer_cast(device_is_leaf.data()),
-    //                             thrust::raw_pointer_cast(device_sample_points.data()),
-    //                             thrust::raw_pointer_cast(device_child_count.data()),
-    //                             thrust::raw_pointer_cast(device_points.data()),
-    //                             thrust::raw_pointer_cast(device_actual_depth.data()),
-    //                             N, D);
-    // cudaDeviceSynchronize();
-    // build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
-    //                             thrust::raw_pointer_cast(device_points_parent.data()),
-    //                             thrust::raw_pointer_cast(device_is_leaf.data()),
-    //                             thrust::raw_pointer_cast(device_sample_points.data()),
-    //                             thrust::raw_pointer_cast(device_child_count.data()),
-    //                             thrust::raw_pointer_cast(device_points.data()),
-    //                             thrust::raw_pointer_cast(device_actual_depth.data()),
-    //                             N, D);
-    // cudaDeviceSynchronize();
-    // update_parents_cron.stop();
-    // CudaTest((char *)"build_tree_update_parents Kernel failed!");
-
-
-
+    cudaDeviceSynchronize();
+    update_parents_cron.start();
+    build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+                                thrust::raw_pointer_cast(device_points_parent.data()),
+                                thrust::raw_pointer_cast(device_is_leaf.data()),
+                                thrust::raw_pointer_cast(device_sample_points.data()),
+                                thrust::raw_pointer_cast(device_child_count.data()),
+                                thrust::raw_pointer_cast(device_points.data()),
+                                thrust::raw_pointer_cast(device_actual_depth.data()),
+                                N, D);
+    cudaDeviceSynchronize();
+    CudaTest((char *)"build_tree_update_parents Kernel failed!");
+    build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+                                thrust::raw_pointer_cast(device_points_parent.data()),
+                                thrust::raw_pointer_cast(device_is_leaf.data()),
+                                thrust::raw_pointer_cast(device_sample_points.data()),
+                                thrust::raw_pointer_cast(device_child_count.data()),
+                                thrust::raw_pointer_cast(device_points.data()),
+                                thrust::raw_pointer_cast(device_actual_depth.data()),
+                                N, D);
+    cudaDeviceSynchronize();
+    update_parents_cron.stop();
+    CudaTest((char *)"build_tree_update_parents Kernel failed!");
     total_cron.stop();
+
+
+
     cudaDeviceSynchronize();
     
 
@@ -735,16 +887,19 @@ int main(int argc,char* argv[]) {
 
     // Check what leaf nodes in tree have childrens and set device_is_leaf when a node have more than 0 children
     // create_nodes_cron.start();
-    build_tree_set_all_leafs<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
-                                thrust::raw_pointer_cast(device_points_parent.data()),
-                                thrust::raw_pointer_cast(device_is_leaf.data()),
-                                thrust::raw_pointer_cast(device_sample_points.data()),
-                                thrust::raw_pointer_cast(device_child_count.data()),
-                                thrust::raw_pointer_cast(device_points.data()),
-                                thrust::raw_pointer_cast(device_actual_depth.data()),
-                                N, D, depth-1);
+    // build_tree_set_all_leafs<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+    //                             thrust::raw_pointer_cast(device_points_parent.data()),
+    //                             thrust::raw_pointer_cast(device_is_leaf.data()),
+    //                             thrust::raw_pointer_cast(device_sample_points.data()),
+    //                             thrust::raw_pointer_cast(device_child_count.data()),
+    //                             thrust::raw_pointer_cast(device_points.data()),
+    //                             thrust::raw_pointer_cast(device_actual_depth.data()),
+    //                             N, D, depth-1);
+    // cudaDeviceSynchronize();
+    // CudaTest((char *)"build_tree_set_all_leafs Kernel failed!");
 
 
+    
     Cron cron_classify_points;
     cron_classify_points.start();
 
@@ -760,10 +915,38 @@ int main(int argc,char* argv[]) {
     int max_child;
     thrust::copy(device_max_leaf_size.begin(), device_max_leaf_size.begin()+1, &max_child);
 
-    std:cerr << "Max child count: " << max_child << "\n" << std::endl;
+    std::cout << "Max child count: " << max_child << "\n" << std::endl;
+
+
+
+    int total_leafs = thrust::reduce(device_is_leaf.begin(), device_is_leaf.end(), 0.0, thrust::plus<float>());
+    cudaDeviceSynchronize();
+
+    thrust::device_vector<int> device_leaf_subtree_count(MAX_NODES, 0);
+    thrust::device_vector<int> device_compact_buckets(total_leafs*max_child, 0);
+    thrust::device_vector<int> device_compact_buckets_idx(total_leafs, 0);
+    Cron cron_summary_tree_leafsubtreecount;
+    cron_summary_tree_leafsubtreecount.start();
+
+
+    std::cout << "Total leafs: " << total_leafs << std::endl;
+
+
+    summary_tree<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+                            thrust::raw_pointer_cast(device_is_leaf.data()),
+                            thrust::raw_pointer_cast(device_child_count.data()),
+                            thrust::raw_pointer_cast(device_leaf_subtree_count.data()),
+                            thrust::raw_pointer_cast(device_points.data()),
+                            N, D, MAX_NODES);
+    cudaDeviceSynchronize();
+    cron_summary_tree_leafsubtreecount.stop();
+    CudaTest((char *)"summary_tree Kernel failed!");
+
+
+
 
     
-    thrust::device_vector<int> device_nodes_buckets(MAX_NODES*max_child, 0);
+    thrust::device_vector<int> device_nodes_buckets(MAX_NODES*max_child, -1);
     thrust::device_vector<int> device_count_buckets(MAX_NODES, 0);
     build_tree_bucket_points<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
                                 thrust::raw_pointer_cast(device_points_parent.data()),
@@ -784,22 +967,63 @@ int main(int argc,char* argv[]) {
     thrust::copy(device_count_buckets.begin(), device_count_buckets.begin() + MAX_NODES, count_buckets.begin());
     cudaDeviceSynchronize();
 
+    // device_nodes_buckets.clear();
+    // device_nodes_buckets.shrink_to_fit();
+    // device_tree.clear();
+    // device_tree.shrink_to_fit();
+
     // create_nodes_cron.stop();
+    int K = 8;
 
-
-    // thrust::device_vector<int> device_prefix_sum(sizeof(int) * MAX_NODES, 0);
-    // thrust::device_free((thrust::device_ptr<void>)thrust::raw_pointer_cast(device_prefix_sum));
-    // thrust::device_vector<int> device_nodes_to_idx(sizeof(int) * MAX_NODES, 0);
+    // int a;std::cin >> a;
     
-    // thrust::inclusive_scan(device_is_leaf.begin(), device_is_leaf.end(), device_prefix_sum.begin());
+    
+    thrust::device_vector<int> device_knn_indices(N*K, -1);
+    std::vector<int> knn_indices(N*K);
+    thrust::device_vector<typepoints> device_knn_sqr_distances(N*K, FLT_MAX); // 0x7f800000 is a "infinite" float value
+    std::vector<int> knn_sqr_distances(N*K);
+    // std::cin >> a;
 
-    // thrust::copy_if(thrust::device,
-    //                 device_prefix_sum.begin(),
-    //                 device_prefix_sum.end(),
-    //                 result, is_greater_than_zero());
+    Cron cron_knn;
+    cron_knn.start();
 
-    // thrust::for_each(vec.begin(), vec.end(), thrust::placeholders::_1 -= 1);
+    compute_knn_from_buckets<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree.data()),
+                                thrust::raw_pointer_cast(device_points_parent.data()),
+                                thrust::raw_pointer_cast(device_is_leaf.data()),
+                                thrust::raw_pointer_cast(device_sample_points.data()),
+                                thrust::raw_pointer_cast(device_child_count.data()),
+                                thrust::raw_pointer_cast(device_points.data()),
+                                thrust::raw_pointer_cast(device_actual_depth.data()),
+                                thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                thrust::raw_pointer_cast(device_knn_indices.data()),
+                                thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                N, D, max_child, K);
+    cudaDeviceSynchronize();
+    cron_knn.stop();    
+    CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
 
+    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices.begin());
+    thrust::copy(knn_sqr_distances.begin(), knn_sqr_distances.begin() + N*K, knn_sqr_distances.begin());
+    cudaDeviceSynchronize();
+
+    std::cout << "Points neighbors" << std::endl;
+    for(int i=0; i < 4*8; i+=4){
+        std::cout << i << ": ";
+        for(int j=0; j < K; ++j) std::cout << knn_indices[i*K+j] << " ";
+        std::cout << std::endl;
+    }
+    for(int i=N-4; i < N; ++i){
+        std::cout << i << ": ";
+        for(int j=0; j < K; ++j) std::cout << knn_indices[i*K+j] << " ";
+        std::cout << std::endl;
+    }
+    // std::cout << "Bucket HEAP" << std::endl;
+    // for(int i=MAX_NODES-1; i >= MAX_NODES-8; --i){
+    //     // std::cout << i << "(" << count_buckets[i] << ") : ";
+    //     for(int j=0; j < count_buckets[i]; ++j) std::cout << nodes_buckets[i*max_child+j] << " ";
+    //     // for(int j=0; j < MAX_TREE_CHILD; ++j) std::cout << nodes_buckets[i*MAX_TREE_CHILD+j] << " ";
+    //     std::cout << std::endl;
+    // }
     
 
 
@@ -810,6 +1034,8 @@ int main(int argc,char* argv[]) {
         printf("Update parents Kernel takes %lf seconds\n", update_parents_cron.t_total/1000);
         printf("Create nodes Kernel takes %lf seconds\n", create_nodes_cron.t_total/1000);
         printf("Bucket creation Kernel takes %lf seconds\n", cron_classify_points.t_total/1000);
+        printf("Summary Leaf subtree count computation Kernel takes %lf seconds\n", cron_summary_tree_leafsubtreecount.t_total/1000);
+        printf("KNN computation Kernel takes %lf seconds\n", cron_knn.t_total/1000);
         thrust::copy(device_points_parent.begin(), device_points_parent.begin() + N, labels.begin());
         total_labels = countDistinct(labels.data(),N);
         std::cout << "Total clusters: " << total_labels << std::endl;
@@ -853,8 +1079,8 @@ int main(int argc,char* argv[]) {
                 X_axis[i] = points[D*p];
                 Y_axis[i] = points[D*p + 1];
             }
-            plt::scatter<typepoints,typepoints>(X_axis, Y_axis,5.0,{
-                {"alpha", "0.9"}
+            plt::scatter<typepoints,typepoints>(X_axis, Y_axis,1.0,{
+                {"alpha", "0.8"}
             });
 
         }
