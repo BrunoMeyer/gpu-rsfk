@@ -90,8 +90,8 @@ void test(typepoints* arr, int N, int D)
 __device__
 inline
 void create_root(typepoints* tree,
-                 unsigned int* tree_parents,
-                 unsigned int* tree_children,
+                 int* tree_parents,
+                 int* tree_children,
                  int* tree_count,
                  int p1,
                  int p2,
@@ -117,11 +117,11 @@ void create_root(typepoints* tree,
 
 __device__
 inline
-void create_node(unsigned int parent,
+void create_node(int parent,
                  int is_right_child,
                  typepoints* tree,
-                 unsigned int* tree_parents,
-                 unsigned int* tree_children,
+                 int* tree_parents,
+                 int* tree_children,
                  int* tree_count,
                  int* count_new_nodes,
                  int p1,
@@ -157,7 +157,7 @@ void create_node(unsigned int parent,
 
 __device__
 inline
-int check_hyperplane_side(unsigned int node_idx, int p, typepoints* tree, typepoints* points, int D)
+int check_hyperplane_side(int node_idx, int p, typepoints* tree, typepoints* points, int D)
 {
     typepoints aux = 0.0f;
     for(int i=0; i < D; ++i){
@@ -176,15 +176,15 @@ int check_hyperplane_side(unsigned int node_idx, int p, typepoints* tree, typepo
 
 __global__
 void build_tree_init(typepoints* tree,
-                     unsigned int* tree_parents,
-                     unsigned int* tree_children,
-                     unsigned int* points_parent,
+                     int* tree_parents,
+                     int* tree_children,
+                     int* points_parent,
                      int* child_count,
                      bool* is_leaf,
                      typepoints* points,
                      int* actual_depth,
                      int* tree_count,
-                     unsigned int* pointer_depth_level,
+                     int* pointer_depth_level,
                      int N, int D)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
@@ -222,9 +222,9 @@ void build_tree_init(typepoints* tree,
 
 __global__
 void build_tree_check_points_side(typepoints* tree,
-                                  unsigned int* tree_parents,
-                                  unsigned int* tree_children,
-                                  unsigned int* points_parent,
+                                  int* tree_parents,
+                                  int* tree_children,
+                                  int* points_parent,
                                   int* is_right_child,
                                   bool* is_leaf,
                                   int* sample_points,
@@ -232,7 +232,7 @@ void build_tree_check_points_side(typepoints* tree,
                                   typepoints* points,
                                   int* actual_depth,
                                   int* tree_count,
-                                  unsigned int* pointer_depth_level,
+                                  int* pointer_depth_level,
                                   int N, int D)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
@@ -284,9 +284,9 @@ void build_tree_check_points_side(typepoints* tree,
 
 __global__
 void build_tree_count_new_nodes(typepoints* tree,
-                                unsigned int* tree_parents,
-                                unsigned int* tree_children,
-                                unsigned int* points_parent,
+                                int* tree_parents,
+                                int* tree_children,
+                                int* points_parent,
                                 int* is_right_child,
                                 bool* is_leaf,
                                 int* sample_points,
@@ -294,7 +294,7 @@ void build_tree_count_new_nodes(typepoints* tree,
                                 typepoints* points,
                                 int* actual_depth,
                                 int* tree_count,
-                                unsigned int* pointer_depth_level,
+                                int* pointer_depth_level,
                                 int* count_new_nodes,
                                 int N, int D)
 {
@@ -309,9 +309,9 @@ void build_tree_count_new_nodes(typepoints* tree,
 
 __global__
 void build_tree_create_nodes(typepoints* tree,
-                             unsigned int* tree_parents,
-                             unsigned int* tree_children,
-                             unsigned int* points_parent,
+                             int* tree_parents,
+                             int* tree_children,
+                             int* points_parent,
                              int* is_right_child,
                              bool* is_leaf,
                              int* sample_points,
@@ -319,7 +319,7 @@ void build_tree_create_nodes(typepoints* tree,
                              typepoints* points,
                              int* actual_depth,
                              int* tree_count,
-                             unsigned int* pointer_depth_level,
+                             int* pointer_depth_level,
                              int* count_new_nodes,
                              int N, int D)
 {
@@ -332,7 +332,7 @@ void build_tree_create_nodes(typepoints* tree,
     //         &r);
 
     int p1, p2;
-    unsigned int i, node_thread;
+    int i, node_thread;
 
     // if(tid == 0){
     //     printf("DEBUG 7: %d %d %d %d\n", pointer_depth_level[*actual_depth-1], pointer_depth_level[*actual_depth], *count_new_nodes, *actual_depth);
@@ -395,9 +395,9 @@ void build_tree_create_nodes(typepoints* tree,
 
 __global__
 void build_tree_update_parents(typepoints* tree,
-                               unsigned int* tree_parents,
-                               unsigned int* tree_children,
-                               unsigned int* points_parent,
+                               int* tree_parents,
+                               int* tree_children,
+                               int* points_parent,
                                int* is_right_child,
                                bool* is_leaf,
                                int* sample_points,
@@ -405,7 +405,7 @@ void build_tree_update_parents(typepoints* tree,
                                typepoints* points,
                                int* actual_depth,
                                int* tree_count,
-                               unsigned int* pointer_depth_level,
+                               int* pointer_depth_level,
                                int* count_new_nodes,
                                int N, int D)
 {
@@ -441,9 +441,9 @@ void build_tree_update_parents(typepoints* tree,
 
 __global__
 void build_tree_post_update_parents(typepoints* tree,
-                                    unsigned int* tree_parents,
-                                    unsigned int* tree_children,
-                                    unsigned int* points_parent,
+                                    int* tree_parents,
+                                    int* tree_children,
+                                    int* points_parent,
                                     int* is_right_child,
                                     bool* is_leaf,
                                     int* sample_points,
@@ -451,7 +451,7 @@ void build_tree_post_update_parents(typepoints* tree,
                                     typepoints* points,
                                     int* actual_depth,
                                     int* tree_count,
-                                    unsigned int* pointer_depth_level,
+                                    int* pointer_depth_level,
                                     int* count_new_nodes,
                                     int N, int D)
 {
@@ -487,9 +487,9 @@ void build_tree_post_update_parents(typepoints* tree,
 
 // __global__
 // void build_tree_set_all_leafs(typepoints* tree,
-//                               unsigned int* tree_parents,
-//                               unsigned int* tree_children,
-//                               unsigned int* points_parent,
+//                               int* tree_parents,
+//                               int* tree_children,
+//                               int* points_parent,
 //                               int* is_right_child,
 //                               bool* is_leaf,
 //                               int* sample_points,
@@ -497,7 +497,7 @@ void build_tree_post_update_parents(typepoints* tree,
 //                               typepoints* points,
 //                               int* actual_depth,
 //                               int* tree_count,
-//                               unsigned int* pointer_depth_level,
+//                               int* pointer_depth_level,
 //                               int* count_new_nodes,
 //                               int N, int D)
 // {
@@ -514,7 +514,7 @@ void build_tree_post_update_parents(typepoints* tree,
 
 __global__
 void
-build_tree_utils(int* actual_depth, unsigned int* pointer_depth_level, int* count_new_nodes){
+build_tree_utils(int* actual_depth, int* pointer_depth_level, int* count_new_nodes){
     *actual_depth = *actual_depth+1;
     pointer_depth_level[*actual_depth] = pointer_depth_level[*actual_depth - 1] + *count_new_nodes;
     *count_new_nodes = 0;
@@ -547,7 +547,7 @@ build_tree_max_leaf_size(int* max_leaf_size, bool* is_leaf, int* child_count, in
 
 __global__
 void build_tree_bucket_points(typepoints* tree,
-                               unsigned int* points_parent,
+                               int* points_parent,
                                bool* is_leaf,
                                int* device_sample_points,
                                int* device_child_count,
@@ -591,7 +591,7 @@ float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
 
 __global__
 void compute_knn_from_buckets(typepoints* tree,
-                               unsigned int* points_parent,
+                               int* points_parent,
                                bool* is_leaf,
                                int* sample_points,
                                int* child_count,
@@ -699,9 +699,9 @@ void summary_tree(typepoints* tree,
 /*
 __global__
 void build_tree_create_nodes(typepoints* tree,
-                             unsigned int* tree_parents,
-                             unsigned int* tree_children,
-                             unsigned int* points_parent,
+                             int* tree_parents,
+                             int* tree_children,
+                             int* points_parent,
                              bool* is_leaf,
                              int* device_sample_points,
                              int* device_child_count,
@@ -719,7 +719,7 @@ void build_tree_create_nodes(typepoints* tree,
     //         &r);
 
     int p1, p2;
-    unsigned int bit_mask, i, node_thread;
+    int bit_mask, i, node_thread;
 
     // Create new nodes
     for(int nid=tid; nid < pow(2,*actual_depth); nid+=blockDim.x*gridDim.x){
