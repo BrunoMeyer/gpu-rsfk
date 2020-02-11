@@ -138,7 +138,7 @@ int main(int argc,char* argv[]) {
     
     // thrust::device_vector<int>* device_test;
     // device_test = new thrust::device_vector<int>(10);
-    // test_cuda_dynamic_declaration<<<1,1>>>(thrust::raw_pointer_cast(device_test->data()), 10);
+    // test_cuda_dynamic_declaration<<<1,1>>>(thrust::raw_pointer_cast(device_test[0]->data()), 10);
     // cudaDeviceSynchronize();
     // thrust::copy(device_test->begin(), device_test->end(), std::ostream_iterator<int>(std::cout, "\n"));
 
@@ -212,7 +212,7 @@ int main(int argc,char* argv[]) {
     }
     // MAX_NODES = MAX_NODES + N/MAX_TREE_CHILD;
     
-    MAX_NODES = 1;
+    
     std::cout << "MAX NODES: " << MAX_NODES << std::endl;
     // // thrust::device_vector<TreeNode> device_tree(sizeof(TreeNode) * (MAX_NODES));
     // thrust::device_vector<typepoints> device_tree((D + 1) * (MAX_NODES));
@@ -221,30 +221,34 @@ int main(int argc,char* argv[]) {
     // thrust::device_vector<bool> device_is_leaf(MAX_NODES, false);
     // thrust::device_vector<int> device_sample_points(4*MAX_NODES);
     // thrust::device_vector<int> device_child_count(MAX_NODES, 0);
-    thrust::device_vector<typepoints>* device_tree;
-    thrust::device_vector<int>* device_tree_parents;
-    thrust::device_vector<int>* device_tree_children;
-    thrust::device_vector<bool>* device_is_leaf;
-    thrust::device_vector<int>* device_sample_points;
-    thrust::device_vector<int>* device_child_count;
-    thrust::device_vector<typepoints>* device_tree_tmp;
-    thrust::device_vector<int>* device_tree_parents_tmp;
-    thrust::device_vector<int>* device_tree_children_tmp;
-    thrust::device_vector<bool>* device_is_leaf_tmp;
-    thrust::device_vector<int>* device_sample_points_tmp;
-    thrust::device_vector<int>* device_child_count_tmp;
-
-    device_tree = new thrust::device_vector<typepoints>(((D+1)*MAX_NODES));
-    device_tree_parents = new thrust::device_vector<int>(MAX_NODES,-1);
-    device_tree_children = new thrust::device_vector<int>(2*MAX_NODES,-1);
-    device_is_leaf = new thrust::device_vector<bool>(MAX_NODES, false);
-    device_sample_points = new thrust::device_vector<int>(4*MAX_NODES);
-    device_child_count = new thrust::device_vector<int>(MAX_NODES, 0);
+    thrust::device_vector<typepoints>** device_tree = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_tree_parents = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_tree_children = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<bool>** device_is_leaf = (thrust::device_vector<bool>**) malloc(sizeof(thrust::device_vector<bool>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_sample_points = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_child_count = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<typepoints>** device_tree_tmp = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_tree_parents_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_tree_children_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<bool>** device_is_leaf_tmp = (thrust::device_vector<bool>**) malloc(sizeof(thrust::device_vector<bool>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_sample_points_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    thrust::device_vector<int>** device_child_count_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    // std::vector<int>
+    
+    MAX_NODES = 1;
+    device_tree[0] = new thrust::device_vector<typepoints>(((D+1)*MAX_NODES));
+    device_tree_parents[0] = new thrust::device_vector<int>(MAX_NODES,-1);
+    device_tree_children[0] = new thrust::device_vector<int>(2*MAX_NODES,-1);
+    device_is_leaf[0] = new thrust::device_vector<bool>(MAX_NODES, false);
+    device_sample_points[0] = new thrust::device_vector<int>(4*MAX_NODES, -1);
+    device_child_count[0] = new thrust::device_vector<int>(MAX_NODES, 0);
 
     thrust::device_vector<int> device_points_parent(N, 0);
+    thrust::device_vector<int> device_points_depth(N, 0);
     thrust::device_vector<int> device_is_right_child(N, 0);
 
-    thrust::device_vector<int> device_pointer_depth_level(MAX_DEPTH,-1);
+    thrust::device_vector<int> device_depth_level_count(MAX_DEPTH,-1);
+    thrust::device_vector<int> device_accumulated_nodes_count(MAX_DEPTH,-1);
     thrust::device_vector<int> device_tree_count(1,0);
     thrust::device_vector<int> device_count_new_nodes(1,0);
     thrust::device_vector<int> device_actual_depth(1,0);
@@ -253,16 +257,16 @@ int main(int argc,char* argv[]) {
     const int mp = 8;
 
 
-    build_tree_init<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                               thrust::raw_pointer_cast(device_tree_parents->data()),
-                               thrust::raw_pointer_cast(device_tree_children->data()),
+    build_tree_init<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[0]->data()),
+                               thrust::raw_pointer_cast(device_tree_parents[0]->data()),
+                               thrust::raw_pointer_cast(device_tree_children[0]->data()),
                                thrust::raw_pointer_cast(device_points_parent.data()),
-                               thrust::raw_pointer_cast(device_child_count->data()),
-                               thrust::raw_pointer_cast(device_is_leaf->data()),
+                               thrust::raw_pointer_cast(device_child_count[0]->data()),
+                               thrust::raw_pointer_cast(device_is_leaf[0]->data()),
                                thrust::raw_pointer_cast(device_points.data()),
                                thrust::raw_pointer_cast(device_actual_depth.data()),
                                thrust::raw_pointer_cast(device_tree_count.data()),
-                               thrust::raw_pointer_cast(device_pointer_depth_level.data()),
+                               thrust::raw_pointer_cast(device_depth_level_count.data()),
                                N, D);
     cudaDeviceSynchronize();
     CudaTest((char *)"build_tree_init Kernel failed!");
@@ -279,23 +283,24 @@ int main(int argc,char* argv[]) {
     int depth, count_new_nodes, last_MAX_NODES;
     
     for(depth=1; depth < MAX_DEPTH; ++depth){
-        thrust::fill(device_sample_points->begin(), device_sample_points->end(), -1);
+        // thrust::fill(device_sample_points[0]->begin(), device_sample_points[0]->end(), -1);
         // thrust::fill(device_child_count->begin(), device_child_count->end(), 0);
         cudaDeviceSynchronize();
         
         // create_nodes_cron.start();
-        build_tree_check_points_side<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                   thrust::raw_pointer_cast(device_tree_parents->data()),
-                                   thrust::raw_pointer_cast(device_tree_children->data()),
+        build_tree_check_points_side<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_points_parent.data()),
+                                   thrust::raw_pointer_cast(device_points_depth.data()),
                                    thrust::raw_pointer_cast(device_is_right_child.data()),
-                                   thrust::raw_pointer_cast(device_is_leaf->data()),
-                                   thrust::raw_pointer_cast(device_sample_points->data()),
-                                   thrust::raw_pointer_cast(device_child_count->data()),
+                                   thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_points.data()),
                                    thrust::raw_pointer_cast(device_actual_depth.data()),
                                    thrust::raw_pointer_cast(device_tree_count.data()),
-                                   thrust::raw_pointer_cast(device_pointer_depth_level.data()),
+                                   thrust::raw_pointer_cast(device_depth_level_count.data()),
                                    N, D);
         cudaDeviceSynchronize();
         // create_nodes_cron.stop();
@@ -303,81 +308,92 @@ int main(int argc,char* argv[]) {
         
 
          // create_nodes_cron.start();
-        build_tree_count_new_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                   thrust::raw_pointer_cast(device_tree_parents->data()),
-                                   thrust::raw_pointer_cast(device_tree_children->data()),
+        build_tree_count_new_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_points_parent.data()),
                                    thrust::raw_pointer_cast(device_is_right_child.data()),
-                                   thrust::raw_pointer_cast(device_is_leaf->data()),
-                                   thrust::raw_pointer_cast(device_sample_points->data()),
-                                   thrust::raw_pointer_cast(device_child_count->data()),
+                                   thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
+                                   thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_points.data()),
                                    thrust::raw_pointer_cast(device_actual_depth.data()),
                                    thrust::raw_pointer_cast(device_tree_count.data()),
-                                   thrust::raw_pointer_cast(device_pointer_depth_level.data()),
+                                   thrust::raw_pointer_cast(device_depth_level_count.data()),
                                    thrust::raw_pointer_cast(device_count_new_nodes.data()),
                                    N, D);
         cudaDeviceSynchronize();
         // create_nodes_cron.stop();
         CudaTest((char *)"build_tree_count_new_nodes Kernel failed!");
-
-
-
-        // This is the bottleneck when MAX_DEPTH or count_new_nodes are to high
+        
+        
         thrust::copy(device_count_new_nodes.begin(), device_count_new_nodes.begin()+1, &count_new_nodes);
+        cudaDeviceSynchronize();
+        std::cout << "Add " << count_new_nodes << " new nodes" << std::endl;
+
+        device_tree[depth] = new thrust::device_vector<typepoints>(((D+1)*count_new_nodes));
+        device_tree_parents[depth] = new thrust::device_vector<int>(count_new_nodes,-1);
+        device_tree_children[depth] = new thrust::device_vector<int>(2*count_new_nodes,-1);
+        device_is_leaf[depth] = new thrust::device_vector<bool>(count_new_nodes, false);
+        device_sample_points[depth] = new thrust::device_vector<int>(4*count_new_nodes, -1);
+        device_child_count[depth] = new thrust::device_vector<int>(count_new_nodes, 0);
+
+        /*
+        // This is the bottleneck when MAX_DEPTH or count_new_nodes are to high
         last_MAX_NODES = MAX_NODES;
         MAX_NODES+=count_new_nodes;
 
-        device_tree_tmp = new thrust::device_vector<typepoints>(((D+1)*MAX_NODES));
-        device_tree_parents_tmp = new thrust::device_vector<int>(MAX_NODES,-1);
-        device_tree_children_tmp = new thrust::device_vector<int>(2*MAX_NODES,-1);
-        device_is_leaf_tmp = new thrust::device_vector<bool>(MAX_NODES, false);
-        device_sample_points_tmp = new thrust::device_vector<int>(4*MAX_NODES);
-        device_child_count_tmp = new thrust::device_vector<int>(MAX_NODES, 0);
+        device_tree_tmp[0] = new thrust::device_vector<typepoints>(((D+1)*MAX_NODES));
+        device_tree_parents_tmp[0] = new thrust::device_vector<int>(MAX_NODES,-1);
+        device_tree_children_tmp[0] = new thrust::device_vector<int>(2*MAX_NODES,-1);
+        device_is_leaf_tmp[0] = new thrust::device_vector<bool>(MAX_NODES, false);
+        device_sample_points_tmp[0] = new thrust::device_vector<int>(4*MAX_NODES, -1);
+        device_child_count_tmp[0] = new thrust::device_vector<int>(MAX_NODES, 0);
 
-        thrust::copy(device_tree->begin(), device_tree->begin()+((D+1)*last_MAX_NODES), device_tree_tmp->begin());
-        thrust::copy(device_tree_parents->begin(), device_tree_parents->begin()+last_MAX_NODES, device_tree_parents_tmp->begin());
-        thrust::copy(device_tree_children->begin(), device_tree_children->begin()+2*last_MAX_NODES, device_tree_children_tmp->begin());
-        thrust::copy(device_is_leaf->begin(), device_is_leaf->begin()+last_MAX_NODES, device_is_leaf_tmp->begin());
-        thrust::copy(device_sample_points->begin(), device_sample_points->begin()+4*last_MAX_NODES, device_sample_points_tmp->begin());
-        thrust::copy(device_child_count->begin(), device_child_count->begin()+last_MAX_NODES, device_child_count_tmp->begin());
-        device_tree->clear();
-        device_tree->shrink_to_fit();
-        device_tree_parents->clear();
-        device_tree_parents->shrink_to_fit();
-        device_tree_children->clear();
-        device_tree_children->shrink_to_fit();
-        device_is_leaf->clear();
-        device_is_leaf->shrink_to_fit();
-        device_sample_points->clear();
-        device_sample_points->shrink_to_fit();
-        device_child_count->clear();
-        device_child_count->shrink_to_fit();
+        thrust::copy(device_tree[0]->begin(), device_tree[0]->begin()+((D+1)*last_MAX_NODES), device_tree_tmp[0]->begin());
+        thrust::copy(device_tree_parents[0]->begin(), device_tree_parents[0]->begin()+last_MAX_NODES, device_tree_parents_tmp[0]->begin());
+        thrust::copy(device_tree_children[0]->begin(), device_tree_children[0]->begin()+2*last_MAX_NODES, device_tree_children_tmp[0]->begin());
+        thrust::copy(device_is_leaf[0]->begin(), device_is_leaf[0]->begin()+last_MAX_NODES, device_is_leaf_tmp[0]->begin());
+        thrust::copy(device_sample_points[0]->begin(), device_sample_points[0]->begin()+4*last_MAX_NODES, device_sample_points_tmp[0]->begin());
+        thrust::copy(device_child_count[0]->begin(), device_child_count[0]->begin()+last_MAX_NODES, device_child_count_tmp[0]->begin());
+        device_tree[0]->clear();
+        device_tree[0]->shrink_to_fit();
+        device_tree_parents[0]->clear();
+        device_tree_parents[0]->shrink_to_fit();
+        device_tree_children[0]->clear();
+        device_tree_children[0]->shrink_to_fit();
+        device_is_leaf[0]->clear();
+        device_is_leaf[0]->shrink_to_fit();
+        device_sample_points[0]->clear();
+        device_sample_points[0]->shrink_to_fit();
+        device_child_count[0]->clear();
+        device_child_count[0]->shrink_to_fit();
         
-        device_tree = device_tree_tmp;
-        device_tree_parents = device_tree_parents_tmp;
-        device_tree_children = device_tree_children_tmp;
-        device_is_leaf = device_is_leaf_tmp;
-        device_sample_points = device_sample_points_tmp;
-        device_child_count = device_child_count_tmp;
-
+        device_tree[0] = device_tree_tmp[0];
+        device_tree_parents[0] = device_tree_parents_tmp[0];
+        device_tree_children[0] = device_tree_children_tmp[0];
+        device_is_leaf[0] = device_is_leaf_tmp[0];
+        device_sample_points[0] = device_sample_points_tmp[0];
+        device_child_count[0] = device_child_count_tmp[0];
+        */
         
         
 
 
         create_nodes_cron.start();
-        build_tree_create_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                           thrust::raw_pointer_cast(device_tree_parents->data()),
-                                           thrust::raw_pointer_cast(device_tree_children->data()),
+        build_tree_create_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth]->data()), // new depth is created
+                                           thrust::raw_pointer_cast(device_tree_parents[depth]->data()), // new depth is created
+                                           thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                            thrust::raw_pointer_cast(device_points_parent.data()),
                                            thrust::raw_pointer_cast(device_is_right_child.data()),
-                                           thrust::raw_pointer_cast(device_is_leaf->data()),
-                                           thrust::raw_pointer_cast(device_sample_points->data()),
-                                           thrust::raw_pointer_cast(device_child_count->data()),
+                                           thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                           thrust::raw_pointer_cast(device_is_leaf[depth]->data()), // new depth is created
+                                           thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
+                                           thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
                                            thrust::raw_pointer_cast(device_points.data()),
                                            thrust::raw_pointer_cast(device_actual_depth.data()),
                                            thrust::raw_pointer_cast(device_tree_count.data()),
-                                           thrust::raw_pointer_cast(device_pointer_depth_level.data()),
+                                           thrust::raw_pointer_cast(device_depth_level_count.data()),
                                            thrust::raw_pointer_cast(device_count_new_nodes.data()),
                                            N, D);
         cudaDeviceSynchronize();
@@ -386,34 +402,37 @@ int main(int argc,char* argv[]) {
 
 
         update_parents_cron.start();
-        build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                             thrust::raw_pointer_cast(device_tree_parents->data()),
-                                             thrust::raw_pointer_cast(device_tree_children->data()),
+        build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+                                             thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
+                                             thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                              thrust::raw_pointer_cast(device_points_parent.data()),
+                                             thrust::raw_pointer_cast(device_points_depth.data()),
                                              thrust::raw_pointer_cast(device_is_right_child.data()),
-                                             thrust::raw_pointer_cast(device_is_leaf->data()),
-                                             thrust::raw_pointer_cast(device_sample_points->data()),
-                                             thrust::raw_pointer_cast(device_child_count->data()),
+                                             thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                             thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
+                                             thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
+                                             thrust::raw_pointer_cast(device_child_count[depth]->data()), // new depth is created
                                              thrust::raw_pointer_cast(device_points.data()),
                                              thrust::raw_pointer_cast(device_actual_depth.data()),
                                              thrust::raw_pointer_cast(device_tree_count.data()),
-                                             thrust::raw_pointer_cast(device_pointer_depth_level.data()),
+                                             thrust::raw_pointer_cast(device_depth_level_count.data()),
                                              thrust::raw_pointer_cast(device_count_new_nodes.data()),
                                              N, D);
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_update_parents Kernel failed!");
-        build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                                  thrust::raw_pointer_cast(device_tree_parents->data()),
-                                                  thrust::raw_pointer_cast(device_tree_children->data()),
+        build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                                   thrust::raw_pointer_cast(device_points_parent.data()),
+                                                  thrust::raw_pointer_cast(device_points_depth.data()),
                                                   thrust::raw_pointer_cast(device_is_right_child.data()),
-                                                  thrust::raw_pointer_cast(device_is_leaf->data()),
-                                                  thrust::raw_pointer_cast(device_sample_points->data()),
-                                                  thrust::raw_pointer_cast(device_child_count->data()),
+                                                  thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
                                                   thrust::raw_pointer_cast(device_points.data()),
                                                   thrust::raw_pointer_cast(device_actual_depth.data()),
                                                   thrust::raw_pointer_cast(device_tree_count.data()),
-                                                  thrust::raw_pointer_cast(device_pointer_depth_level.data()),
+                                                  thrust::raw_pointer_cast(device_depth_level_count.data()),
                                                   thrust::raw_pointer_cast(device_count_new_nodes.data()),
                                                   N, D);
         cudaDeviceSynchronize();
@@ -422,36 +441,45 @@ int main(int argc,char* argv[]) {
 
 
         build_tree_utils<<<1,1>>>(thrust::raw_pointer_cast(device_actual_depth.data()),
-                                  thrust::raw_pointer_cast(device_pointer_depth_level.data()),
-                                  thrust::raw_pointer_cast(device_count_new_nodes.data()));
+                                  thrust::raw_pointer_cast(device_depth_level_count.data()),
+                                  thrust::raw_pointer_cast(device_count_new_nodes.data()),
+                                  thrust::raw_pointer_cast(device_tree_count.data()));
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_utils Kernel failed!");
 
         if(VERBOSE >= 1){
-            std::cout << "\e[ABuilding Tree Depth: " << depth+1 << "/" << MAX_DEPTH << std::endl;
+            // std::cout << "\e[ABuilding Tree Depth: " << depth+1 << "/" << MAX_DEPTH << std::endl;
+            std::cout << "Building Tree Depth: " << depth+1 << "/" << MAX_DEPTH << std::endl;
         }
     }
+    build_tree_fix<<<1,1>>>(thrust::raw_pointer_cast(device_depth_level_count.data()),
+                            thrust::raw_pointer_cast(device_tree_count.data()),
+                            thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                            MAX_DEPTH);
+    cudaDeviceSynchronize();
+    CudaTest((char *)"build_tree_fix Kernel failed!");
+    
     total_cron.stop();
 
     // thrust::fill(device_child_count->begin(), device_child_count->end(), 0);
 
     // cudaDeviceSynchronize();
     // update_parents_cron.start();
-    // build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
+    // build_tree_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[0]->data()),
     //                             thrust::raw_pointer_cast(device_points_parent.data()),
-    //                             thrust::raw_pointer_cast(device_is_leaf->data()),
-    //                             thrust::raw_pointer_cast(device_sample_points->data()),
-    //                             thrust::raw_pointer_cast(device_child_count->data()),
+    //                             thrust::raw_pointer_cast(device_is_leaf[0]->data()),
+    //                             thrust::raw_pointer_cast(device_sample_points[0]->data()),
+    //                             thrust::raw_pointer_cast(device_child_count[0]->data()),
     //                             thrust::raw_pointer_cast(device_points.data()),
     //                             thrust::raw_pointer_cast(device_actual_depth.data()),
     //                             N, D);
     // cudaDeviceSynchronize();
     // CudaTest((char *)"build_tree_update_parents Kernel failed!");
-    // build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
+    // build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[0]->data()),
     //                             thrust::raw_pointer_cast(device_points_parent.data()),
-    //                             thrust::raw_pointer_cast(device_is_leaf->data()),
-    //                             thrust::raw_pointer_cast(device_sample_points->data()),
-    //                             thrust::raw_pointer_cast(device_child_count->data()),
+    //                             thrust::raw_pointer_cast(device_is_leaf[0]->data()),
+    //                             thrust::raw_pointer_cast(device_sample_points[0]->data()),
+    //                             thrust::raw_pointer_cast(device_child_count[0]->data()),
     //                             thrust::raw_pointer_cast(device_points.data()),
     //                             thrust::raw_pointer_cast(device_actual_depth.data()),
     //                             N, D);
@@ -467,11 +495,11 @@ int main(int argc,char* argv[]) {
 
     // Check what leaf nodes in tree have childrens and set device_is_leaf when a node have more than 0 children
     // create_nodes_cron.start();
-    // build_tree_set_all_leafs<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
+    // build_tree_set_all_leafs<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[0]->data()),
     //                             thrust::raw_pointer_cast(device_points_parent.data()),
-    //                             thrust::raw_pointer_cast(device_is_leaf->data()),
-    //                             thrust::raw_pointer_cast(device_sample_points->data()),
-    //                             thrust::raw_pointer_cast(device_child_count->data()),
+    //                             thrust::raw_pointer_cast(device_is_leaf[0]->data()),
+    //                             thrust::raw_pointer_cast(device_sample_points[0]->data()),
+    //                             thrust::raw_pointer_cast(device_child_count[0]->data()),
     //                             thrust::raw_pointer_cast(device_points.data()),
     //                             thrust::raw_pointer_cast(device_actual_depth.data()),
     //                             N, D, depth-1);
@@ -484,24 +512,32 @@ int main(int argc,char* argv[]) {
     cron_classify_points.start();
 
     thrust::device_vector<int> device_max_leaf_size(1,0);
+    thrust::device_vector<int> device_total_leafs(1,0);
     
     // int max_child = *(thrust::max_element(device_child_count->begin()+pow(2,depth-3)-1, device_child_count->end()));
-    build_tree_max_leaf_size<<<mp,nt>>>(thrust::raw_pointer_cast(device_max_leaf_size.data()),
-                                        thrust::raw_pointer_cast(device_is_leaf->data()),
-                                        thrust::raw_pointer_cast(device_child_count->data()),
-                                        thrust::raw_pointer_cast(device_tree_count.data()));
-    cudaDeviceSynchronize();
-    CudaTest((char *)"build_tree_max_leaf_size Kernel failed!");
+    for(depth=0; depth < MAX_DEPTH; ++depth){
+        build_tree_max_leaf_size<<<mp,nt>>>(thrust::raw_pointer_cast(device_max_leaf_size.data()),
+                                            thrust::raw_pointer_cast(device_total_leafs.data()),
+                                            thrust::raw_pointer_cast(device_is_leaf[depth]->data()),
+                                            thrust::raw_pointer_cast(device_child_count[depth]->data()),
+                                            thrust::raw_pointer_cast(device_tree_count.data()),
+                                            thrust::raw_pointer_cast(device_depth_level_count.data()),
+                                            depth);
+        cudaDeviceSynchronize();
+        CudaTest((char *)"build_tree_max_leaf_size Kernel failed!");
+    }
 
+    // int total_leafs = thrust::reduce(device_is_leaf[0]->begin(), device_is_leaf[0]->end(), 0.0, thrust::plus<float>());
     
-    int max_child;
+    int max_child, total_leafs;
     thrust::copy(device_max_leaf_size.begin(), device_max_leaf_size.begin()+1, &max_child);
+    thrust::copy(device_total_leafs.begin(), device_total_leafs.begin()+1, &total_leafs);
 
     std::cout << "Max child count: " << max_child << "\n" << std::endl;
 
 
-
-    int total_leafs = thrust::reduce(device_is_leaf->begin(), device_is_leaf->end(), 0.0, thrust::plus<float>());
+    
+    
     cudaDeviceSynchronize();
     std::cout << "Total leafs: " << total_leafs << std::endl;
 
@@ -516,9 +552,9 @@ int main(int argc,char* argv[]) {
 
 
 
-    // summary_tree<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-    //                         thrust::raw_pointer_cast(device_is_leaf->data()),
-    //                         thrust::raw_pointer_cast(device_child_count->data()),
+    // summary_tree<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[0]->data()),
+    //                         thrust::raw_pointer_cast(device_is_leaf[0]->data()),
+    //                         thrust::raw_pointer_cast(device_child_count[0]->data()),
     //                         thrust::raw_pointer_cast(device_leaf_subtree_count.data()),
     //                         thrust::raw_pointer_cast(device_points.data()),
     //                         N, D, MAX_NODES);
@@ -533,16 +569,12 @@ int main(int argc,char* argv[]) {
     
     thrust::device_vector<int> device_nodes_buckets(MAX_NODES*max_child, -1);
     thrust::device_vector<int> device_count_buckets(MAX_NODES, 0);
-    build_tree_bucket_points<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                thrust::raw_pointer_cast(device_points_parent.data()),
-                                thrust::raw_pointer_cast(device_is_leaf->data()),
-                                thrust::raw_pointer_cast(device_sample_points->data()),
-                                thrust::raw_pointer_cast(device_child_count->data()),
-                                thrust::raw_pointer_cast(device_points.data()),
-                                thrust::raw_pointer_cast(device_actual_depth.data()),
-                                thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                thrust::raw_pointer_cast(device_count_buckets.data()),
-                                N, D, max_child);
+    build_tree_bucket_points<<<mp,nt>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                        thrust::raw_pointer_cast(device_points_depth.data()),
+                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                        thrust::raw_pointer_cast(device_count_buckets.data()),
+                                        N, max_child);
     cudaDeviceSynchronize();
     cron_classify_points.stop();
     CudaTest((char *)"build_tree_bucket_points Kernel failed!");
@@ -572,17 +604,13 @@ int main(int argc,char* argv[]) {
     Cron cron_knn;
     cron_knn.start();
 
-    compute_knn_from_buckets<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree->data()),
-                                thrust::raw_pointer_cast(device_points_parent.data()),
-                                thrust::raw_pointer_cast(device_is_leaf->data()),
-                                thrust::raw_pointer_cast(device_sample_points->data()),
-                                thrust::raw_pointer_cast(device_child_count->data()),
-                                thrust::raw_pointer_cast(device_points.data()),
-                                thrust::raw_pointer_cast(device_actual_depth.data()),
-                                thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                thrust::raw_pointer_cast(device_knn_indices.data()),
-                                thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                N, D, max_child, K);
+    compute_knn_from_buckets<<<mp,nt>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                        thrust::raw_pointer_cast(device_count_buckets.data()),
+                                        thrust::raw_pointer_cast(device_points.data()),
+                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                        thrust::raw_pointer_cast(device_knn_indices.data()),
+                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                        N, D, max_child, K);
     cudaDeviceSynchronize();
     cron_knn.stop();    
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
@@ -615,7 +643,8 @@ int main(int argc,char* argv[]) {
 
 
     if(VERBOSE >= 1){
-        printf("Build Tree Kernel takes %lf seconds\n", create_nodes_cron.t_total/1000);
+        printf("Total tree building takes %lf seconds\n", total_cron.t_total/1000);
+        printf("Create nodes Kernel takes %lf seconds\n", create_nodes_cron.t_total/1000);
         printf("Update parents Kernel takes %lf seconds\n", update_parents_cron.t_total/1000);
         printf("Create nodes Kernel takes %lf seconds\n", create_nodes_cron.t_total/1000);
         printf("Bucket creation Kernel takes %lf seconds\n", cron_classify_points.t_total/1000);

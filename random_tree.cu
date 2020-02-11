@@ -104,7 +104,7 @@ void create_root(typepoints* tree,
     int node_idx = 0;
     
     tree_parents[node_idx] = -1;
-    *tree_count = 1;
+    *tree_count = 0;
 
     int i;
     tree[node_idx*(D+1) + D] = 0.0f;
@@ -184,7 +184,7 @@ void build_tree_init(typepoints* tree,
                      typepoints* points,
                      int* actual_depth,
                      int* tree_count,
-                     int* pointer_depth_level,
+                     int* depth_level_count,
                      int N, int D)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
@@ -211,12 +211,11 @@ void build_tree_init(typepoints* tree,
         // create_node(-1, tree,tree_parents, tree_children, tree_count, p1, p2, points, D);
         create_root(tree, tree_parents, tree_children, tree_count, p1, p2, points, D);
         *actual_depth = 1;
-        pointer_depth_level[0] = 0;
-        pointer_depth_level[1] = 1;
+        depth_level_count[0] = 1;
+        // depth_level_count[1] = 2;
 
         is_leaf[0] = false;
         child_count[0] = N;
-
     }
 }
 
@@ -225,6 +224,7 @@ void build_tree_check_points_side(typepoints* tree,
                                   int* tree_parents,
                                   int* tree_children,
                                   int* points_parent,
+                                  int* points_depth,
                                   int* is_right_child,
                                   bool* is_leaf,
                                   int* sample_points,
@@ -232,7 +232,7 @@ void build_tree_check_points_side(typepoints* tree,
                                   typepoints* points,
                                   int* actual_depth,
                                   int* tree_count,
-                                  int* pointer_depth_level,
+                                  int* depth_level_count,
                                   int N, int D)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
@@ -247,6 +247,8 @@ void build_tree_check_points_side(typepoints* tree,
 
     // Set nodes parent in the new depth
     for(p = tid; p < N; p+=blockDim.x*gridDim.x){
+        if(points_depth[p] < *actual_depth-1) continue;
+        
         is_right = check_hyperplane_side(points_parent[p], p, tree, points, D);
         is_right_child[p] = is_right;
         // atomicAdd(&child_count[2*points_parent[p]+is_right],1);
@@ -294,12 +296,13 @@ void build_tree_count_new_nodes(typepoints* tree,
                                 typepoints* points,
                                 int* actual_depth,
                                 int* tree_count,
-                                int* pointer_depth_level,
+                                int* depth_level_count,
                                 int* count_new_nodes,
                                 int N, int D)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
-    for(int node_thread = tid+pointer_depth_level[*actual_depth - 1]; node_thread < pointer_depth_level[*actual_depth]; node_thread+=blockDim.x*gridDim.x){
+    for(int node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){
+        // printf("DEBUG8: %d %d\n", 4*node_thread, node_thread);
         if(child_count[node_thread] > MAX_TREE_CHILD){
             if((sample_points[4*node_thread+0] != -1 && sample_points[4*node_thread+1] != -1)) atomicAdd(count_new_nodes, 1);
             if((sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 1);
@@ -308,18 +311,19 @@ void build_tree_count_new_nodes(typepoints* tree,
 }
 
 __global__
-void build_tree_create_nodes(typepoints* tree,
-                             int* tree_parents,
+void build_tree_create_nodes(typepoints* tree_new_depth,
+                             int* tree_parents_new_depth,
                              int* tree_children,
                              int* points_parent,
                              int* is_right_child,
                              bool* is_leaf,
+                             bool* is_leaf_new_depth,
                              int* sample_points,
                              int* child_count,
                              typepoints* points,
                              int* actual_depth,
                              int* tree_count,
-                             int* pointer_depth_level,
+                             int* depth_level_count,
                              int* count_new_nodes,
                              int N, int D)
 {
@@ -335,12 +339,12 @@ void build_tree_create_nodes(typepoints* tree,
     int i, node_thread;
 
     // if(tid == 0){
-    //     printf("DEBUG 7: %d %d %d %d\n", pointer_depth_level[*actual_depth-1], pointer_depth_level[*actual_depth], *count_new_nodes, *actual_depth);
+    //     printf("DEBUG 7: %d %d %d %d\n", depth_level_count[*actual_depth-1], depth_level_count[*actual_depth], *count_new_nodes, *actual_depth);
     // }
     // Create new nodes
-    for(node_thread = tid+pointer_depth_level[*actual_depth-1]; node_thread < pointer_depth_level[*actual_depth]; node_thread+=blockDim.x*gridDim.x){
+    for(node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){
 
-        int parent_id = tree_parents[node_thread];
+        // int parent_id = tree_parents[node_thread];
         // if(is_leaf[parent_id] && device_child_count[parent_id] > MAX_TREE_CHILD){
         
         // printf("DEBUG3: %d %d\n", node_thread, child_count[node_thread]);
@@ -372,11 +376,11 @@ void build_tree_create_nodes(typepoints* tree,
                 // }
                 if(p1 != -1 && p2 != -1){
                     // create_node(node_thread, p1, p2, tree, points, D);
-                    create_node(node_thread, is_right, tree, tree_parents,
+                    create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
                                 tree_children, tree_count, count_new_nodes, p1, p2, points, D);
 
                     is_leaf[node_thread] = false;
-                    is_leaf[tree_children[2*node_thread+is_right]] = true;
+                    is_leaf_new_depth[tree_children[2*node_thread+is_right]] = true;
 
                     // is_leaf[node_thread] = true;
                     // if(child_count[parent_id] > 2500) printf("%d\n", child_count[parent_id]);
@@ -390,7 +394,6 @@ void build_tree_create_nodes(typepoints* tree,
             }
         }
     }
-    
 }
 
 __global__
@@ -398,14 +401,16 @@ void build_tree_update_parents(typepoints* tree,
                                int* tree_parents,
                                int* tree_children,
                                int* points_parent,
+                               int* points_depth,
                                int* is_right_child,
                                bool* is_leaf,
                                int* sample_points,
                                int* child_count,
+                               int* child_count_new_depth,
                                typepoints* points,
                                int* actual_depth,
                                int* tree_count,
-                               int* pointer_depth_level,
+                               int* depth_level_count,
                                int* count_new_nodes,
                                int N, int D)
 {
@@ -426,15 +431,16 @@ void build_tree_update_parents(typepoints* tree,
         // if(is_leaf[points_parent[p]]){
 
         // TODO: Verify if the "if" statement is necessary
-        if(child_count[points_parent[p]] > MAX_TREE_CHILD){
+        if(points_depth[p] == *actual_depth-1 && child_count[points_parent[p]] > MAX_TREE_CHILD){
             right_child = is_right_child[p];
             // printf("DEBUG4: %d %d %d %d\n", points_parent[p], 2*points_parent[p]+right_child, tree_children[2*points_parent[p]+right_child], child_count[points_parent[p]]);
             // points_parent[p] = HEAP_LEFT(points_parent[p])+right_child;
             points_parent[p] = tree_children[2*points_parent[p]+right_child];
             // printf("%d %d %d\n", p, is_right_child[p], points_parent[p]);
-            atomicAdd(&child_count[points_parent[p]],1);
+            atomicAdd(&child_count_new_depth[points_parent[p]],1);
+            points_depth[p] = *actual_depth;
         }
-        __syncwarp();
+        // __syncwarp();
         // __syncthreads();
     }
 }
@@ -444,6 +450,7 @@ void build_tree_post_update_parents(typepoints* tree,
                                     int* tree_parents,
                                     int* tree_children,
                                     int* points_parent,
+                                    int* points_depth,
                                     int* is_right_child,
                                     bool* is_leaf,
                                     int* sample_points,
@@ -451,7 +458,7 @@ void build_tree_post_update_parents(typepoints* tree,
                                     typepoints* points,
                                     int* actual_depth,
                                     int* tree_count,
-                                    int* pointer_depth_level,
+                                    int* depth_level_count,
                                     int* count_new_nodes,
                                     int N, int D)
 {
@@ -465,7 +472,7 @@ void build_tree_post_update_parents(typepoints* tree,
         // device_sample_points[2*points_parent[p]] = p;
         // device_sample_points[2*points_parent[p]+1] = p;
 
-        if(child_count[points_parent[p]] <= MAX_TREE_CHILD){
+        if(points_depth[p] == *actual_depth-1 && child_count[points_parent[p]] <= MAX_TREE_CHILD){
             is_leaf[points_parent[p]] = true;
             // printf("DEBUG5: %d\n", points_parent[p]);
         }
@@ -497,7 +504,7 @@ void build_tree_post_update_parents(typepoints* tree,
 //                               typepoints* points,
 //                               int* actual_depth,
 //                               int* tree_count,
-//                               int* pointer_depth_level,
+//                               int* depth_level_count,
 //                               int* count_new_nodes,
 //                               int N, int D)
 // {
@@ -514,16 +521,46 @@ void build_tree_post_update_parents(typepoints* tree,
 
 __global__
 void
-build_tree_utils(int* actual_depth, int* pointer_depth_level, int* count_new_nodes){
+build_tree_utils(int* actual_depth, int* depth_level_count, int* count_new_nodes, int* tree_count){
+    depth_level_count[*actual_depth] = *count_new_nodes;
     *actual_depth = *actual_depth+1;
-    pointer_depth_level[*actual_depth] = pointer_depth_level[*actual_depth - 1] + *count_new_nodes;
+    // depth_level_count[*actual_depth] = depth_level_count[*actual_depth - 1] + *count_new_nodes;
     *count_new_nodes = 0;
+    *tree_count = 0;
 }
 
 
 __global__
 void
-build_tree_max_leaf_size(int* max_leaf_size, bool* is_leaf, int* child_count, int* count_nodes)
+build_tree_fix(int* depth_level_count,
+               int* tree_count,
+               int* accumulated_nodes_count,
+               int max_depth){
+    *tree_count = 0;
+    for(int i=0; i < max_depth; ++i){
+        accumulated_nodes_count[i] = *tree_count;
+        *tree_count += depth_level_count[i];
+    }
+}
+
+
+
+
+
+
+
+
+
+
+__global__
+void
+build_tree_max_leaf_size(int* max_leaf_size,
+                         int* total_leafs,
+                         bool* is_leaf,
+                         int* child_count,
+                         int* count_nodes,
+                         int* depth_level_count,
+                         int depth)
 {
     // __shared__ int s_max_leaf_size;
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
@@ -532,10 +569,11 @@ build_tree_max_leaf_size(int* max_leaf_size, bool* is_leaf, int* child_count, in
     //     s_max_leaf_size = 0;
     // }
     // __syncthreads();
-    for(int node=tid; node < *count_nodes; node+=blockDim.x*gridDim.x){
+    for(int node=tid; node < depth_level_count[depth]; node+=blockDim.x*gridDim.x){
         if(is_leaf[node]){
             // atomicMax(&s_max_leaf_size, device_child_count[tid]);
             atomicMax(max_leaf_size, child_count[node]);
+            atomicAdd(total_leafs, 1);
             // printf("DEBUG6: %d\n", child_count[node]);
         }
     }
@@ -546,24 +584,21 @@ build_tree_max_leaf_size(int* max_leaf_size, bool* is_leaf, int* child_count, in
 }
 
 __global__
-void build_tree_bucket_points(typepoints* tree,
-                               int* points_parent,
-                               bool* is_leaf,
-                               int* device_sample_points,
-                               int* device_child_count,
-                               typepoints* points,
-                               int* actual_depth,
-                               int* bucket_nodes,
-                               int* tmp_node_child_count,
-                               int N, int D, int bucket_size)
+void build_tree_bucket_points(int* points_parent,
+                              int* points_depth,
+                              int* accumulated_nodes_count,
+                              int* bucket_nodes,
+                              int* tmp_node_child_count,
+                              int N, int bucket_size)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     // int right_child, p;
     int my_id_on_bucket, parent_id;
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
-        parent_id = points_parent[p];
+        parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
         my_id_on_bucket = atomicAdd(&tmp_node_child_count[parent_id], 1);
         bucket_nodes[parent_id*bucket_size + my_id_on_bucket] = p;
+        
         // printf("%d %d %d | %d\n", parent_id, bucket_size, my_id_on_bucket, parent_id*bucket_size + my_id_on_bucket);
         // if(!is_leaf[points_parent[p]]){
         //     right_child = check_hyperplane_side(points_parent[p], p, tree, points, D);
@@ -590,17 +625,13 @@ float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
 }
 
 __global__
-void compute_knn_from_buckets(typepoints* tree,
-                               int* points_parent,
-                               bool* is_leaf,
-                               int* sample_points,
-                               int* child_count,
-                               typepoints* points,
-                               int* actual_depth,
-                               int* bucket_nodes,
-                               int* knn_indices,
-                               typepoints* knn_sqr_dist,
-                               int N, int D, int max_bucket_size, int K)
+void compute_knn_from_buckets(int* points_parent,
+                              int* child_count,
+                              typepoints* points,
+                              int* bucket_nodes,
+                              int* knn_indices,
+                              typepoints* knn_sqr_dist,
+                              int N, int D, int max_bucket_size, int K)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     int parent_id, bucket_size, max_id_point, tmp_point;
