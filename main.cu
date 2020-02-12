@@ -129,16 +129,36 @@ class Cron
         }
 };
 
+class RPTK
+{
+public:
+    std::vector<typepoints> &points;
+    std::vector<int> &knn_indices;
+    std::vector<typepoints> &knn_sqr_distances;
+    
+    RPTK(std::vector<typepoints> &points,
+         std::vector<int> &knn_indices,
+         std::vector<typepoints> &knn_sqr_distances):
+         points(points),
+         knn_indices(knn_indices),
+         knn_sqr_distances(knn_sqr_distances){}
+    
+    void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
+                      thrust::device_vector<int> &device_knn_indices,
+                      thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                      int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                      string run_name);
+    
+    void knn_gpu_rptk_forest(int n_trees,
+                             int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                             string run_name);
+};
 
-
-void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
-                  std::vector<typepoints> &points,
-                  thrust::device_vector<int> &device_knn_indices,
-                  thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                  std::vector<int> &knn_indices,
-                  std::vector<typepoints> &knn_sqr_distances,
-                  int K, int N, int D, int MAX_DEPTH, int VERBOSE,
-                  string run_name="out.png")
+void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
+                        thrust::device_vector<int> &device_knn_indices,
+                        thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                        int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                        string run_name="out.png")
 {
     thrust::device_vector<typepoints>** device_tree = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
     thrust::device_vector<int>** device_tree_parents = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
@@ -484,12 +504,9 @@ void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 }
 
 
-void knn_gpu_rptk_forest(int n_trees,
-                         std::vector<typepoints> &points,
-                         std::vector<int> &knn_indices,
-                         std::vector<typepoints> &knn_sqr_distances,
-                         int K, int N, int D, int MAX_DEPTH, int VERBOSE,
-                         string run_name="out")
+void RPTK::knn_gpu_rptk_forest(int n_trees,
+                               int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                               string run_name="out")
 {
     thrust::device_vector<typepoints> device_points(points.begin(), points.end());
     thrust::device_vector<int> device_knn_indices(knn_indices.begin(), knn_indices.end());
@@ -499,11 +516,8 @@ void knn_gpu_rptk_forest(int n_trees,
     forest_total_cron.start();
     for(int i=0; i < n_trees; ++i){
         knn_gpu_rptk(device_points,
-                     points,
                      device_knn_indices,
                      device_knn_sqr_distances,
-                     knn_indices,
-                     knn_sqr_distances,
                      K, N, D, MAX_DEPTH, VERBOSE-1,
                      run_name+"_"+std::to_string(i));
     }
@@ -586,6 +600,8 @@ int main(int argc,char* argv[]) {
     
     // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run1");
     // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run2");
-    knn_gpu_rptk_forest(5, points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run");
+
+    RPTK rptk_knn(points, knn_indices, knn_sqr_distances);
+    rptk_knn.knn_gpu_rptk_forest(5, K, N, D, MAX_DEPTH, VERBOSE, "run");
 
 }
