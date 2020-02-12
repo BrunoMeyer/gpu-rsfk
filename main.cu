@@ -60,6 +60,14 @@ using namespace std;
 #define HEAP_RIGHT(i) ((2*i)+2)
 
 #include "random_tree.cu"
+#include "kernels/build_tree_init.cu"
+#include "kernels/build_tree_check_points_side.cu"
+#include "kernels/build_tree_count_new_nodes.cu"
+#include "kernels/build_tree_create_nodes.cu"
+#include "kernels/build_tree_update_parents.cu"
+#include "kernels/build_tree_utils.cu"
+#include "kernels/build_tree_bucket_points.cu"
+#include "kernels/compute_knn_from_buckets.cu"
 
 
 
@@ -121,13 +129,7 @@ class Cron
         }
 };
 
-__global__
-void test_cuda_dynamic_declaration(int* arr, int N)
-{
-    for(int i=0; i < N; ++i){
-        arr[i] = i*10+i;
-    }
-}
+
 
 int main(int argc,char* argv[]) {
     // test_random<<<1,1>>>();

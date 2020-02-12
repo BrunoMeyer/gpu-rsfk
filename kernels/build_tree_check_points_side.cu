@@ -1,0 +1,89 @@
+#ifndef __BUILD_TREE_CHECK_POINTS_SIDE__CU
+#define __BUILD_TREE_CHECK_POINTS_SIDE__CU
+
+
+__device__
+inline
+int check_hyperplane_side(int node_idx, int p, typepoints* tree, typepoints* points, int D)
+{
+    typepoints aux = 0.0f;
+    for(int i=0; i < D; ++i){
+        aux += tree[node_idx*(D+1) + i]*points[p*D + i];
+        // if(node_idx == 2){
+        //     printf("\t%f ",aux);
+        // }
+    }
+    // if(node_idx == 2){
+    //     printf("\t>>> %f %f %f | %f %f %f | %f %f\n",tree[node_idx*(D+1)],tree[node_idx*(D+1)+1], tree[node_idx*(D+1)+2], points[p*D], points[p*D + 1], points[p*D + 2], aux, tree[node_idx*(D+1) + D]);
+    // }
+    
+    return aux < tree[node_idx*(D+1) + D];
+}
+
+
+__global__
+void build_tree_check_points_side(typepoints* tree,
+                                  int* tree_parents,
+                                  int* tree_children,
+                                  int* points_parent,
+                                  int* points_depth,
+                                  int* is_right_child,
+                                  bool* is_leaf,
+                                  int* sample_points,
+                                  int* child_count,
+                                  typepoints* points,
+                                  int* actual_depth,
+                                  int* tree_count,
+                                  int* depth_level_count,
+                                  int N, int D)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    // curandState_t r; 
+    // curand_init(RANDOM_SEED+tid, // the seed controls the sequence of random values that are produced
+    //         blockIdx.x,  // the sequence number is only important with multiple cores 
+    //         tid,  // the offset is how much extra we advance in the sequence for each call, can be 0 
+    //         //   &states[blockIdx.x]);
+    //         &r);
+
+    int p, is_right;
+
+    // Set nodes parent in the new depth
+    for(p = tid; p < N; p+=blockDim.x*gridDim.x){
+        if(points_depth[p] < *actual_depth-1) continue;
+        
+        is_right = check_hyperplane_side(points_parent[p], p, tree, points, D);
+        is_right_child[p] = is_right;
+        // atomicAdd(&child_count[2*points_parent[p]+is_right],1);
+
+        // Threats to Validity: This assumes that all the follow properties are false:
+        // - The atomic operations assumes an arbitrary/random order
+        // - The points are shuffled
+
+        if(sample_points[4*points_parent[p]  + 2*is_right    ] == -1){
+            sample_points[4*points_parent[p]  + 2*is_right    ] = N;
+        }
+
+        // printf("DEBUG2: %d\n",points_parent[p]);
+        atomicMin(&sample_points[4*points_parent[p]  + 2*is_right    ], p);
+        atomicMax(&sample_points[4*points_parent[p]  + 2*is_right + 1], p);
+
+        // if(device_child_count[2*points_parent[p]+] > MAX_TREE_CHILD){
+        //     right_child = check_hyperplane_side(points_parent[p], p, tree, points, D);
+        //     // points_parent[p] = HEAP_LEFT(points_parent[p])+right_child;
+        //     points_parent[p] = tree_children[2*points_parent[p]+right_child];
+
+        //     atomicAdd(&device_child_count[points_parent[p]],1);
+        //     // device_sample_points[2*points_parent[p] + curand(&r) % 2] = p;
+        //     if(device_sample_points[2*points_parent[p]] == -1){
+        //         device_sample_points[2*points_parent[p]] = N;
+        //     }
+        //     atomicMin(&device_sample_points[2*points_parent[p]], p);
+        //     atomicMax(&device_sample_points[2*points_parent[p] + 1], p);
+        // }
+
+        // __syncwarp();
+        // __syncthreads();
+    }
+}
+
+#endif
