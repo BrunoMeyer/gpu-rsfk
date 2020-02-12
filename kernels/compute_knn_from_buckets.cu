@@ -36,13 +36,14 @@ void compute_knn_from_buckets(int* points_parent,
     typepoints local_knn_sqr_dist[MAX_TREE_CHILD];
 
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
+        __syncthreads();
+        // __syncwarp();
         parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
         bucket_size = child_count[parent_id];
         for(int i=0; i < K; ++i){
             local_knn_indices[i] = knn_indices[p*K+i];
             local_knn_sqr_dist[i] = knn_sqr_dist[p*K+i];
         }
-        // __syncthreads();
 
         // TODO: Run a first scan?
         max_id_point = 0;
@@ -74,6 +75,7 @@ void compute_knn_from_buckets(int* points_parent,
                 }
             }
         }
+        __syncthreads();
         for(int i=0; i < K; ++i){
             knn_indices[p*K+i]  = local_knn_indices[i];
             knn_sqr_dist[p*K+i] = local_knn_sqr_dist[i];

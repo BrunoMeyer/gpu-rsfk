@@ -131,73 +131,15 @@ class Cron
 
 
 
-int main(int argc,char* argv[]) {
-    // test_random<<<1,1>>>();
-    // test_dynamic_vec_reg<<<1,1>>>(15);
-    // thrust::device_vector<int> test_var(sizeof(int), 0);
-    // test_atomic<<<1,1>>>(thrust::raw_pointer_cast(test_var.data()),15);
-    
-    
-    // thrust::device_vector<int>* device_test;
-    // device_test = new thrust::device_vector<int>(10);
-    // test_cuda_dynamic_declaration<<<1,1>>>(thrust::raw_pointer_cast(device_test[0]->data()), 10);
-    // cudaDeviceSynchronize();
-    // thrust::copy(device_test->begin(), device_test->end(), std::ostream_iterator<int>(std::cout, "\n"));
-
-    // cudaDeviceSynchronize();
-    // return 0;
-
-    // srand (time(NULL));
-    if(argc < 6){
-        std::cout << "Error. run with ./binary <Total of points> <Dimensions> <Max Depth> <Verbose> <Dataset ID>" << std::endl;
-        return 1;
-    }
-    srand(RANDOM_SEED);
-
-    int N = atoi(argv[1]);
-    int D = atoi(argv[2]);
-    int MAX_DEPTH = atoi(argv[3]);
-    int VERBOSE = atoi(argv[4]);
-    int DS = atoi(argv[5]);
-
-
-    
-    std::vector<typepoints> points(N*D);
-    std::vector<int> labels(N*D);
-
-    int l;
-    string type_init;
-    if(DS == 0){
-        type_init = "SPLITED_LINE";
-    }
-    if(DS == 1){
-        type_init = "UNIFORM_SQUARE";
-    }
-
-    for(int i=0; i < N; ++i){
-        if(type_init == "UNIFORM_SQUARE"){
-            l = rand() % N;
-        }
-        if(type_init == "SPLITED_LINE"){
-            l = i;
-        }
-
-        for(int j=0; j < D; ++j){
-            if(type_init == "UNIFORM_SQUARE"){
-                points[i*D+j] = rand() % N;
-            }
-            if(type_init == "SPLITED_LINE"){
-                points[i*D+j] = l + (l>N/2)*N/2;
-            }
-        }
-        labels[i] = (l>N/2);
-    }
-
-
-    thrust::device_vector<typepoints> device_points(points.begin(), points.end());
-
-    
-
+void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
+                  std::vector<typepoints> &points,
+                  thrust::device_vector<int> &device_knn_indices,
+                  thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                  std::vector<int> &knn_indices,
+                  std::vector<typepoints> &knn_sqr_distances,
+                  int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                  string run_name="out.png")
+{
     thrust::device_vector<typepoints>** device_tree = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
     thrust::device_vector<int>** device_tree_parents = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
     thrust::device_vector<int>** device_tree_children = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
@@ -452,15 +394,10 @@ int main(int argc,char* argv[]) {
     thrust::copy(device_count_buckets.begin(), device_count_buckets.begin() + MAX_NODES, count_buckets.begin());
     cudaDeviceSynchronize();
 
-
-    int K = 64;
-
     
     
-    thrust::device_vector<int> device_knn_indices(N*K, -1);
-    std::vector<int> knn_indices(N*K);
-    thrust::device_vector<typepoints> device_knn_sqr_distances(N*K, FLT_MAX); // 0x7f800000 is a "infinite" float value
-    std::vector<int> knn_sqr_distances(N*K);
+    
+
 
     Cron cron_knn;
     cron_knn.start();
@@ -479,10 +416,10 @@ int main(int argc,char* argv[]) {
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
 
     thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices.begin());
-    thrust::copy(knn_sqr_distances.begin(), knn_sqr_distances.begin() + N*K, knn_sqr_distances.begin());
+    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances.begin());
     cudaDeviceSynchronize();
 
-    if(VERBOSE >= 3){
+    if(VERBOSE >= 2){
         std::cout << "Points neighbors" << std::endl;
         for(int i=0; i < 1*16; i+=1){
             std::cout << i << ": ";
@@ -518,7 +455,7 @@ int main(int argc,char* argv[]) {
         printf("KNN computation Kernel takes %lf seconds\n", cron_knn.t_total/1000);
     }
 
-    if(VERBOSE >= 2){
+    if(VERBOSE >= 3){
 
         set<int> s; 
     
@@ -542,6 +479,113 @@ int main(int argc,char* argv[]) {
 
         }
         // plt::show();
-        plt::save("out.png");
+        plt::save(run_name);
     }
+}
+
+
+void knn_gpu_rptk_forest(int n_trees,
+                         std::vector<typepoints> &points,
+                         std::vector<int> &knn_indices,
+                         std::vector<typepoints> &knn_sqr_distances,
+                         int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                         string run_name="out")
+{
+    thrust::device_vector<typepoints> device_points(points.begin(), points.end());
+    thrust::device_vector<int> device_knn_indices(knn_indices.begin(), knn_indices.end());
+    thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances.begin(), knn_sqr_distances.end());
+
+    Cron forest_total_cron;
+    forest_total_cron.start();
+    for(int i=0; i < n_trees; ++i){
+        knn_gpu_rptk(device_points,
+                     points,
+                     device_knn_indices,
+                     device_knn_sqr_distances,
+                     knn_indices,
+                     knn_sqr_distances,
+                     K, N, D, MAX_DEPTH, VERBOSE-1,
+                     run_name+"_"+std::to_string(i));
+    }
+
+    forest_total_cron.stop();
+    if(VERBOSE >= 1){
+        printf("Creating RPTK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
+    }
+    
+}
+
+int main(int argc,char* argv[]) {
+    // test_random<<<1,1>>>();
+    // test_dynamic_vec_reg<<<1,1>>>(15);
+    // thrust::device_vector<int> test_var(sizeof(int), 0);
+    // test_atomic<<<1,1>>>(thrust::raw_pointer_cast(test_var.data()),15);
+    
+    
+    // thrust::device_vector<int>* device_test;
+    // device_test = new thrust::device_vector<int>(10);
+    // test_cuda_dynamic_declaration<<<1,1>>>(thrust::raw_pointer_cast(device_test[0]->data()), 10);
+    // cudaDeviceSynchronize();
+    // thrust::copy(device_test->begin(), device_test->end(), std::ostream_iterator<int>(std::cout, "\n"));
+
+    // cudaDeviceSynchronize();
+    // return 0;
+
+    // srand (time(NULL));
+    if(argc < 6){
+        std::cout << "Error. run with ./binary <Total of points> <Dimensions> <Max Depth> <Verbose> <Dataset ID>" << std::endl;
+        return 1;
+    }
+    srand(RANDOM_SEED);
+
+    int N = atoi(argv[1]);
+    int D = atoi(argv[2]);
+    int MAX_DEPTH = atoi(argv[3]);
+    int VERBOSE = atoi(argv[4]);
+    int DS = atoi(argv[5]);
+
+
+    
+    std::vector<typepoints> points(N*D);
+    std::vector<int> labels(N*D);
+
+    int l;
+    string type_init;
+    if(DS == 0){
+        type_init = "SPLITED_LINE";
+    }
+    if(DS == 1){
+        type_init = "UNIFORM_SQUARE";
+    }
+
+    for(int i=0; i < N; ++i){
+        if(type_init == "UNIFORM_SQUARE"){
+            l = rand() % N;
+        }
+        if(type_init == "SPLITED_LINE"){
+            l = i;
+        }
+
+        for(int j=0; j < D; ++j){
+            if(type_init == "UNIFORM_SQUARE"){
+                points[i*D+j] = rand() % N;
+            }
+            if(type_init == "SPLITED_LINE"){
+                points[i*D+j] = l + (l>N/2)*N/2;
+            }
+        }
+        labels[i] = (l>N/2);
+    }
+
+
+    
+    int K = 8;
+
+    std::vector<int> knn_indices(N*K, -1);
+    std::vector<typepoints> knn_sqr_distances(N*K, FLT_MAX);
+    
+    // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run1");
+    // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run2");
+    knn_gpu_rptk_forest(5, points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run");
+
 }

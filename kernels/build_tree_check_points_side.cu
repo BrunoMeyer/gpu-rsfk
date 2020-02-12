@@ -57,7 +57,7 @@ void build_tree_check_points_side(typepoints* tree,
         if(sample_points[4*points_parent[p]  + 2*is_right    ] == -1){
             sample_points[4*points_parent[p]  + 2*is_right    ] = N;
         }
-
+        // __syncthreads();
         // device_sample_points[4*points_parent[p]  + 2*is_right + curand(&r) % 2] = p;
 
         atomicMin(&sample_points[4*points_parent[p]  + 2*is_right    ], p);
