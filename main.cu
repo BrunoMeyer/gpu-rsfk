@@ -53,7 +53,7 @@ using namespace std;
 // #define RANDOM_SEED 42
 #define RANDOM_SEED 0
 #define MAX_K 1024
-#define MAX_TREE_CHILD 16
+#define MAX_TREE_CHILD 128
 
 #define HEAP_PARENT(i) ((i-1)/2)
 #define HEAP_LEFT(i) ((2*i)+1)
@@ -622,7 +622,7 @@ int main(int argc,char* argv[]) {
     cudaDeviceSynchronize();
 
     std::cout << "Points neighbors" << std::endl;
-    for(int i=0; i < 4*8; i+=4){
+    for(int i=0; i < 1*16; i+=1){
         std::cout << i << ": ";
         for(int j=0; j < K; ++j) std::cout << knn_indices[i*K+j] << " ";
         std::cout << std::endl;

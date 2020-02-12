@@ -618,7 +618,7 @@ float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
 
     for(int i=0; i < D; ++i){
         diff = v1[i] - v2[i];
-        ret += diff;
+        ret += diff*diff;
     }
 
     return ret;
@@ -667,6 +667,7 @@ void compute_knn_from_buckets(int* points_parent,
         //     }
         // }
         
+        // printf("DEBUG9: %d\n", bucket_size);
         for(int i=0; i < bucket_size; ++i){
             tmp_point = bucket_nodes[max_bucket_size*parent_id + i];
             if(p == tmp_point) continue;
