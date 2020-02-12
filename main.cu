@@ -53,7 +53,7 @@ using namespace std;
 // #define RANDOM_SEED 42
 #define RANDOM_SEED 0
 #define MAX_K 1024
-#define MAX_TREE_CHILD 64
+#define MAX_TREE_CHILD 16
 
 #define HEAP_PARENT(i) ((i-1)/2)
 #define HEAP_LEFT(i) ((2*i)+1)
@@ -605,6 +605,8 @@ int main(int argc,char* argv[]) {
     cron_knn.start();
 
     compute_knn_from_buckets<<<mp,nt>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                        thrust::raw_pointer_cast(device_points_depth.data()),
+                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
                                         thrust::raw_pointer_cast(device_count_buckets.data()),
                                         thrust::raw_pointer_cast(device_points.data()),
                                         thrust::raw_pointer_cast(device_nodes_buckets.data()),

@@ -626,6 +626,8 @@ float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
 
 __global__
 void compute_knn_from_buckets(int* points_parent,
+                              int* points_depth,
+                              int* accumulated_nodes_count,
                               int* child_count,
                               typepoints* points,
                               int* bucket_nodes,
@@ -644,7 +646,7 @@ void compute_knn_from_buckets(int* points_parent,
     typepoints local_knn_sqr_dist[MAX_TREE_CHILD];
 
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
-        parent_id = points_parent[p];
+        parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
         bucket_size = child_count[parent_id];
         // __syncthreads();
         for(int i=0; i < K; ++i){
