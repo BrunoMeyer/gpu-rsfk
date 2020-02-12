@@ -31,17 +31,13 @@ void compute_knn_from_buckets(int* points_parent,
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     int parent_id, bucket_size, max_id_point, tmp_point;
     typepoints max_dist_val, tmp_dist_val;
-    // __shared__ int local_knn_indices[];
-    // __shared__ typepoints local_knn_sqr_dist[];
-    // extern __shared__ int local_knn_indices[];
-    // extern __shared__ typepoints local_knn_sqr_dist[];
+    
     int local_knn_indices[MAX_TREE_CHILD];
     typepoints local_knn_sqr_dist[MAX_TREE_CHILD];
 
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
         parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
         bucket_size = child_count[parent_id];
-        // __syncthreads();
         for(int i=0; i < K; ++i){
             local_knn_indices[i] = knn_indices[p*K+i];
             local_knn_sqr_dist[i] = knn_sqr_dist[p*K+i];
@@ -60,7 +56,6 @@ void compute_knn_from_buckets(int* points_parent,
         //     }
         // }
         
-        // printf("DEBUG9: %d\n", bucket_size);
         for(int i=0; i < bucket_size; ++i){
             tmp_point = bucket_nodes[max_bucket_size*parent_id + i];
             if(p == tmp_point) continue;
@@ -73,22 +68,16 @@ void compute_knn_from_buckets(int* points_parent,
                 max_dist_val = tmp_dist_val;
                 for(int j=0; j < K; ++j){
                     if(local_knn_sqr_dist[j] > max_dist_val){
-                        // tmp_dist_val = local_knn_sqr_dist[j];
                         max_id_point = j;
                         max_dist_val = local_knn_sqr_dist[j];
                     }
                 }
             }
-
-            // __syncthreads();
         }
-        // __syncthreads();
         for(int i=0; i < K; ++i){
             knn_indices[p*K+i]  = local_knn_indices[i];
             knn_sqr_dist[p*K+i] = local_knn_sqr_dist[i];
         }
-        // __syncthreads();
-        
     }
 }
 

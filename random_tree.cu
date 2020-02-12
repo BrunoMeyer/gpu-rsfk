@@ -127,28 +127,28 @@ void test_cuda_dynamic_declaration(int* arr, int N)
 
 
 
-__global__
-void summary_tree(typepoints* tree,
-                  bool* is_leaf,
-                  int* device_child_count,
-                  int* leaf_subtree_count,
-                  typepoints* points,
-                  int N, int D, int max_nodes)
-{
-    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+// __global__
+// void summary_tree(typepoints* tree,
+//                   bool* is_leaf,
+//                   int* device_child_count,
+//                   int* leaf_subtree_count,
+//                   typepoints* points,
+//                   int N, int D, int max_nodes)
+// {
+//     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
 
-    for(int i=tid; i < max_nodes; ++i){
-        int node = i;
-        while(node>0){
-            if(is_leaf[i]){
-                atomicAdd(&leaf_subtree_count[node], 1);
-            }
-            node = HEAP_PARENT(node);
-            // __syncthreads();
-        }
-    }
-}
+//     for(int i=tid; i < max_nodes; ++i){
+//         int node = i;
+//         while(node>0){
+//             if(is_leaf[i]){
+//                 atomicAdd(&leaf_subtree_count[node], 1);
+//             }
+//             node = HEAP_PARENT(node);
+//             // __syncthreads();
+//         }
+//     }
+// }
 
 
 

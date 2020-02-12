@@ -19,7 +19,6 @@ void build_tree_count_new_nodes(typepoints* tree,
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     for(int node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){
-        // printf("DEBUG8: %d %d\n", 4*node_thread, node_thread);
         if(child_count[node_thread] > MAX_TREE_CHILD){
             if((sample_points[4*node_thread+0] != -1 && sample_points[4*node_thread+1] != -1)) atomicAdd(count_new_nodes, 1);
             if((sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 1);

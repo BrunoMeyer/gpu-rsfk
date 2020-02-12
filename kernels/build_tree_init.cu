@@ -21,13 +21,10 @@ void build_tree_init(typepoints* tree,
     curand_init(RANDOM_SEED+tid, // the seed controls the sequence of random values that are produced
             blockIdx.x,  // the sequence number is only important with multiple cores 
             tid,  // the offset is how much extra we advance in the sequence for each call, can be 0 
-            //   &states[blockIdx.x]);
             &r);
 
     int p1, p2;
     // Sample two random points
-
-
     if(tid == 0){
         p1 = curand(&r) % N;
         p2 = p1;
@@ -35,13 +32,9 @@ void build_tree_init(typepoints* tree,
         while(p1 == p2 && N > 1){
             p2 = curand(&r) % N;
         }
-        // printf("Sampled points: %d %d\n", p1,p2);
-
-        // create_node(-1, tree,tree_parents, tree_children, tree_count, p1, p2, points, D);
         create_root(tree, tree_parents, tree_children, tree_count, p1, p2, points, D);
         *actual_depth = 1;
         depth_level_count[0] = 1;
-        // depth_level_count[1] = 2;
 
         is_leaf[0] = false;
         child_count[0] = N;
