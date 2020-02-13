@@ -132,13 +132,13 @@ class Cron
 class RPTK
 {
 public:
-    std::vector<typepoints> &points;
-    std::vector<int> &knn_indices;
-    std::vector<typepoints> &knn_sqr_distances;
+    typepoints* points;
+    int* knn_indices;
+    typepoints* knn_sqr_distances;
     
-    RPTK(std::vector<typepoints> &points,
-         std::vector<int> &knn_indices,
-         std::vector<typepoints> &knn_sqr_distances):
+    RPTK(typepoints* points,
+         int* knn_indices,
+         typepoints* knn_sqr_distances):
          points(points),
          knn_indices(knn_indices),
          knn_sqr_distances(knn_sqr_distances){}
@@ -435,8 +435,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     cron_knn.stop();    
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
 
-    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices.begin());
-    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances.begin());
+    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
+    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
     cudaDeviceSynchronize();
 
     if(VERBOSE >= 2){
@@ -508,9 +508,9 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
                                int K, int N, int D, int MAX_DEPTH, int VERBOSE,
                                string run_name="out")
 {
-    thrust::device_vector<typepoints> device_points(points.begin(), points.end());
-    thrust::device_vector<int> device_knn_indices(knn_indices.begin(), knn_indices.end());
-    thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances.begin(), knn_sqr_distances.end());
+    thrust::device_vector<typepoints> device_points(points, points+N*D);
+    thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
+    thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
 
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -560,7 +560,16 @@ int main(int argc,char* argv[]) {
 
 
     
-    std::vector<typepoints> points(N*D);
+    typepoints* points = (typepoints*) malloc(sizeof(typepoints)*N*D);
+    int K = 8;
+
+    int* knn_indices = (int*) malloc(sizeof(int)*N*K);
+    std::fill_n(knn_indices, N*K, -1);
+
+    typepoints* knn_sqr_distances = (typepoints*) malloc(sizeof(typepoints)*N*K);
+    std::fill_n(knn_sqr_distances, N*K, FLT_MAX);
+
+
     std::vector<int> labels(N*D);
 
     int l;
@@ -593,10 +602,7 @@ int main(int argc,char* argv[]) {
 
 
     
-    int K = 8;
-
-    std::vector<int> knn_indices(N*K, -1);
-    std::vector<typepoints> knn_sqr_distances(N*K, FLT_MAX);
+    
     
     // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run1");
     // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run2");

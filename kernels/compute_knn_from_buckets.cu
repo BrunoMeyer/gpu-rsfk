@@ -61,7 +61,8 @@ void compute_knn_from_buckets(int* points_parent,
             tmp_point = bucket_nodes[max_bucket_size*parent_id + i];
             if(p == tmp_point) continue;
 
-            tmp_dist_val = euclidean_distance_sqr(&points[tmp_point], &points[p], D);
+            tmp_dist_val = euclidean_distance_sqr(&points[tmp_point*D], &points[p*D], D);
+            
             if(tmp_dist_val < max_dist_val){
                 local_knn_indices[max_id_point] = tmp_point;
                 local_knn_sqr_dist[max_id_point] = tmp_dist_val;
