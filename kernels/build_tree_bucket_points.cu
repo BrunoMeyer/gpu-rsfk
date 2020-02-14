@@ -13,6 +13,7 @@ void build_tree_bucket_points(int* points_parent,
     int my_id_on_bucket, parent_id;
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
         parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
+        // printf("%d\n", parent_id);
         my_id_on_bucket = atomicAdd(&count_buckets[parent_id], 1);
         bucket_nodes[parent_id*bucket_size + my_id_on_bucket] = p;
     }

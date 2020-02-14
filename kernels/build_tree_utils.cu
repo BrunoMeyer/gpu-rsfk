@@ -3,8 +3,13 @@
 
 __global__
 void
-build_tree_utils(int* actual_depth, int* depth_level_count, int* count_new_nodes, int* tree_count){
+build_tree_utils(int* actual_depth,
+                 int* depth_level_count,
+                 int* count_new_nodes,
+                 int* tree_count,
+                 int* accumulated_nodes_count){
     depth_level_count[*actual_depth] = *count_new_nodes;
+    accumulated_nodes_count[*actual_depth] = accumulated_nodes_count[*actual_depth-1] + *count_new_nodes;
     *actual_depth = *actual_depth+1;
     *count_new_nodes = 0;
     *tree_count = 0;
@@ -27,6 +32,7 @@ build_tree_fix(int* depth_level_count,
 __global__
 void
 build_tree_max_leaf_size(int* max_leaf_size,
+                         int* min_leaf_size,
                          int* total_leafs,
                          bool* is_leaf,
                          int* child_count,
@@ -38,7 +44,9 @@ build_tree_max_leaf_size(int* max_leaf_size,
 
     for(int node=tid; node < depth_level_count[depth]; node+=blockDim.x*gridDim.x){
         if(is_leaf[node]){
+            // printf("child_count[node]: %d\n",child_count[node]);
             atomicMax(max_leaf_size, child_count[node]);
+            atomicMin(min_leaf_size, child_count[node]);
             atomicAdd(total_leafs, 1);
         }
     }

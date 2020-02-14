@@ -28,7 +28,7 @@ void build_tree_check_points_side(typepoints* tree,
                                   int* actual_depth,
                                   int* tree_count,
                                   int* depth_level_count,
-                                  int N, int D)
+                                  int N, int D, int RANDOM_SEED)
 {
     // curandState_t r; 
     // curand_init(RANDOM_SEED+tid, // the seed controls the sequence of random values that are produced
@@ -47,9 +47,9 @@ void build_tree_check_points_side(typepoints* tree,
         
         if(points_depth[p] < *actual_depth-1) continue;
         
+        // printf("%d %d\n", p, points_parent[p]);
         is_right = check_hyperplane_side(points_parent[p], p, tree, points, D);
         is_right_child[p] = is_right;
-
         // Threats to Validity: This assumes that all the follow properties are false:
         // - The atomic operations assumes an arbitrary/random order
         // - The points are shuffled
@@ -57,8 +57,6 @@ void build_tree_check_points_side(typepoints* tree,
         if(sample_points[4*points_parent[p]   + 2*is_right] == -1){
             sample_points[4*points_parent[p]  + 2*is_right] = N;
         }
-        // __syncthreads();
-        // device_sample_points[4*points_parent[p]  + 2*is_right + curand(&r) % 2] = p;
 
         atomicMin(&sample_points[4*points_parent[p] + 2*is_right    ], p);
         atomicMax(&sample_points[4*points_parent[p] + 2*is_right + 1], p);

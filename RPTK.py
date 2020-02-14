@@ -21,10 +21,13 @@ def ord_string(s):
 
 class RPTK(object):
     def __init__(self,
-                 num_nearest_neighbors
+                 num_nearest_neighbors,
+                 random_state=0
             ):
-        self.num_nearest_neighbors = num_nearest_neighbors
-        
+        self.num_nearest_neighbors = int(num_nearest_neighbors)
+        self.random_state = int(random_state)
+
+
         # Build the hooks for the BH T-SNE library
         self._path = pkg_resources.resource_filename('RPTK','') # Load from current location
         # self._faiss_lib = np.ctypeslib.load_library('libfaiss', self._path) # Load the ctypes library
@@ -38,15 +41,17 @@ class RPTK(object):
                 ctypes.c_int, # number of nearest neighbors
                 ctypes.c_int, # total of points
                 ctypes.c_int, # dimensions of points
+                ctypes.c_int, # maximum tree node children
                 ctypes.c_int, # maximum depth of tree
                 ctypes.c_int, # verbose (1,2,3 or 4)
+                ctypes.c_int, # random state/seed
                 np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
                 np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
-                np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, F_CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
+                np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
                 # TODO: run name - Char pointer?
                 ]
 
-    def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500, verbose=1):
+    def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500, verbose=1, max_tree_chlidren=256):
 
         N = points.shape[0]
         D = points.shape[1]
@@ -54,16 +59,18 @@ class RPTK(object):
         
         self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
         self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
-        self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['F_CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+        self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
 
         self._lib.pymodule_rptk_knn(
-                ctypes.c_int(n_trees), # dimensions of projection
-                ctypes.c_int(K), # dimensions of projection
-                ctypes.c_int(N), # dimensions of projection
-                ctypes.c_int(D), # dimensions of projection
-                ctypes.c_int(max_tree_depth), # dimensions of projection
-                ctypes.c_int(verbose), # dimensions of projection
+                ctypes.c_int(n_trees), # number of trees
+                ctypes.c_int(K), # number of nearest neighbors
+                ctypes.c_int(N), # total of points
+                ctypes.c_int(D), # dimensions of points
+                ctypes.c_int(max_tree_chlidren), # maximum depth of tree
+                ctypes.c_int(max_tree_depth), # maximum depth of tree
+                ctypes.c_int(verbose), # verbose (1,2,3 or 4)
+                ctypes.c_int(self.random_state), # random state/seed
                 self.points,
                 self._knn_indices,
                 self._knn_squared_dist)
@@ -93,31 +100,45 @@ def get_nne_rate(h_indices, l_indices, random_state=0, max_k=32,
     qnx = float(total_T)/(N * max_k)
 
     rnx = ((N-1)*qnx-max_k)/(N-1-max_k)
+    # return qnx
     return rnx
 
 if __name__ == "__main__":
     from datasets import load_dataset, load_dataset_knn
-    from test_sklearn import get_nne_rate
 
-    K = 5
-    rptk = RPTK(K)
+    K = 64
+    
 
     # N = 2048
     # D = 2
     # dataX = np.random.random((N,D)).astype(np.float32)
     
-    DATA_SET = "CIFAR"
+    DATA_SET = "LUCID_INCEPTION"
+    # DATA_SET = "MNIST_SKLEARN"
     dataX, dataY = load_dataset(DATA_SET)
+    new_indices = np.arange(len(dataX))
+    # np.random.shuffle(new_indices)
 
     real_sqd_dist, real_indices = load_dataset_knn(DATA_SET)
-    real_indices = real_indices[:,:K]
-    real_sqd_dist = real_sqd_dist[:,:K]
+    real_indices = real_indices[new_indices,:K]
+    real_sqd_dist = real_sqd_dist[new_indices,:K]
 
-    indices, dist = rptk.find_nearest_neighbors(dataX, n_trees=1,verbose=3)
+    rptk = RPTK(K, random_state=42)
+    indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
+                                                max_tree_chlidren=K*10,
+                                                max_tree_depth=100,
+                                                n_trees=5,
+                                                verbose=2)
 
     print(indices, dist)
     print(real_indices, real_sqd_dist)
 
-    print(get_nne_rate(real_indices,indices))
+    print(indices.shape, dist.shape)
+    print(real_indices.shape, real_sqd_dist.shape)
+
+    print(get_nne_rate(real_indices,indices, max_k=K))
 
     print(np.sum(indices==-1))
+
+    for i in np.where(indices==-1)[0]:
+        print(indices[i])

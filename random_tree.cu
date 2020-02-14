@@ -7,7 +7,7 @@
 #include "kernels/create_node.cu"
 
 __global__
-void test_random()
+void test_random(int RANDOM_SEED)
 {
     curandState_t r; 
     curand_init(RANDOM_SEED, /* the seed controls the sequence of random values that are produced */
@@ -45,7 +45,7 @@ test_atomic(int* v, int v2)
 
 
 __global__
-void test(typepoints* arr, int N, int D)
+void test(typepoints* arr, int N, int D, int RANDOM_SEED)
 {
     curandState_t r; 
     curand_init(RANDOM_SEED, /* the seed controls the sequence of random values that are produced */

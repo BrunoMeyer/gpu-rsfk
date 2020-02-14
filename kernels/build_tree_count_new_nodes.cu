@@ -15,7 +15,7 @@ void build_tree_count_new_nodes(typepoints* tree,
                                 int* tree_count,
                                 int* depth_level_count,
                                 int* count_new_nodes,
-                                int N, int D)
+                                int N, int D, int MAX_TREE_CHILD)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     for(int node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){

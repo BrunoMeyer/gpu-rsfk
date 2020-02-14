@@ -51,9 +51,9 @@ using namespace std;
 #define typepoints float
 // #define MAX_DEPTH 11
 // #define RANDOM_SEED 42
-#define RANDOM_SEED 0
+// #define RANDOM_SEED 0
 #define MAX_K 1024
-#define MAX_TREE_CHILD 128
+// #define MAX_TREE_CHILD 128
 
 #define HEAP_PARENT(i) ((i-1)/2)
 #define HEAP_LEFT(i) ((2*i)+1)
@@ -135,29 +135,38 @@ public:
     typepoints* points;
     int* knn_indices;
     typepoints* knn_sqr_distances;
+    int MAX_TREE_CHILD;
+    int MAX_DEPTH;
+    int RANDOM_SEED;
     
     RPTK(typepoints* points,
          int* knn_indices,
-         typepoints* knn_sqr_distances):
+         typepoints* knn_sqr_distances,
+         int MAX_TREE_CHILD,
+         int MAX_DEPTH,
+         int RANDOM_SEED):
          points(points),
          knn_indices(knn_indices),
-         knn_sqr_distances(knn_sqr_distances){}
+         knn_sqr_distances(knn_sqr_distances),
+         MAX_TREE_CHILD(MAX_TREE_CHILD),
+         MAX_DEPTH(MAX_DEPTH),
+         RANDOM_SEED(RANDOM_SEED){}
     
     void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                       thrust::device_vector<int> &device_knn_indices,
                       thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                      int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                      int K, int N, int D, int VERBOSE,
                       string run_name);
     
     void knn_gpu_rptk_forest(int n_trees,
-                             int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                             int K, int N, int D, int VERBOSE,
                              string run_name);
 };
 
 void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                         thrust::device_vector<int> &device_knn_indices,
                         thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                        int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                        int K, int N, int D, int VERBOSE,
                         string run_name="out.png")
 {
     thrust::device_vector<typepoints>** device_tree = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
@@ -206,7 +215,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                                thrust::raw_pointer_cast(device_actual_depth.data()),
                                thrust::raw_pointer_cast(device_tree_count.data()),
                                thrust::raw_pointer_cast(device_depth_level_count.data()),
-                               N, D);
+                               thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                               N, D, RANDOM_SEED);
     cudaDeviceSynchronize();
     CudaTest((char *)"build_tree_init Kernel failed!");
 
@@ -239,7 +249,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                                    thrust::raw_pointer_cast(device_actual_depth.data()),
                                    thrust::raw_pointer_cast(device_tree_count.data()),
                                    thrust::raw_pointer_cast(device_depth_level_count.data()),
-                                   N, D);
+                                   N, D, RANDOM_SEED);
         cudaDeviceSynchronize();
         check_points_side_cron.stop();
         CudaTest((char *)"build_tree_check_points_side Kernel failed!");
@@ -247,19 +257,19 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 
          tree_count_cron.start();
         build_tree_count_new_nodes<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
-                                   thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
-                                   thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
-                                   thrust::raw_pointer_cast(device_points_parent.data()),
-                                   thrust::raw_pointer_cast(device_is_right_child.data()),
-                                   thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
-                                   thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
-                                   thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
-                                   thrust::raw_pointer_cast(device_points.data()),
-                                   thrust::raw_pointer_cast(device_actual_depth.data()),
-                                   thrust::raw_pointer_cast(device_tree_count.data()),
-                                   thrust::raw_pointer_cast(device_depth_level_count.data()),
-                                   thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                   N, D);
+                                              thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
+                                              thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
+                                              thrust::raw_pointer_cast(device_points_parent.data()),
+                                              thrust::raw_pointer_cast(device_is_right_child.data()),
+                                              thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                              thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
+                                              thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
+                                              thrust::raw_pointer_cast(device_points.data()),
+                                              thrust::raw_pointer_cast(device_actual_depth.data()),
+                                              thrust::raw_pointer_cast(device_tree_count.data()),
+                                              thrust::raw_pointer_cast(device_depth_level_count.data()),
+                                              thrust::raw_pointer_cast(device_count_new_nodes.data()),
+                                              N, D, MAX_TREE_CHILD);
         cudaDeviceSynchronize();
         tree_count_cron.stop();
         CudaTest((char *)"build_tree_count_new_nodes Kernel failed!");
@@ -287,6 +297,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                                            thrust::raw_pointer_cast(device_tree_parents[depth]->data()), // new depth is created
                                            thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                            thrust::raw_pointer_cast(device_points_parent.data()),
+                                           thrust::raw_pointer_cast(device_points_depth.data()),
                                            thrust::raw_pointer_cast(device_is_right_child.data()),
                                            thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
                                            thrust::raw_pointer_cast(device_is_leaf[depth]->data()), // new depth is created
@@ -297,7 +308,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                                            thrust::raw_pointer_cast(device_tree_count.data()),
                                            thrust::raw_pointer_cast(device_depth_level_count.data()),
                                            thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                           N, D);
+                                           thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                                           N, D, MAX_TREE_CHILD, RANDOM_SEED);
         cudaDeviceSynchronize();
         create_nodes_cron.stop();
         CudaTest((char *)"build_tree_create_nodes Kernel failed!");
@@ -319,11 +331,11 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                                              thrust::raw_pointer_cast(device_tree_count.data()),
                                              thrust::raw_pointer_cast(device_depth_level_count.data()),
                                              thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                             N, D);
+                                             N, D, MAX_TREE_CHILD);
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_update_parents Kernel failed!");
         build_tree_post_update_parents<<<mp,nt>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
-                                                  thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_tree_parents[depth]->data()), // new depth is created
                                                   thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                                   thrust::raw_pointer_cast(device_points_parent.data()),
                                                   thrust::raw_pointer_cast(device_points_depth.data()),
@@ -331,12 +343,13 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                                                   thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
                                                   thrust::raw_pointer_cast(device_sample_points[depth-1]->data()),
                                                   thrust::raw_pointer_cast(device_child_count[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_child_count[depth]->data()), // new depth is created
                                                   thrust::raw_pointer_cast(device_points.data()),
                                                   thrust::raw_pointer_cast(device_actual_depth.data()),
                                                   thrust::raw_pointer_cast(device_tree_count.data()),
                                                   thrust::raw_pointer_cast(device_depth_level_count.data()),
                                                   thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                                  N, D);
+                                                  N, D, K, MAX_TREE_CHILD);
         cudaDeviceSynchronize();
         update_parents_cron.stop();
         CudaTest((char *)"build_tree_post_update_parents Kernel failed!");
@@ -345,7 +358,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
         build_tree_utils<<<1,1>>>(thrust::raw_pointer_cast(device_actual_depth.data()),
                                   thrust::raw_pointer_cast(device_depth_level_count.data()),
                                   thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                  thrust::raw_pointer_cast(device_tree_count.data()));
+                                  thrust::raw_pointer_cast(device_tree_count.data()),
+                                  thrust::raw_pointer_cast(device_accumulated_nodes_count.data()));
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_utils Kernel failed!");
 
@@ -367,10 +381,12 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     cron_classify_points.start();
 
     thrust::device_vector<int> device_max_leaf_size(1,0);
+    thrust::device_vector<int> device_min_leaf_size(1,INT_MAX);
     thrust::device_vector<int> device_total_leafs(1,0);
     
     for(depth=0; depth < MAX_DEPTH; ++depth){
         build_tree_max_leaf_size<<<mp,nt>>>(thrust::raw_pointer_cast(device_max_leaf_size.data()),
+                                            thrust::raw_pointer_cast(device_min_leaf_size.data()),
                                             thrust::raw_pointer_cast(device_total_leafs.data()),
                                             thrust::raw_pointer_cast(device_is_leaf[depth]->data()),
                                             thrust::raw_pointer_cast(device_child_count[depth]->data()),
@@ -382,13 +398,15 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     }
 
     
-    int max_child, total_leafs;
+    int max_child, total_leafs, min_child;
     thrust::copy(device_max_leaf_size.begin(), device_max_leaf_size.begin()+1, &max_child);
+    thrust::copy(device_min_leaf_size.begin(), device_min_leaf_size.begin()+1, &min_child);
     thrust::copy(device_total_leafs.begin(), device_total_leafs.begin()+1, &total_leafs);
     cudaDeviceSynchronize();
 
     if(VERBOSE >= 1){
         std::cout << "Max child count: " << max_child << std::endl;
+        std::cout << "Min child count: " << min_child << std::endl;
         std::cout << "Total leafs: " << total_leafs << std::endl;
     }
 
@@ -422,15 +440,15 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     Cron cron_knn;
     cron_knn.start();
 
-    compute_knn_from_buckets<<<mp,nt>>>(thrust::raw_pointer_cast(device_points_parent.data()),
-                                        thrust::raw_pointer_cast(device_points_depth.data()),
-                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
-                                        thrust::raw_pointer_cast(device_count_buckets.data()),
-                                        thrust::raw_pointer_cast(device_points.data()),
-                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                        thrust::raw_pointer_cast(device_knn_indices.data()),
-                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                        N, D, max_child, K);
+    compute_knn_from_buckets<<<mp,nt, MAX_TREE_CHILD>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                                        thrust::raw_pointer_cast(device_points_depth.data()),
+                                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                                                        thrust::raw_pointer_cast(device_count_buckets.data()),
+                                                        thrust::raw_pointer_cast(device_points.data()),
+                                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                                        thrust::raw_pointer_cast(device_knn_indices.data()),
+                                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                                        N, D, max_child, K, MAX_TREE_CHILD);
     cudaDeviceSynchronize();
     cron_knn.stop();    
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
@@ -455,7 +473,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
         // for(int i=MAX_NODES-1; i >= MAX_NODES-8; --i){
         //     // std::cout << i << "(" << count_buckets[i] << ") : ";
         //     for(int j=0; j < count_buckets[i]; ++j) std::cout << nodes_buckets[i*max_child+j] << " ";
-        //     // for(int j=0; j < MAX_TREE_CHILD; ++j) std::cout << nodes_buckets[i*MAX_TREE_CHILD+j] << " ";
+        //     // for(int j=0; j < max_child; ++j) std::cout << nodes_buckets[i*max_child+j] << " ";
         //     std::cout << std::endl;
         // }
     }
@@ -505,7 +523,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 
 
 void RPTK::knn_gpu_rptk_forest(int n_trees,
-                               int K, int N, int D, int MAX_DEPTH, int VERBOSE,
+                               int K, int N, int D, int VERBOSE,
                                string run_name="out")
 {
     thrust::device_vector<typepoints> device_points(points, points+N*D);
@@ -518,8 +536,9 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
         knn_gpu_rptk(device_points,
                      device_knn_indices,
                      device_knn_sqr_distances,
-                     K, N, D, MAX_DEPTH, VERBOSE-1,
+                     K, N, D, VERBOSE-1,
                      run_name+"_"+std::to_string(i));
+        RANDOM_SEED++;
     }
 
     forest_total_cron.stop();
@@ -550,6 +569,9 @@ int main(int argc,char* argv[]) {
         std::cout << "Error. run with ./binary <Total of points> <Dimensions> <Max Depth> <Verbose> <Dataset ID>" << std::endl;
         return 1;
     }
+
+    int RANDOM_SEED = 0;
+
     srand(RANDOM_SEED);
 
     int N = atoi(argv[1]);
@@ -607,7 +629,7 @@ int main(int argc,char* argv[]) {
     // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run1");
     // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run2");
 
-    RPTK rptk_knn(points, knn_indices, knn_sqr_distances);
-    rptk_knn.knn_gpu_rptk_forest(5, K, N, D, MAX_DEPTH, VERBOSE, "run");
+    RPTK rptk_knn(points, knn_indices, knn_sqr_distances, 256, MAX_DEPTH, RANDOM_SEED);
+    rptk_knn.knn_gpu_rptk_forest(5, K, N, D, VERBOSE, "run");
 
 }
