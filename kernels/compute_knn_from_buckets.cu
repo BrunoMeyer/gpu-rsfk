@@ -66,7 +66,7 @@ void compute_knn_from_buckets(int* points_parent,
         for(int i=0; i < bucket_size; ++i){
             __syncthreads();
             tmp_point = bucket_nodes[max_bucket_size*parent_id + i];
-            if(p == tmp_point) continue;
+            // if(p == tmp_point) continue;
             for(int j=0; j < K; ++j){
                 if(tmp_point == knn_indices[knn_id+j]){
                     tmp_point = -1;

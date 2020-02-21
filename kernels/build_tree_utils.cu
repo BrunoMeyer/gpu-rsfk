@@ -7,9 +7,17 @@ build_tree_utils(int* actual_depth,
                  int* depth_level_count,
                  int* count_new_nodes,
                  int* tree_count,
-                 int* accumulated_nodes_count){
+                 int* accumulated_nodes_count,
+                 int* child_count,
+                 int* accumulated_child_count){
     depth_level_count[*actual_depth] = *count_new_nodes;
     accumulated_nodes_count[*actual_depth] = accumulated_nodes_count[*actual_depth-1] + *count_new_nodes;
+    
+    // accumulated_child_count[0] = 0;
+    // for(int i=1; i < *count_new_nodes-1; ++i){
+    //     accumulated_child_count[i] = accumulated_child_count[i-1] + child_count[i-1];
+    // }
+    
     *actual_depth = *actual_depth+1;
     *count_new_nodes = 0;
     *tree_count = 0;

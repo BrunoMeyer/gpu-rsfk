@@ -22,11 +22,12 @@ def ord_string(s):
 class RPTK(object):
     def __init__(self,
                  num_nearest_neighbors,
-                 random_state=0
+                 random_state=0,
+                 add_bit_random_motion=True
             ):
         self.num_nearest_neighbors = int(num_nearest_neighbors)
         self.random_state = int(random_state)
-
+        self.add_bit_random_motion = bool(add_bit_random_motion)
 
         # Build the hooks for the BH T-SNE library
         self._path = pkg_resources.resource_filename('RPTK','') # Load from current location
@@ -52,10 +53,19 @@ class RPTK(object):
                 ]
 
     def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500, verbose=1, max_tree_chlidren=256):
-
+        n_trees = int(n_trees)
+        max_tree_depth = int(max_tree_depth)
+        verbose = int(verbose)
+        max_tree_chlidren = int(max_tree_chlidren)
         N = points.shape[0]
         D = points.shape[1]
         K = self.num_nearest_neighbors
+        
+        # points = np.array(points,dtype=np.float32)
+        # print(points.shape, type(points))
+        if(self.add_bit_random_motion):
+            points=points + np.random.uniform(-0.001,0.001,points.shape)
+        # print(points.shape, type(points))
         
         self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
         self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
@@ -108,30 +118,32 @@ if __name__ == "__main__":
 
     K = 64
     
-
     # N = 2048
     # D = 2
     # dataX = np.random.random((N,D)).astype(np.float32)
-    
-    DATA_SET = "LUCID_INCEPTION"
+    # DATA_SET = "MNIST"
+    DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    # DATA_SET = "LUCID_INCEPTION"
     # DATA_SET = "MNIST_SKLEARN"
     dataX, dataY = load_dataset(DATA_SET)
     new_indices = np.arange(len(dataX))
     # np.random.shuffle(new_indices)
 
     real_sqd_dist, real_indices = load_dataset_knn(DATA_SET)
-    real_indices = real_indices[new_indices,:K]
+    real_indices = real_indices[new_indices,:K].astype(np.int)
     real_sqd_dist = real_sqd_dist[new_indices,:K]
 
     rptk = RPTK(K, random_state=42)
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
-                                                max_tree_chlidren=K*10,
-                                                max_tree_depth=100,
-                                                n_trees=5,
+                                                max_tree_chlidren=K,
+                                                max_tree_depth=5000,
+                                                n_trees=4,
                                                 verbose=2)
 
-    print(indices, dist)
-    print(real_indices, real_sqd_dist)
+    idx = np.arange(len(dataX)).reshape((-1,1))
+    
+    print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
+    print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
 
     print(indices.shape, dist.shape)
     print(real_indices.shape, real_sqd_dist.shape)

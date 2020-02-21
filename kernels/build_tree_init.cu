@@ -15,6 +15,8 @@ void build_tree_init(typepoints* tree,
                      int* tree_count,
                      int* depth_level_count,
                      int* accumulated_nodes_count,
+                     int* accumulated_child_count,
+                     int* device_count_points_on_leafs,
                      int N, int D, int RANDOM_SEED)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
@@ -34,11 +36,13 @@ void build_tree_init(typepoints* tree,
             p2 = curand(&r) % N;
         }
         create_root(tree, tree_parents, tree_children, tree_count, p1, p2, points, D);
-        *actual_depth = 1;
         depth_level_count[0] = 1;
         accumulated_nodes_count[0] = 0;
         is_leaf[0] = false;
         child_count[0] = N;
+        accumulated_child_count[0] = 0;
+        // device_count_points_on_leafs[0] = N;
+        *actual_depth = 1;
     }
 }
 
