@@ -61,11 +61,8 @@ class RPTK(object):
         D = points.shape[1]
         K = self.num_nearest_neighbors
         
-        # points = np.array(points,dtype=np.float32)
-        # print(points.shape, type(points))
         if(self.add_bit_random_motion):
             points=points + np.random.uniform(-0.001,0.001,points.shape)
-        # print(points.shape, type(points))
         
         self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
         self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
@@ -137,7 +134,7 @@ if __name__ == "__main__":
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
                                                 max_tree_chlidren=K,
                                                 max_tree_depth=5000,
-                                                n_trees=4,
+                                                n_trees=1,
                                                 verbose=2)
 
     idx = np.arange(len(dataX)).reshape((-1,1))

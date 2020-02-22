@@ -41,7 +41,6 @@ void build_tree_init(typepoints* tree,
         is_leaf[0] = false;
         child_count[0] = N;
         accumulated_child_count[0] = 0;
-        // device_count_points_on_leafs[0] = N;
         *actual_depth = 1;
     }
 }

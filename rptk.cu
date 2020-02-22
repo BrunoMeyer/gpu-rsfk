@@ -49,15 +49,7 @@ using namespace std;
 #include <bits/stdc++.h> 
 
 #define typepoints float
-// #define MAX_DEPTH 11
-// #define RANDOM_SEED 42
-// #define RANDOM_SEED 0
-#define MAX_K 1024
-// #define MAX_TREE_CHILD 128
 
-#define HEAP_PARENT(i) ((i-1)/2)
-#define HEAP_LEFT(i) ((2*i)+1)
-#define HEAP_RIGHT(i) ((2*i)+2)
 
 #include "random_tree.cu"
 #include "kernels/build_tree_init.cu"
@@ -178,13 +170,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     thrust::device_vector<int>** device_accumulated_child_count = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
     thrust::device_vector<int>** device_count_points_on_leafs = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
 
-    // thrust::device_vector<typepoints>** device_tree_tmp = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
-    // thrust::device_vector<int>** device_tree_parents_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
-    // thrust::device_vector<int>** device_tree_children_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
-    // thrust::device_vector<bool>** device_is_leaf_tmp = (thrust::device_vector<bool>**) malloc(sizeof(thrust::device_vector<bool>*)*MAX_DEPTH);
-    // thrust::device_vector<int>** device_sample_points_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
-    // thrust::device_vector<int>** device_child_count_tmp = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
-    
+
 
     int MAX_NODES = 1;
     device_tree[0] = new thrust::device_vector<typepoints>(((D+1)*MAX_NODES));
@@ -294,7 +280,6 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
         thrust::copy(device_count_new_nodes.begin(), device_count_new_nodes.begin()+1, &count_new_nodes);
         if(count_new_nodes > 0){
             cudaDeviceSynchronize();
-            // std::cout << "Add " << count_new_nodes << " new nodes" << std::endl << std::endl;
             count_total_nodes+=count_new_nodes;
 
             device_tree[depth] = new thrust::device_vector<typepoints>(((D+1)*count_new_nodes));
@@ -416,10 +401,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
             std::cout << " | Total nodes: " << count_total_nodes << std::endl;
         }
 
-        // iterations_without_new_nodes = count_new_nodes == 0 ? iterations_without_new_nodes+1 : 0;
-        // if(iterations_without_new_nodes == 3){
         if(count_new_nodes == 0){
-            // depth++;
             if(VERBOSE >= 1) std::cout << "Early stop: 0 new nodes created." << std::endl;
             break;
         }
@@ -732,12 +714,6 @@ int main(int argc,char* argv[]) {
         labels[i] = (l>N/2);
     }
 
-
-    
-    
-    
-    // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run1");
-    // knn_gpu_rptk(points, knn_indices, knn_sqr_distances, K, N, D, MAX_DEPTH, VERBOSE, "run2");
 
     RPTK rptk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED);
     rptk_knn.knn_gpu_rptk_forest(5, K, N, D, VERBOSE, "run");

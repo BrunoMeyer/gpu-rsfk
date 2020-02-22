@@ -38,15 +38,9 @@ void build_tree_accumulate_child_count(int* depth_level_count,
                                        int* actual_depth)
 {
     accumulated_child_count[0] = 0;
-    // printf("%d\n",*count_new_nodes);
-    // printf("\n\naccumulated_child_count(%d): |0| ",depth_level_count[*actual_depth-1]);
-    // printf("\n\ncount_points_on_leafs(%d): |0| ",count_points_on_leafs[0]);
     for(int i=1; i < 2*depth_level_count[*actual_depth-1]; ++i){
         accumulated_child_count[i] = accumulated_child_count[i-1] + count_points_on_leafs[i-1];
-        // printf("|%d| ", accumulated_child_count[i]);
-        // printf("|%d| ", count_points_on_leafs[i]);
     }
-    // printf("\n\n");
 }
 
 __global__
@@ -72,11 +66,9 @@ void build_tree_organize_sample_candidates(int* points_parent,
     
     for(p = tid; p < N; p+=blockDim.x*gridDim.x){
         if(points_depth[p] < *actual_depth-1 || is_leaf[points_parent[p]]) continue;
-
         csi = points_id_on_sample[p];
         is_right = is_right_child[p];
         sample_candidate_points[accumulated_child_count[2*points_parent[p]+is_right]+csi] = p;
-        // printf("%d %d\n",accumulated_child_count[2*points_parent[p]+is_right]+csi,p);
     }
 }
 

@@ -25,7 +25,7 @@ void
 test_dynamic_vec_reg(int s)
 {
     // register int* arr = new int[s];
-    register int arr[MAX_K];
+    register int arr[1024];
     for(int i=0; i < s; ++i) arr[i] = i*10; 
     for(int i=0; i < s; ++i) printf("%d\n",arr[i]); 
 }
