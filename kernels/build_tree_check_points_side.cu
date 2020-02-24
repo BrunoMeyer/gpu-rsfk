@@ -22,7 +22,6 @@ void build_tree_check_points_side(typepoints* tree,
                                   int* points_depth,
                                   int* is_right_child,
                                   bool* is_leaf,
-                                  int* sample_points,
                                   int* child_count,
                                   typepoints* points,
                                   int* actual_depth,
@@ -59,15 +58,13 @@ void build_tree_check_points_side(typepoints* tree,
         // - The points are shuffled
 
         // for(int is_right=0; is_right < 2; is_right++){
-            if(sample_points[4*points_parent[p]   + 2*is_right] == -1){
-                sample_points[4*points_parent[p]  + 2*is_right] = N;
-            }
+            // if(sample_points[4*points_parent[p]   + 2*is_right] == -1){
+            //     sample_points[4*points_parent[p]  + 2*is_right] = N;
+            // }
             // sample_points[4*points_parent[p] + 2*is_right + curand(&r) % 2] =  p;
-            atomicMin(&sample_points[4*points_parent[p] + 2*is_right    ], p);
-            atomicMax(&sample_points[4*points_parent[p] + 2*is_right + 1], p);
+            // atomicMin(&sample_points[4*points_parent[p] + 2*is_right    ], p);
+            // atomicMax(&sample_points[4*points_parent[p] + 2*is_right + 1], p);
             
-            // sample_points[4*points_parent[p] + 2*is_right + 0] =  1;
-            // sample_points[4*points_parent[p] + 2*is_right + 1] =  1;
 
             // printf("%s: line %d: %d\n", __FILE__, __LINE__, 2*points_parent[p]+is_right);
             

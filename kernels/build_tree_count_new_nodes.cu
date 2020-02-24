@@ -8,7 +8,7 @@ void build_tree_count_new_nodes(typepoints* tree,
                                 int* points_parent,
                                 int* is_right_child,
                                 bool* is_leaf,
-                                int* sample_points,
+                                int* count_points_on_leafs,
                                 int* child_count,
                                 typepoints* points,
                                 int* actual_depth,
@@ -23,8 +23,10 @@ void build_tree_count_new_nodes(typepoints* tree,
         if(!is_leaf[node_thread] && child_count[node_thread] > 0){
             // if((sample_points[4*node_thread+0] != -1 && sample_points[4*node_thread+1] != -1)) atomicAdd(count_new_nodes, 1);
             // if((sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 1);
-            if((sample_points[4*node_thread+0] != -1 && sample_points[4*node_thread+1] != -1) ||
-               (sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 2);
+            // if((sample_points[4*node_thread+0] != -1 && sample_points[4*node_thread+1] != -1) ||
+            //    (sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 2);
+            if(count_points_on_leafs[2*node_thread+0] > 0 || count_points_on_leafs[2*node_thread+1] > 0) atomicAdd(count_new_nodes, 2);
+            
             // printf("%s: line %d : %d %d \n", __FILE__, __LINE__, depth_level_count[*actual_depth-1], *actual_depth);
         }
     }

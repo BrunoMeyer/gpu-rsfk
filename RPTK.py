@@ -112,8 +112,8 @@ def get_nne_rate(h_indices, l_indices, random_state=0, max_k=32,
 
 if __name__ == "__main__":
     from datasets import load_dataset, load_dataset_knn
-
-    K = 64
+    import time
+    K = 8
     
     # N = 2048
     # D = 2
@@ -126,28 +126,44 @@ if __name__ == "__main__":
     new_indices = np.arange(len(dataX))
     # np.random.shuffle(new_indices)
 
-    real_sqd_dist, real_indices = load_dataset_knn(DATA_SET)
+    real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
+    
     real_indices = real_indices[new_indices,:K].astype(np.int)
     real_sqd_dist = real_sqd_dist[new_indices,:K]
 
+
+    '''
     rptk = RPTK(K, random_state=42)
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
                                                 max_tree_chlidren=K,
                                                 max_tree_depth=5000,
-                                                n_trees=1,
-                                                verbose=2)
+                                                n_trees=5,
+                                                # verbose=0)
+                                                verbose=1)
 
     idx = np.arange(len(dataX)).reshape((-1,1))
     
-    print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
-    print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
+    # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
+    # print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
 
-    print(indices.shape, dist.shape)
-    print(real_indices.shape, real_sqd_dist.shape)
+    # print(indices.shape, dist.shape)
+    # print(real_indices.shape, real_sqd_dist.shape)
 
-    print(get_nne_rate(real_indices,indices, max_k=K))
+    print("RPTK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
 
-    print(np.sum(indices==-1))
+    # print(np.sum(indices==-1))
+    # for i in np.where(indices==-1)[0]:
+    #     print(indices[i])
+    '''
 
-    for i in np.where(indices==-1)[0]:
-        print(indices[i])
+    from vptree import VpTree
+
+
+    init_t = time.time()
+    tree = VpTree(dataX)
+    
+    vpt_distances, vpt_indices = tree.getNearestNeighborsBatch(dataX, K) # split the work between threads
+    vpt_time = time.time() - init_t
+
+    print("VPT time: {}".format(vpt_time))
+    print("VPT NNP: {}".format(get_nne_rate(real_indices,vpt_indices, max_k=K)))
