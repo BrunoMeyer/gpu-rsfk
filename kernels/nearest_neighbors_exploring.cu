@@ -26,7 +26,7 @@ void nearest_neighbors_exploring(typepoints* points,
 
 
         for(int j=1; j < K; ++j){
-            if(knn_indices[knn_id+j] > max_dist_val){
+            if(knn_sqr_dist[knn_id+j] > max_dist_val){
                 max_id_point = knn_id+j;
                 max_dist_val = knn_sqr_dist[knn_id+j];
             }
@@ -37,8 +37,8 @@ void nearest_neighbors_exploring(typepoints* points,
             p_neigh = old_knn_indices[knn_id+i];
             for(int k=0; k < K; ++k){
                 p_neigh_neigh = old_knn_indices[p_neigh*K + k];
-                // TODO: Para cada ponto de knn(tmp_point) 
                 if(p == p_neigh_neigh) continue;
+                
                 for(int j=0; j < K; ++j){
                     if(p_neigh_neigh == knn_indices[knn_id+j]){
                         p_neigh_neigh = -1;
@@ -54,8 +54,9 @@ void nearest_neighbors_exploring(typepoints* points,
                     knn_indices[max_id_point] = p_neigh_neigh;
                     knn_sqr_dist[max_id_point] = tmp_dist_val;
 
-                    max_dist_val = tmp_dist_val;
-                    for(int j=0; j < K; ++j){
+                    max_id_point = knn_id;
+                    max_dist_val = knn_sqr_dist[knn_id];
+                    for(int j=1; j < K; ++j){
                         if(knn_sqr_dist[knn_id+j] > max_dist_val){
                             max_id_point = knn_id+j;
                             max_dist_val = knn_sqr_dist[knn_id+j];

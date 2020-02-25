@@ -23,12 +23,14 @@ class RPTK(object):
     def __init__(self,
                  num_nearest_neighbors,
                  random_state=0,
-                 add_bit_random_motion=True
+                 add_bit_random_motion=True,
+                 nn_exploring_factor=1
             ):
         self.num_nearest_neighbors = int(num_nearest_neighbors)
         self.random_state = int(random_state)
         self.add_bit_random_motion = bool(add_bit_random_motion)
-
+        self.nn_exploring_factor = int(nn_exploring_factor)
+        
         # Build the hooks for the BH T-SNE library
         self._path = pkg_resources.resource_filename('RPTK','') # Load from current location
         # self._faiss_lib = np.ctypeslib.load_library('libfaiss', self._path) # Load the ctypes library
@@ -46,6 +48,7 @@ class RPTK(object):
                 ctypes.c_int, # maximum depth of tree
                 ctypes.c_int, # verbose (1,2,3 or 4)
                 ctypes.c_int, # random state/seed
+                ctypes.c_int, # Nearest Neighbor exploring factor
                 np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
                 np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
                 np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
@@ -78,6 +81,7 @@ class RPTK(object):
                 ctypes.c_int(max_tree_depth), # maximum depth of tree
                 ctypes.c_int(verbose), # verbose (1,2,3 or 4)
                 ctypes.c_int(self.random_state), # random state/seed
+                ctypes.c_int(self.nn_exploring_factor), # random state/seed
                 self.points,
                 self._knn_indices,
                 self._knn_squared_dist)
@@ -113,15 +117,15 @@ def get_nne_rate(h_indices, l_indices, random_state=0, max_k=32,
 if __name__ == "__main__":
     from datasets import load_dataset, load_dataset_knn
     import time
-    K = 8
+    K = 16
     
     # N = 2048
     # D = 2
     # dataX = np.random.random((N,D)).astype(np.float32)
     # DATA_SET = "MNIST"
-    DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    # DATA_SET = "AMAZON_REVIEW_ELETRONICS"
     # DATA_SET = "LUCID_INCEPTION"
-    # DATA_SET = "MNIST_SKLEARN"
+    DATA_SET = "MNIST_SKLEARN"
     dataX, dataY = load_dataset(DATA_SET)
     new_indices = np.arange(len(dataX))
     # np.random.shuffle(new_indices)
@@ -132,15 +136,15 @@ if __name__ == "__main__":
     real_sqd_dist = real_sqd_dist[new_indices,:K]
 
 
-    '''
-    rptk = RPTK(K, random_state=42)
+    rptk = RPTK(K, random_state=42, nn_exploring_factor=4)
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
                                                 max_tree_chlidren=K,
+                                                # max_tree_chlidren=len(dataX),
                                                 max_tree_depth=5000,
                                                 n_trees=5,
                                                 # verbose=0)
-                                                verbose=1)
-
+                                                verbose=2)
+    
     idx = np.arange(len(dataX)).reshape((-1,1))
     
     # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
@@ -154,8 +158,9 @@ if __name__ == "__main__":
     # print(np.sum(indices==-1))
     # for i in np.where(indices==-1)[0]:
     #     print(indices[i])
-    '''
 
+
+    '''
     from vptree import VpTree
 
 
@@ -164,6 +169,24 @@ if __name__ == "__main__":
     
     vpt_distances, vpt_indices = tree.getNearestNeighborsBatch(dataX, K) # split the work between threads
     vpt_time = time.time() - init_t
+    
+    
+    print(indices[0])
+    print(vpt_indices[0])
+    print(real_indices[0])
+    print("")
+    print(indices[500])
+    print(vpt_indices[500])
+    print(real_indices[500])
+    print("")
+    print(np.sort(dist[0]))
+    print(np.array(vpt_distances[0],dtype=np.float32)**2)
+    print(real_sqd_dist[0])
+    print("")
+    print(np.sort(dist[500]))
+    print(np.array(vpt_distances[500],dtype=np.float32)**2)
+    print(real_sqd_dist[500])
 
     print("VPT time: {}".format(vpt_time))
     print("VPT NNP: {}".format(get_nne_rate(real_indices,vpt_indices, max_k=K)))
+    '''

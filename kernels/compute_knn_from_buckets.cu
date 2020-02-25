@@ -56,7 +56,7 @@ void compute_knn_from_buckets(int* points_parent,
         max_dist_val = knn_sqr_dist[knn_id];
 
         for(int j=1; j < K; ++j){
-            if(knn_indices[knn_id+j] > max_dist_val){
+            if(knn_sqr_dist[knn_id+j] > max_dist_val){
                 // tmp_dist_val = local_knn_sqr_dist[j];
                 max_id_point = knn_id+j;
                 max_dist_val = knn_sqr_dist[knn_id+j];
@@ -83,8 +83,9 @@ void compute_knn_from_buckets(int* points_parent,
                 knn_indices[max_id_point] = tmp_point;
                 knn_sqr_dist[max_id_point] = tmp_dist_val;
 
-                max_dist_val = tmp_dist_val;
-                for(int j=0; j < K; ++j){
+                max_id_point = knn_id;
+                max_dist_val = knn_sqr_dist[knn_id];
+                for(int j=1; j < K; ++j){
                     // if(local_knn_sqr_dist[j] > max_dist_val){
                     if(knn_sqr_dist[knn_id+j] > max_dist_val){
                         max_id_point = knn_id+j;

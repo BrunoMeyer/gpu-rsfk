@@ -131,19 +131,22 @@ public:
     int MAX_TREE_CHILD;
     int MAX_DEPTH;
     int RANDOM_SEED;
+    int nn_exploring_factor;
     
     RPTK(typepoints* points,
          int* knn_indices,
          typepoints* knn_sqr_distances,
          int MAX_TREE_CHILD,
          int MAX_DEPTH,
-         int RANDOM_SEED):
+         int RANDOM_SEED,
+         int nn_exploring_factor):
          points(points),
          knn_indices(knn_indices),
          knn_sqr_distances(knn_sqr_distances),
          MAX_TREE_CHILD(MAX_TREE_CHILD),
          MAX_DEPTH(MAX_DEPTH),
-         RANDOM_SEED(RANDOM_SEED){}
+         RANDOM_SEED(RANDOM_SEED),
+         nn_exploring_factor(nn_exploring_factor){}
     
     void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
                       thrust::device_vector<int> &device_old_knn_indices,
@@ -474,15 +477,15 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 
     Cron cron_knn;
     cron_knn.start();
-    compute_knn_from_buckets<<<mp,nt, MAX_TREE_CHILD>>>(thrust::raw_pointer_cast(device_points_parent.data()),
-                                                        thrust::raw_pointer_cast(device_points_depth.data()),
-                                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
-                                                        thrust::raw_pointer_cast(device_count_buckets.data()),
-                                                        thrust::raw_pointer_cast(device_points.data()),
-                                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                                        thrust::raw_pointer_cast(device_knn_indices.data()),
-                                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                                        N, D, max_child, K, MAX_TREE_CHILD);
+    compute_knn_from_buckets<<<mp,nt>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                        thrust::raw_pointer_cast(device_points_depth.data()),
+                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                                        thrust::raw_pointer_cast(device_count_buckets.data()),
+                                        thrust::raw_pointer_cast(device_points.data()),
+                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                        thrust::raw_pointer_cast(device_knn_indices.data()),
+                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                        N, D, max_child, K, MAX_TREE_CHILD);
     cudaDeviceSynchronize();
     cron_knn.stop();    
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
@@ -490,9 +493,9 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     
     
 
-    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
-    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
-    cudaDeviceSynchronize();
+    // thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
+    // thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
+    // cudaDeviceSynchronize();
 
     if(VERBOSE >= 2){
         std::cout << "Points neighbors" << std::endl;
@@ -637,22 +640,33 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
 
     int mp = 16;
     int nt = 1024;
-    for(int i=0; i < 1; ++i){
+
+    if(VERBOSE >= 2 && nn_exploring_factor > 0){
+        for(int i=0; i < 80*4; ++i) std::cout<<" ";
+        std::cout << std::endl;
+        std::cout << "\e[ANearest Neighbor Exploring: " << "0/" << nn_exploring_factor << std::endl;
+    }
+    for(int i=0; i < nn_exploring_factor; ++i){
         thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + K*N, device_old_knn_indices.begin());
         cudaDeviceSynchronize();
-        nearest_neighbors_exploring<<<mp,nt, MAX_TREE_CHILD>>>(thrust::raw_pointer_cast(device_points.data()),
-                                                               thrust::raw_pointer_cast(device_old_knn_indices.data()),
-                                                               thrust::raw_pointer_cast(device_knn_indices.data()),
-                                                               thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                                               N, D, K);
+        nearest_neighbors_exploring<<<mp,nt>>>(thrust::raw_pointer_cast(device_points.data()),
+                                               thrust::raw_pointer_cast(device_old_knn_indices.data()),
+                                               thrust::raw_pointer_cast(device_knn_indices.data()),
+                                               thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                               N, D, K);
+        CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
+        if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
         cudaDeviceSynchronize();
     }
     cron_nearest_neighbors_exploring.stop();    
-    CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
     
     if(VERBOSE >= 1){
         printf("Nearest Neighbors Exploring computation Kernel takes %lf seconds\n", cron_nearest_neighbors_exploring.t_total/1000);
     }
+
+    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
+    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
+    cudaDeviceSynchronize();
 
     device_points.clear();
     device_points.shrink_to_fit();
@@ -738,8 +752,8 @@ int main(int argc,char* argv[]) {
         labels[i] = (l>N/2);
     }
 
-
-    RPTK rptk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED);
+    int nn_exploring_factor = 1;
+    RPTK rptk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED, nn_exploring_factor);
     rptk_knn.knn_gpu_rptk_forest(5, K, N, D, VERBOSE, "run");
 
 }
