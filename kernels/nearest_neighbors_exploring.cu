@@ -18,7 +18,7 @@ void nearest_neighbors_exploring(typepoints* points,
 
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
         knn_id = p*K;
-        __syncthreads();
+        // __syncthreads();
         // __syncwarp();
 
         max_id_point = knn_id;
@@ -47,7 +47,8 @@ void nearest_neighbors_exploring(typepoints* points,
                 }
                 if(p_neigh_neigh == -1) continue;
 
-                tmp_dist_val = euclidean_distance_sqr(&points[p_neigh_neigh*D], &points[p*D], D);
+                // tmp_dist_val = euclidean_distance_sqr(&points[p_neigh_neigh*D], &points[p*D], D);
+                tmp_dist_val = euclidean_distance_sqr(p_neigh_neigh, p, points, D, N);
 
                 if(tmp_dist_val < max_dist_val){
                     // printf("%d %d\n", knn_indices[max_id_point] ,p_neigh_neigh);

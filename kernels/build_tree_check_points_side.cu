@@ -4,11 +4,12 @@
 
 __device__
 inline
-int check_hyperplane_side(int node_idx, int p, typepoints* tree, typepoints* points, int D)
+int check_hyperplane_side(int node_idx, int p, typepoints* tree, typepoints* points, int D, int N)
 {
     typepoints aux = 0.0f;
     for(int i=0; i < D; ++i){
-        aux += tree[node_idx*(D+1) + i]*points[p*D + i];
+        // aux += tree[node_idx*(D+1) + i]*points[p*D + i];
+        aux += tree[node_idx*(D+1) + i]*points[N*i+p];
     }
     return aux < tree[node_idx*(D+1) + D];
 }
@@ -51,7 +52,7 @@ void build_tree_check_points_side(typepoints* tree,
         if(points_depth[p] < *actual_depth-1 || is_leaf[points_parent[p]]) continue;
         
         // printf("%d %d\n", p, points_parent[p]);
-        is_right = check_hyperplane_side(points_parent[p], p, tree, points, D);
+        is_right = check_hyperplane_side(points_parent[p], p, tree, points, D, N);
         is_right_child[p] = is_right;
         // Threats to Validity: This assumes that all the follow properties are false:
         // - The atomic operations assumes an arbitrary/random order

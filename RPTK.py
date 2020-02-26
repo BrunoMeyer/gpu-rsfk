@@ -55,7 +55,9 @@ class RPTK(object):
                 # TODO: run name - Char pointer?
                 ]
 
-    def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500, verbose=1, max_tree_chlidren=256):
+    def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500,
+                               verbose=1, max_tree_chlidren=256,
+                               transposed_points=False):
         n_trees = int(n_trees)
         max_tree_depth = int(max_tree_depth)
         verbose = int(verbose)
@@ -65,9 +67,13 @@ class RPTK(object):
         K = self.num_nearest_neighbors
         
         if(self.add_bit_random_motion):
-            points=points + np.random.uniform(-0.001,0.001,points.shape)
+            points=points + np.random.uniform(-0.0001,0.0001,points.shape)
         
-        self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+        if not transposed_points:
+            self.points = np.require(points.T, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+        else:
+            self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+            
         self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
@@ -117,34 +123,35 @@ def get_nne_rate(h_indices, l_indices, random_state=0, max_k=32,
 if __name__ == "__main__":
     from datasets import load_dataset, load_dataset_knn
     import time
-    K = 16
+    K = 54
     
     # N = 2048
     # D = 2
     # dataX = np.random.random((N,D)).astype(np.float32)
     # DATA_SET = "MNIST"
-    # DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    DATA_SET = "AMAZON_REVIEW_ELETRONICS"
     # DATA_SET = "LUCID_INCEPTION"
-    DATA_SET = "MNIST_SKLEARN"
+    # DATA_SET = "MNIST_SKLEARN"
     dataX, dataY = load_dataset(DATA_SET)
     new_indices = np.arange(len(dataX))
     # np.random.shuffle(new_indices)
 
-    real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
     
+
+    rptk = RPTK(K, random_state=0, nn_exploring_factor=0)
+    indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
+                                                max_tree_chlidren=K,
+                                                # max_tree_chlidren=len(dataX),
+                                                max_tree_depth=1000,
+                                                n_trees=35,
+                                                # verbose=0)
+                                                verbose=2)
+
+    real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
     real_indices = real_indices[new_indices,:K].astype(np.int)
     real_sqd_dist = real_sqd_dist[new_indices,:K]
 
 
-    rptk = RPTK(K, random_state=42, nn_exploring_factor=4)
-    indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
-                                                max_tree_chlidren=K,
-                                                # max_tree_chlidren=len(dataX),
-                                                max_tree_depth=5000,
-                                                n_trees=5,
-                                                # verbose=0)
-                                                verbose=2)
-    
     idx = np.arange(len(dataX)).reshape((-1,1))
     
     # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
@@ -159,6 +166,12 @@ if __name__ == "__main__":
     # for i in np.where(indices==-1)[0]:
     #     print(indices[i])
 
+
+
+    # Sanity check
+    negative_indices = np.sum(indices==-1)
+    if negative_indices > 0:
+        raise Exception('{} Negative indices'.format(negative_indices))
 
     '''
     from vptree import VpTree

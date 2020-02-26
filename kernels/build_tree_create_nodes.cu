@@ -57,7 +57,7 @@ void build_tree_create_nodes(typepoints* tree_new_depth,
                     
                     if(p1 != -1 && p2 != -1){
                         create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
-                                    tree_children, tree_count, count_new_nodes, p1, p2, points, D);
+                                    tree_children, tree_count, count_new_nodes, p1, p2, points, D, N);
                     }
                 }
             }

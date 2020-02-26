@@ -10,7 +10,7 @@ void create_root(typepoints* tree,
                  int p1,
                  int p2,
                  typepoints* points,
-                 int D)
+                 int D, int N)
 {
     // Average point
     // node_path*D*2 : D*2 = size of centroid point and normal vector
@@ -24,8 +24,10 @@ void create_root(typepoints* tree,
     tree[node_idx*(D+1) + D] = 0.0f;
 
     for(i=0;i < D; ++i){
-        tree[node_idx*(D+1) + i] = points[p1*D+i]-points[p2*D+i];
-        tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[p1*D+i]+points[p2*D+i])/2; // multiply the point of plane and the normal vector 
+        // tree[node_idx*(D+1) + i] = points[p1*D+i]-points[p2*D+i];
+        // tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[p1*D+i]+points[p2*D+i])/2; // multiply the point of plane and the normal vector 
+        tree[node_idx*(D+1) + i] = points[N*i+p1]-points[N*i+p2];
+        tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[N*i+p1]+points[N*i+p2])/2; // multiply the point of plane and the normal vector 
     }
 }
 
@@ -41,7 +43,7 @@ void create_node(int parent,
                  int p1,
                  int p2,
                  typepoints* points,
-                 int D)
+                 int D, int N)
 {
     // Average point
     // node_path*D*2 : D*2 = size of centroid point and normal vector
@@ -54,8 +56,10 @@ void create_node(int parent,
     tree[node_idx*(D+1) + D] = 0.0f;
 
     for(i=0; i < D; ++i){
-        tree[node_idx*(D+1) + i] = points[p1*D+i]-points[p2*D+i];
-        tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[p1*D+i]+points[p2*D+i])/2; // multiply the point of plane and the normal vector 
+        // tree[node_idx*(D+1) + i] = points[p1*D+i]-points[p2*D+i];
+        // tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[p1*D+i]+points[p2*D+i])/2; // multiply the point of plane and the normal vector 
+        tree[node_idx*(D+1) + i] = points[N*i+p1]-points[N*i+p2];
+        tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[N*i+p1]+points[N*i+p2])/2; // multiply the point of plane and the normal vector 
     }
 }
 

@@ -2,15 +2,30 @@
 #define __COMPUTE_KNN_FROM_BUCKETS__CU
 
 
+// __device__
+// inline
+// float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
+// {
+//     typepoints ret = 0.0f;
+//     typepoints diff;
+
+//     for(int i=0; i < D; ++i){
+//         diff = v1[i] - v2[i];
+//         ret += diff*diff;
+//     }
+
+//     return ret;
+// }
+
 __device__
 inline
-float euclidean_distance_sqr(typepoints* v1, typepoints* v2, int D)
+float euclidean_distance_sqr(int p1, int p2, typepoints* points, int D, int N)
 {
     typepoints ret = 0.0f;
     typepoints diff;
 
     for(int i=0; i < D; ++i){
-        diff = v1[i] - v2[i];
+        diff = points[N*i+p1] - points[N*i+p2];
         ret += diff*diff;
     }
 
@@ -42,7 +57,7 @@ void compute_knn_from_buckets(int* points_parent,
 
     for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
         knn_id = p*K;
-        __syncthreads();
+        // __syncthreads();
         // __syncwarp();
         parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
         bucket_size = child_count[parent_id];
@@ -65,6 +80,7 @@ void compute_knn_from_buckets(int* points_parent,
         
         for(int i=0; i < bucket_size; ++i){
             __syncthreads();
+            // __syncwarp();
             tmp_point = bucket_nodes[max_bucket_size*parent_id + i];
             // if(p == tmp_point) continue;
             for(int j=0; j < K; ++j){
@@ -75,7 +91,8 @@ void compute_knn_from_buckets(int* points_parent,
             }
             if(tmp_point == -1) continue;
 
-            tmp_dist_val = euclidean_distance_sqr(&points[tmp_point*D], &points[p*D], D);
+            // tmp_dist_val = euclidean_distance_sqr(&points[tmp_point*D], &points[p*D], D);
+            tmp_dist_val = euclidean_distance_sqr(tmp_point, p, points, D, N);
 
             if(tmp_dist_val < max_dist_val){
                 // local_knn_indices[max_id_point] = tmp_point;
