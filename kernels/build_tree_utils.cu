@@ -54,4 +54,27 @@ build_tree_max_leaf_size(int* max_leaf_size,
     }
 }
 
+__global__
+void
+build_tree_set_leafs_idx(int* leaf_idx_to_node_idx,
+                         int* node_idx_to_leaf_idx,
+                         int* total_leafs,
+                         bool* is_leaf,
+                         int* depth_level_count,
+                         int* accumulated_nodes_count,
+                         int depth)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int new_idx;
+    int acc_idx;
+    for(int node=tid; node < depth_level_count[depth]; node+=blockDim.x*gridDim.x){
+        if(is_leaf[node]){
+            acc_idx = accumulated_nodes_count[depth] + node;
+            new_idx = atomicAdd(total_leafs, 1);
+            leaf_idx_to_node_idx[new_idx] = acc_idx;
+            node_idx_to_leaf_idx[acc_idx] = new_idx;
+        }
+    }
+}
+
 #endif
