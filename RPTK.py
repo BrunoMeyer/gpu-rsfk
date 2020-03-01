@@ -138,10 +138,10 @@ if __name__ == "__main__":
     # N = 2048
     # D = 2
     # dataX = np.random.random((N,D)).astype(np.float32)
-    # DATA_SET = "MNIST_SKLEARN"
+    DATA_SET = "MNIST_SKLEARN"
     # DATA_SET = "CIFAR"
     # DATA_SET = "MNIST"
-    DATA_SET = "LUCID_INCEPTION"
+    # DATA_SET = "LUCID_INCEPTION"
     # DATA_SET = "AMAZON_REVIEW_ELETRONICS"
     dataX, dataY = load_dataset(DATA_SET)
     print(dataX.shape)
@@ -153,10 +153,10 @@ if __name__ == "__main__":
     rptk = RPTK(K, random_state=0, nn_exploring_factor=0,
                 add_bit_random_motion=True)
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
-                                                max_tree_chlidren=2*K,
+                                                max_tree_chlidren=K,
                                                 # max_tree_chlidren=len(dataX),
                                                 max_tree_depth=5000,
-                                                n_trees=10,
+                                                n_trees=3,
                                                 # verbose=0)
                                                 # verbose=1)
                                                 verbose=2)
@@ -185,7 +185,6 @@ if __name__ == "__main__":
 
     print("RPTK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
 
-    exit()
 
     # print(np.sum(indices==-1))
     # for i in np.where(indices==-1)[0]:
@@ -198,6 +197,7 @@ if __name__ == "__main__":
     if negative_indices > 0:
         raise Exception('{} Negative indices'.format(negative_indices))
 
+    exit()
 
 
 
