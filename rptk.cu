@@ -43,13 +43,26 @@ namespace plt = matplotlibcpp;
 
 #include <iostream> 
 #include <stdio.h>
-using namespace std; 
+using namespace std;
 #include <cstdlib>
 #include <cmath>
 #include <bits/stdc++.h> 
 
 #define typepoints float
 
+// Lines per column
+#define N_D 0
+
+// Columns 
+#define D_N 1
+
+#define POINTS_STRUCTURE N_D
+
+#if   POINTS_STRUCTURE == D_N
+    #define get_point_idx(point,dimension,N,D) (dimension*N+point)
+#elif POINTS_STRUCTURE == N_D
+    #define get_point_idx(point,dimension,N,D) (point*D+dimension)
+#endif
 
 #include "random_tree.cu"
 #include "kernels/build_tree_init.cu"
@@ -532,16 +545,27 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     //                                     thrust::raw_pointer_cast(device_knn_indices.data()),
     //                                     thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
     //                                     N, D, max_child, K, MAX_TREE_CHILD, total_leafs);
-    compute_knn_from_buckets<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
-                                        thrust::raw_pointer_cast(device_points_depth.data()),
-                                        thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
-                                        thrust::raw_pointer_cast(device_points.data()),
-                                        thrust::raw_pointer_cast(device_node_idx_to_leaf_idx.data()),
-                                        thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                        thrust::raw_pointer_cast(device_bucket_sizes.data()),
-                                        thrust::raw_pointer_cast(device_knn_indices.data()),
-                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                        N, D, max_child, K, MAX_TREE_CHILD, total_leafs);
+    // compute_knn_from_buckets<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+    //                                     thrust::raw_pointer_cast(device_points_depth.data()),
+    //                                     thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+    //                                     thrust::raw_pointer_cast(device_points.data()),
+    //                                     thrust::raw_pointer_cast(device_node_idx_to_leaf_idx.data()),
+    //                                     thrust::raw_pointer_cast(device_nodes_buckets.data()),
+    //                                     thrust::raw_pointer_cast(device_bucket_sizes.data()),
+    //                                     thrust::raw_pointer_cast(device_knn_indices.data()),
+    //                                     thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+    //                                     N, D, max_child, K, MAX_TREE_CHILD, total_leafs);
+    compute_knn_from_buckets_coalesced<<<NB,NT, sizeof(typepoints)*((1024/32)+K) + sizeof(int)*K>>>(
+                                                  thrust::raw_pointer_cast(device_points_parent.data()),
+                                                  thrust::raw_pointer_cast(device_points_depth.data()),
+                                                  thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
+                                                  thrust::raw_pointer_cast(device_points.data()),
+                                                  thrust::raw_pointer_cast(device_node_idx_to_leaf_idx.data()),
+                                                  thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                                  thrust::raw_pointer_cast(device_bucket_sizes.data()),
+                                                  thrust::raw_pointer_cast(device_knn_indices.data()),
+                                                  thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                                  N, D, max_child, K, MAX_TREE_CHILD);
     // compute_knn_from_buckets_old<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
     //                                         thrust::raw_pointer_cast(device_points_depth.data()),
     //                                         thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
@@ -652,6 +676,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
         printf("KNN computation Kernel takes %lf seconds\n", cron_knn.t_total/1000);
     }
 
+    
     if(VERBOSE >= 3){
 
         set<int> s; 
@@ -667,8 +692,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 
             for(int i=0; i < count_cluster; ++i){
                 int p = nodes_buckets[b*max_child+i];
-                X_axis[i] = points[p];
-                Y_axis[i] = points[N+p];
+                X_axis[i] = points[get_point_idx(p,0,N,D)];
+                Y_axis[i] = points[get_point_idx(p,1,N,D)];
             }
             plt::scatter<typepoints,typepoints>(X_axis, Y_axis,1.0,{
                 {"alpha", "0.8"}
@@ -676,6 +701,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 
         }
         // plt::show();
+        std::cerr << run_name << std::endl;
+
         plt::save(run_name);
     }
 }
@@ -698,7 +725,7 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
                      device_knn_indices,
                      device_knn_sqr_distances,
                      K, N, D, VERBOSE-1,
-                     run_name+"_"+std::to_string(i));
+                     run_name+"_"+std::to_string(i)+".png");
         RANDOM_SEED++;
     }
 
@@ -824,17 +851,18 @@ int main(int argc,char* argv[]) {
 
         for(int j=0; j < D; ++j){
             if(type_init == "UNIFORM_SQUARE"){
-                points[i*D+j] = rand() % N;
+                points[get_point_idx(i,j,N,D)] = rand() % N;
             }
             if(type_init == "SPLITED_LINE"){
-                points[i*D+j] = l + (l>N/2)*N/2;
+                points[get_point_idx(i,j,N,D)] = l + (l>N/2)*N/2;
             }
         }
         labels[i] = (l>N/2);
     }
 
-    int nn_exploring_factor = 1;
+    int nn_exploring_factor = 0;
     RPTK rptk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED, nn_exploring_factor);
     rptk_knn.knn_gpu_rptk_forest(5, K, N, D, VERBOSE, "tree");
+
 
 }

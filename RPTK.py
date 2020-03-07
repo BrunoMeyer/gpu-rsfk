@@ -80,7 +80,9 @@ class RPTK(object):
             self.points = np.require(points.T, np.float32, ['CONTIGUOUS', 'ALIGNED'])
         else:
             self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
-            
+        
+        # self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+
         self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
@@ -133,16 +135,16 @@ if __name__ == "__main__":
 
 
     import time
-    K = 54
+    K = 32
     
     # N = 2048
     # D = 2
     # dataX = np.random.random((N,D)).astype(np.float32)
-    DATA_SET = "MNIST_SKLEARN"
+    # DATA_SET = "MNIST_SKLEARN"
     # DATA_SET = "CIFAR"
     # DATA_SET = "MNIST"
     # DATA_SET = "LUCID_INCEPTION"
-    # DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    DATA_SET = "AMAZON_REVIEW_ELETRONICS"
     dataX, dataY = load_dataset(DATA_SET)
     print(dataX.shape)
     new_indices = np.arange(len(dataX))
@@ -150,13 +152,14 @@ if __name__ == "__main__":
 
     
 
-    rptk = RPTK(K, random_state=0, nn_exploring_factor=0,
+    rptk = RPTK(K, random_state=0, nn_exploring_factor=1,
                 add_bit_random_motion=True)
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
-                                                max_tree_chlidren=K,
+                                                max_tree_chlidren=1*K,
                                                 # max_tree_chlidren=len(dataX),
                                                 max_tree_depth=5000,
-                                                n_trees=3,
+                                                n_trees=5,
+                                                transposed_points=True,
                                                 # verbose=0)
                                                 # verbose=1)
                                                 verbose=2)
@@ -197,8 +200,8 @@ if __name__ == "__main__":
     if negative_indices > 0:
         raise Exception('{} Negative indices'.format(negative_indices))
 
-    exit()
 
+    exit()
 
 
 
@@ -245,6 +248,7 @@ if __name__ == "__main__":
     D, I = index.search(xq, K)     # actual search
     print("FAISS IVFFLAT takes {} seconds".format(time.time() - init_t))
     print("FAISS IVFFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+    exit()
     
     quantizer = faiss.IndexFlatL2(d)  # the other index
     index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)

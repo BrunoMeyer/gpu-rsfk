@@ -9,7 +9,7 @@ int check_hyperplane_side(int node_idx, int p, typepoints* tree, typepoints* poi
     typepoints aux = 0.0f;
     for(int i=0; i < D; ++i){
         // aux += tree[node_idx*(D+1) + i]*points[p*D + i];
-        aux += tree[node_idx*(D+1) + i]*points[N*i+p];
+        aux += tree[node_idx*(D+1) + i]*points[get_point_idx(p,i,N,D)];
     }
     return aux < tree[node_idx*(D+1) + D];
 }

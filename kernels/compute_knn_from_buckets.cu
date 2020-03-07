@@ -25,12 +25,13 @@ float euclidean_distance_sqr(int p1, int p2, typepoints* points, int D, int N)
     typepoints diff;
 
     for(int i=0; i < D; ++i){
-        diff = points[N*i+p1] - points[N*i+p2];
+        diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
         ret += diff*diff;
     }
 
     return ret;
 }
+
 
 __device__
 inline
@@ -41,13 +42,250 @@ float euclidean_distance_sqr_small_block(int p1, int p2, typepoints* local_point
     typepoints diff;
 
     for(int i=0; i < D; ++i){
-        diff = local_points[32*i+p1] - points[N*i+p2];
+        diff = local_points[get_point_idx(p1,i,32,D)] - points[get_point_idx(p2,i,N,D)];
         ret += diff*diff;
     }
 
     return ret;
 }
 
+
+
+
+
+__device__
+inline
+void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
+                                      int N, int tidw, typepoints* diff_sqd)
+{
+    typepoints diff;
+
+    for(int i=tidw; i < D; i+=32){
+        diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
+        atomicAdd(diff_sqd,diff*diff);
+    }
+}
+
+
+// Assign a bucket (leaf in the tree) to each warp and a point to each thread (persistent kernel)
+__global__
+void compute_knn_from_buckets_perwarp_coalesced(int* points_parent,
+                              int* points_depth,
+                              int* accumulated_nodes_count,
+                              typepoints* points,
+                              int* node_idx_to_leaf_idx,
+                              int* nodes_bucket,
+                              int* bucket_size,
+                              int* knn_indices,
+                              typepoints* knn_sqr_dist,
+                              int N, int D, int max_bucket_size, int K,
+                              int MAX_TREE_CHILD)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int parent_id, current_bucket_size, max_id_point, candidate_point;
+    
+    typepoints max_dist_val;
+    // TODO: Accept others block size rather than 1024
+    __shared__ typepoints candidate_dist_val[1024/32];
+    for(int i=threadIdx.x; i < 1024/32; ++i){
+        candidate_dist_val[i] = 0.0;
+    }
+    __syncthreads();
+
+    int knn_id;
+
+    int tidw = threadIdx.x % 32; // my id on warp
+    int wid =  threadIdx.x/32; // warp id
+
+
+    
+    for(int p = tid/32; p < N; p+=blockDim.x*gridDim.x/32){
+        knn_id = p*K;
+
+        parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
+        current_bucket_size = bucket_size[node_idx_to_leaf_idx[parent_id]];
+
+        // TODO: Run a first scan?
+        max_id_point = knn_id;
+        max_dist_val = knn_sqr_dist[knn_id];
+        
+        // Finds the index of the furthest point from the current result of knn_indices
+        // and the distance between them
+        for(int j=1; j < K; ++j){
+            if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                max_id_point = knn_id+j;
+                max_dist_val = knn_sqr_dist[knn_id+j];
+            }
+        }
+        
+        for(int i=0; i < current_bucket_size; ++i){
+            __syncthreads();
+            __syncwarp();
+            candidate_point = nodes_bucket[node_idx_to_leaf_idx[parent_id]*max_bucket_size + i];
+            
+            // Verify if the candidate point (inside the bucket of current point)
+            // already is in the knn_indices result
+            for(int j=0; j < K; ++j){
+                if(candidate_point == knn_indices[knn_id+j]){
+                    candidate_point = -1;
+                    break;
+                }
+            }
+
+            // If it is, then it doesnt need to be treated, then go to
+            // the next iteration and wait the threads from same warp to goes on
+            if(candidate_point == -1) continue;
+
+            euclidean_distance_sqr_coalesced(candidate_point, p, points, D, N,
+                                             tidw, &candidate_dist_val[wid]);
+
+            __syncwarp(); // This is fundamental once that all threads
+                          // in the warp are calculating the distance
+
+            // If the candidate is closer than the pre-computed furthest point,
+            // switch them
+            if(tidw == 0){
+                if(candidate_dist_val[wid] < max_dist_val){
+                    // printf("%f %f %f\n", candidate_dist_val[wid], knn_sqr_dist[max_id_point], max_dist_val);
+
+                    knn_indices[max_id_point] = candidate_point;
+                    knn_sqr_dist[max_id_point] = candidate_dist_val[wid];
+
+                    // Also update the furthest point that will be used in the next
+                    // comparison
+                    max_id_point = knn_id;
+                    max_dist_val = knn_sqr_dist[knn_id];
+                    for(int j=1; j < K; ++j){
+                        if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                            max_id_point = knn_id+j;
+                            max_dist_val = knn_sqr_dist[knn_id+j];
+                        }
+                    }
+                }
+                candidate_dist_val[wid] = 0.0;
+            }
+            __syncwarp();
+        }
+    }
+}
+
+// Assign a bucket (leaf in the tree) to each warp and a point to each thread (persistent kernel)
+__global__
+void compute_knn_from_buckets_coalesced(int* points_parent,
+                              int* points_depth,
+                              int* accumulated_nodes_count,
+                              typepoints* points,
+                              int* node_idx_to_leaf_idx,
+                              int* nodes_bucket,
+                              int* bucket_size,
+                              int* knn_indices,
+                              typepoints* knn_sqr_dist,
+                              int N, int D, int max_bucket_size, int K,
+                              int MAX_TREE_CHILD)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int parent_id, current_bucket_size, max_id_point, candidate_point;
+    
+    typepoints max_dist_val;
+    // TODO: Accept others block size rather than 1024
+
+    __shared__ typepoints candidate_dist_val[1024/32];
+
+    for(int i=threadIdx.x; i < 1024/32; ++i){
+        candidate_dist_val[i] = 0.0;
+    }
+
+    
+    __syncthreads();
+
+    int knn_id;
+
+    int tidw = threadIdx.x % 32; // my id on warp
+    int wid =  threadIdx.x/32; // warp id
+
+
+    
+    for(int p = tid/32; p < N; p+=blockDim.x*gridDim.x/32){
+        knn_id = p*K;
+
+        parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
+        current_bucket_size = bucket_size[node_idx_to_leaf_idx[parent_id]];
+
+        // TODO: Run a first scan?
+        max_id_point = knn_id;
+        max_dist_val = knn_sqr_dist[knn_id];
+        
+        // Finds the index of the furthest point from the current result of knn_indices
+        // and the distance between them
+        for(int j=1; j < K; ++j){
+            if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                max_id_point = knn_id+j;
+                max_dist_val = knn_sqr_dist[knn_id+j];
+            }
+        }
+
+        if(tidw == 0){
+            for(int i=0; i < K; ++i){
+            
+            }
+        }
+        
+        for(int i=0; i < current_bucket_size; ++i){
+            __syncthreads();
+            __syncwarp();
+            candidate_point = nodes_bucket[node_idx_to_leaf_idx[parent_id]*max_bucket_size + i];
+            
+            // Verify if the candidate point (inside the bucket of current point)
+            // already is in the knn_indices result
+            for(int j=0; j < K; ++j){
+                if(candidate_point == knn_indices[knn_id+j]){
+                    candidate_point = -1;
+                    break;
+                }
+            }
+
+            // If it is, then it doesnt need to be treated, then go to
+            // the next iteration and wait the threads from same warp to goes on
+            if(candidate_point == -1) continue;
+
+            euclidean_distance_sqr_coalesced(candidate_point, p, points, D, N,
+                                             tidw, &candidate_dist_val[wid]);
+
+            __syncwarp(); // This is fundamental once that all threads
+                          // in the warp are calculating the distance
+
+            // If the candidate is closer than the pre-computed furthest point,
+            // switch them
+            if(tidw == 0){
+                if(candidate_dist_val[wid] < max_dist_val){
+                    // printf("%f %f %f\n", candidate_dist_val[wid], knn_sqr_dist[max_id_point], max_dist_val);
+
+                    knn_indices[max_id_point] = candidate_point;
+                    knn_sqr_dist[max_id_point] = candidate_dist_val[wid];
+
+                    // Also update the furthest point that will be used in the next
+                    // comparison
+                    max_id_point = knn_id;
+                    max_dist_val = knn_sqr_dist[knn_id];
+                    for(int j=1; j < K; ++j){
+                        if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                            max_id_point = knn_id+j;
+                            max_dist_val = knn_sqr_dist[knn_id+j];
+                        }
+                    }
+                }
+                candidate_dist_val[wid] = 0.0;
+            }
+            __syncwarp();
+        }
+    }
+}
+
+
+
+
+
+// Assumes that each block contains only 32 (warp size) threads (persistent kernel)
 __global__
 void compute_knn_from_buckets_small_block(int* points_parent,
                               int* points_depth,
@@ -149,6 +387,7 @@ void compute_knn_from_buckets_small_block(int* points_parent,
 }
 
 
+// Assign a bucket (leaf in the tree) to each warp and a point to each thread (persistent kernel)
 __global__
 void compute_knn_from_buckets(int* points_parent,
                               int* points_depth,
@@ -167,7 +406,7 @@ void compute_knn_from_buckets(int* points_parent,
     typepoints max_dist_val, candidate_dist_val;
     
     int knn_id;
-    int wid = tid % 32; // my id in warp
+    int wid = tid % 32; // my id on warp
     for(int bid = tid/32; bid < total_buckets; bid+=blockDim.x*gridDim.x/32){
         __syncthreads();
         // __syncwarp();
@@ -237,6 +476,7 @@ void compute_knn_from_buckets(int* points_parent,
 }
 
 
+// Assign each point to a thread (persistent kernel)
 __global__
 void compute_knn_from_buckets_old(int* points_parent,
                               int* points_depth,
