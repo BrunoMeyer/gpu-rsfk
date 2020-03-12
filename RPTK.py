@@ -152,7 +152,7 @@ if __name__ == "__main__":
 
     
 
-    rptk = RPTK(K, random_state=0, nn_exploring_factor=1,
+    rptk = RPTK(K, random_state=0, nn_exploring_factor=0,
                 add_bit_random_motion=True)
     indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
                                                 max_tree_chlidren=1*K,
