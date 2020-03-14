@@ -19,6 +19,10 @@
 #include <thrust/copy.h>
 #include <thrust/execution_policy.h>
 
+// CUDA includes
+#include <curand.h>
+#include <curand_kernel.h>
+
 struct is_true
 {
   __host__ __device__
@@ -48,6 +52,8 @@ using namespace std;
 #include <cmath>
 #include <bits/stdc++.h> 
 
+
+
 #define typepoints float
 
 // Lines per column
@@ -64,7 +70,6 @@ using namespace std;
     #define get_point_idx(point,dimension,N,D) (point*D+dimension)
 #endif
 
-#include "random_tree.cu"
 #include "kernels/build_tree_init.cu"
 #include "kernels/build_tree_check_points_side.cu"
 #include "kernels/build_tree_count_new_nodes.cu"
@@ -251,11 +256,10 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
          dynamic_memory_allocation_cron;
 
     total_cron.start();
-    int depth, count_new_nodes, iterations_without_new_nodes, count_total_nodes, reached_max_depth;
+    int depth, count_new_nodes, count_total_nodes, reached_max_depth;
     
     count_total_nodes = 1;
     count_new_nodes = 1;
-    iterations_without_new_nodes = 0;
     for(depth=1; depth < MAX_DEPTH; ++depth){
         // thrust::fill(thrust::device, device_sample_candidate_points.begin(), device_sample_candidate_points.end(), -1);
         
@@ -530,6 +534,8 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
     
 
     // cudaFuncSetCacheConfig(compute_knn_from_buckets, cudaFuncCachePreferL1);
+    cudaFuncSetCacheConfig(compute_knn_from_buckets_coalesced, cudaFuncCachePreferL1);
+    cudaFuncSetCacheConfig(compute_knn_from_buckets_perwarp_coalesced, cudaFuncCachePreferL1);
 
     Cron cron_knn;
     cron_knn.start();

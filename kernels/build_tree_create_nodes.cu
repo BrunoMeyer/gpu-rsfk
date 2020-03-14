@@ -40,25 +40,19 @@ void build_tree_create_nodes(typepoints* tree_new_depth,
         for(int is_right=0; is_right < 2; ++is_right){
             if(!is_leaf[node_thread]){
                 if(count_points_on_leafs[2*node_thread+is_right] > 0){
-                    
                     rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
                     p1 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  +  rand_id];
                     rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
                     p2 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  +  rand_id];
                     
-                    int tol = 0;
-                    while(p1 == p2 && count_points_on_leafs[2*node_thread+is_right] > 2){
+                    while(p1 == p2 && count_points_on_leafs[2*node_thread+is_right] > K){
                         rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
                         p2 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  + rand_id];
-                        tol++;
                     }
-                    // __syncthreads();
-                    
-                    
-                    if(p1 != -1 && p2 != -1){
-                        create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
-                                    tree_children, tree_count, count_new_nodes, p1, p2, points, D, N);
-                    }
+
+                    __syncthreads();
+                    create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
+                                tree_children, tree_count, count_new_nodes, p1, p2, points, D, N);
                 }
             }
         }

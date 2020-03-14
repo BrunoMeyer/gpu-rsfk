@@ -11,7 +11,7 @@ void nearest_neighbors_exploring(typepoints* points,
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
-    int parent_id, bucket_size, max_id_point, p_neigh, p_neigh_neigh;
+    int max_id_point, p_neigh, p_neigh_neigh;
     typepoints max_dist_val, tmp_dist_val;
     
     int knn_id;

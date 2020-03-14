@@ -32,7 +32,7 @@ void build_tree_update_parents(typepoints* tree,
             updated_count = atomicAdd(&child_count_new_depth[points_parent[p]],1)+1;
             points_depth[p] = *actual_depth;
 
-            if(updated_count <= 2*MAX_TREE_CHILD+2){
+            if(updated_count <= MAX_TREE_CHILD){
                 is_leaf_new_depth[points_parent[p]] = true;
             }
             else{
@@ -80,7 +80,7 @@ void build_tree_post_update_parents(typepoints* tree,
 
             is_leaf_new_depth[points_parent[p]] = true;
             new_count = atomicAdd(&child_count_new_depth[points_parent[p]],1)+1;
-            if(new_count > 2*MAX_TREE_CHILD+2){
+            if(new_count > MAX_TREE_CHILD){
                 is_leaf_new_depth[points_parent[p]] = false;
             }
         }

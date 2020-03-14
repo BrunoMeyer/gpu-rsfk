@@ -46,39 +46,17 @@ void build_tree_check_points_side(typepoints* tree,
     int csi; //candidate_sample_id;
     // Set nodes parent in the new depth
     for(p = tid; p < N; p+=blockDim.x*gridDim.x){
-        // __syncwarp();
-        // __syncthreads();
-        
         if(points_depth[p] < *actual_depth-1 || is_leaf[points_parent[p]]) continue;
         
-        // printf("%d %d\n", p, points_parent[p]);
+        __syncthreads();
+        // __syncwarp();
         is_right = check_hyperplane_side(points_parent[p], p, tree, points, D, N);
         is_right_child[p] = is_right;
-        // Threats to Validity: This assumes that all the follow properties are false:
-        // - The atomic operations assumes an arbitrary/random order
-        // - The points are shuffled
-
-        // for(int is_right=0; is_right < 2; is_right++){
-            // if(sample_points[4*points_parent[p]   + 2*is_right] == -1){
-            //     sample_points[4*points_parent[p]  + 2*is_right] = N;
-            // }
-            // sample_points[4*points_parent[p] + 2*is_right + curand(&r) % 2] =  p;
-            // atomicMin(&sample_points[4*points_parent[p] + 2*is_right    ], p);
-            // atomicMax(&sample_points[4*points_parent[p] + 2*is_right + 1], p);
-            
-
-            // printf("%s: line %d: %d\n", __FILE__, __LINE__, 2*points_parent[p]+is_right);
-            
-            csi = atomicAdd(&count_points_on_leafs[2*points_parent[p]+is_right], 1);
-            points_id_on_sample[p] = csi;
-            // printf("%d\n",p);
-            // if(accumulated_child_count[points_parent[p]]+csi > N) printf("%s: line %d : %d \n", __FILE__, __LINE__, accumulated_child_count[points_parent[p]]+csi);
-            // sample_candidate_points[accumulated_child_count[points_parent[p]]+csi] = p;
-        // }
+        
+        csi = atomicAdd(&count_points_on_leafs[2*points_parent[p]+is_right], 1);
+        points_id_on_sample[p] = csi;
+        
     }
-    // __syncthreads();
-    // printf("%s: line %d : %d %d \n", __FILE__, __LINE__, depth_level_count[*actual_depth-1], *actual_depth);
-
 }
 
 #endif
