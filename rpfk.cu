@@ -140,7 +140,7 @@ class Cron
         }
 };
 
-class RPTK
+class RPFK
 {
 public:
     typepoints* points;
@@ -151,7 +151,7 @@ public:
     int RANDOM_SEED;
     int nn_exploring_factor;
     
-    RPTK(typepoints* points,
+    RPFK(typepoints* points,
          int* knn_indices,
          typepoints* knn_sqr_distances,
          int MAX_TREE_CHILD,
@@ -166,19 +166,19 @@ public:
          RANDOM_SEED(RANDOM_SEED),
          nn_exploring_factor(nn_exploring_factor){}
     
-    void knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
+    void knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
                       thrust::device_vector<int> &device_old_knn_indices,
                       thrust::device_vector<int> &device_knn_indices,
                       thrust::device_vector<typepoints> &device_knn_sqr_distances,
                       int K, int N, int D, int VERBOSE,
                       string run_name);
     
-    void knn_gpu_rptk_forest(int n_trees,
+    void knn_gpu_rpfk_forest(int n_trees,
                              int K, int N, int D, int VERBOSE,
                              string run_name);
 };
 
-void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
+void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
                         thrust::device_vector<int> &device_old_knn_indices,
                         thrust::device_vector<int> &device_knn_indices,
                         thrust::device_vector<typepoints> &device_knn_sqr_distances,
@@ -725,7 +725,7 @@ void RPTK::knn_gpu_rptk(thrust::device_vector<typepoints> &device_points,
 }
 
 
-void RPTK::knn_gpu_rptk_forest(int n_trees,
+void RPFK::knn_gpu_rpfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
                                string run_name="tree")
 {
@@ -737,7 +737,7 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
     Cron forest_total_cron;
     forest_total_cron.start();
     for(int i=0; i < n_trees; ++i){
-        knn_gpu_rptk(device_points,
+        knn_gpu_rpfk(device_points,
                      device_old_knn_indices,
                      device_knn_indices,
                      device_knn_sqr_distances,
@@ -748,7 +748,7 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
 
     forest_total_cron.stop();
     if(VERBOSE >= 1){
-        printf("Creating RPTK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
+        printf("Creating RPFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
 
     
@@ -883,8 +883,8 @@ int main(int argc,char* argv[]) {
     }
 
     int nn_exploring_factor = 0;
-    RPTK rptk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED, nn_exploring_factor);
-    rptk_knn.knn_gpu_rptk_forest(5, K, N, D, VERBOSE, "tree");
+    RPFK rpfk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED, nn_exploring_factor);
+    rpfk_knn.knn_gpu_rpfk_forest(5, K, N, D, VERBOSE, "tree");
 
 
 }

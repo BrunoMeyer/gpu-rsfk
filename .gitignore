@@ -1,6 +1,6 @@
 *.out
 *.png
 *.so
-rptk
+rpfk
 __pycache__/
 .vscode/

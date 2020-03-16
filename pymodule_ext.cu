@@ -4,10 +4,10 @@
 // #include "pymodule_ext.h"
 
 #include <sys/types.h>
-#include "rptk.cu"
+#include "rpfk.cu"
 
 extern "C" {
-    void pymodule_rptk_knn(int n_trees,
+    void pymodule_rpfk_knn(int n_trees,
                        int K,
                        int N,
                        int D,
@@ -21,7 +21,7 @@ extern "C" {
                        typepoints* knn_sqr_distances);
 }
 
-void pymodule_rptk_knn(int n_trees,
+void pymodule_rpfk_knn(int n_trees,
                        int K,
                        int N,
                        int D,
@@ -35,8 +35,8 @@ void pymodule_rptk_knn(int n_trees,
                        typepoints* knn_sqr_distances)
 {
     string run_name="run";
-    RPTK rptk_knn(points, knn_indices, knn_sqr_distances, MAX_TREE_CHILD,
+    RPFK rpfk_knn(points, knn_indices, knn_sqr_distances, MAX_TREE_CHILD,
                   MAX_DEPTH, RANDOM_STATE, nn_exploring_factor);
 
-    rptk_knn.knn_gpu_rptk_forest(n_trees, K, N, D, VERBOSE, run_name);
+    rpfk_knn.knn_gpu_rpfk_forest(n_trees, K, N, D, VERBOSE, run_name);
 }

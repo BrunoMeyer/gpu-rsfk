@@ -19,7 +19,7 @@ def ord_string(s):
     arr = b.extend(map(ord, s))
     return np.array([x for x in b] + [0]).astype(np.uint8)
 
-class RPTK(object):
+class RPFK(object):
     def __init__(self,
                  num_nearest_neighbors,
                  random_state=0,
@@ -32,14 +32,14 @@ class RPTK(object):
         self.nn_exploring_factor = int(nn_exploring_factor)
         
         # Build the hooks for the BH T-SNE library
-        self._path = pkg_resources.resource_filename('RPTK','') # Load from current location
+        self._path = pkg_resources.resource_filename('RPFK','') # Load from current location
         # self._faiss_lib = np.ctypeslib.load_library('libfaiss', self._path) # Load the ctypes library
         # self._gpufaiss_lib = np.ctypeslib.load_library('libgpufaiss', self._path) # Load the ctypes library
-        self._lib = np.ctypeslib.load_library('librptk', self._path) # Load the ctypes library
+        self._lib = np.ctypeslib.load_library('librpfk', self._path) # Load the ctypes library
         
         # Hook the BH T-SNE function
-        self._lib.pymodule_rptk_knn.restype = None
-        self._lib.pymodule_rptk_knn.argtypes = [ 
+        self._lib.pymodule_rpfk_knn.restype = None
+        self._lib.pymodule_rpfk_knn.argtypes = [ 
                 ctypes.c_int, # number of trees
                 ctypes.c_int, # number of nearest neighbors
                 ctypes.c_int, # total of points
@@ -92,7 +92,7 @@ class RPTK(object):
         self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
 
-        self._lib.pymodule_rptk_knn(
+        self._lib.pymodule_rpfk_knn(
                 ctypes.c_int(n_trees), # number of trees
                 ctypes.c_int(K), # number of nearest neighbors
                 ctypes.c_int(N), # total of points
@@ -140,7 +140,7 @@ if __name__ == "__main__":
 
 
     import time
-    K = 8
+    K = 32
     
     TEST_RPFK = False
     TEST_ANNOY = False
@@ -188,13 +188,13 @@ if __name__ == "__main__":
     #'''
 
     if TEST_RPFK:
-        rptk = RPTK(K, random_state=0, nn_exploring_factor=30,
+        rpfk = RPFK(K, random_state=0, nn_exploring_factor=1,
                     add_bit_random_motion=True)
-        indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
+        indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
                                                     max_tree_chlidren=128,
                                                     # max_tree_chlidren=len(dataX),
                                                     max_tree_depth=5000,
-                                                    n_trees=30,
+                                                    n_trees=10,
                                                     transposed_points=True,
                                                     random_motion_force=0.01,
                                                     # verbose=0)
@@ -215,7 +215,7 @@ if __name__ == "__main__":
         if negative_indices > 0:
             raise Exception('{} Negative indices'.format(negative_indices))
 
-        print("RPTK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
+        print("RPFK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
 
 
         # print(np.sum(indices==-1))
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     if TEST_IVFFLAT10:
         quantizer = faiss.IndexFlatL2(d)  # the other index
         index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
-        index.nprobe = 10              # default nprobe is 1, try a few more
+        index.nprobe = 20              # default nprobe is 1, try a few more
         # here we specify METRIC_L2, by default it performs inner-product search
         assert not index.is_trained
         index.train(xb)
@@ -368,10 +368,9 @@ if __name__ == "__main__":
         print("FAISS IVFPQ NNE (nprob=10): {}".format(get_nne_rate(real_indices,I, max_k=K)))
     if TEST_HNSWFLAT:
         init_t = time.time()
-        m=8
+        m=16
         index = faiss.IndexHNSWFlat(d,m)
         # index = faiss.index_cpu_to_gpu(res, 0, index)
-                                        # 8 specifies that each sub-vector is encoded as 8 bits
         index.train(xb)
         index.add(xb)
         D, I = index.search(xq, K)     # search
