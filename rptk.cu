@@ -774,11 +774,16 @@ void RPTK::knn_gpu_rptk_forest(int n_trees,
     for(int i=0; i < nn_exploring_factor; ++i){
         thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + K*N, device_old_knn_indices.begin());
         cudaDeviceSynchronize();
-        nearest_neighbors_exploring<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
-                                               thrust::raw_pointer_cast(device_old_knn_indices.data()),
-                                               thrust::raw_pointer_cast(device_knn_indices.data()),
-                                               thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                               N, D, K);
+        // nearest_neighbors_exploring<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
+        //                                        thrust::raw_pointer_cast(device_old_knn_indices.data()),
+        //                                        thrust::raw_pointer_cast(device_knn_indices.data()),
+        //                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+        //                                        N, D, K);
+        nearest_neighbors_exploring_coalesced<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
+                                                         thrust::raw_pointer_cast(device_old_knn_indices.data()),
+                                                         thrust::raw_pointer_cast(device_knn_indices.data()),
+                                                         thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                                         N, D, K);
         CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
         if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
         cudaDeviceSynchronize();

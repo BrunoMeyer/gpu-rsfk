@@ -57,7 +57,7 @@ class RPTK(object):
 
     def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500,
                                verbose=1, max_tree_chlidren=-1,
-                               transposed_points=False):
+                               transposed_points=False, random_motion_force=1.0):
         n_trees = int(n_trees)
         max_tree_depth = int(max_tree_depth)
         verbose = int(verbose)
@@ -79,7 +79,7 @@ class RPTK(object):
                 min_d = np.min(points[:,d])
                 max_d = np.max(points[:,d])
                 range_uniform = (max_d - min_d)/N
-                points[:,d]=points[:,d] + np.random.uniform(-range_uniform,range_uniform,N)
+                points[:,d]=points[:,d] + random_motion_force*np.random.uniform(-range_uniform,range_uniform,N)
         
         if not transposed_points:
             self.points = np.require(points.T, np.float32, ['CONTIGUOUS', 'ALIGNED'])
@@ -140,17 +140,25 @@ if __name__ == "__main__":
 
 
     import time
-    K = 32
+    K = 8
     
-    # TEST_IVFFLAT = True
-    # TEST_IVFFLAT10 = True
-    # TEST_IVFPQ = True
-    TEST_IVFPQ10 = True
-
+    TEST_RPFK = False
+    TEST_ANNOY = False
     TEST_IVFFLAT = False
     TEST_IVFFLAT10 = False
     TEST_IVFPQ = False
-    # TEST_IVFPQ10 = False
+    TEST_IVFPQ10 = False
+    TEST_HNSWFLAT = False
+    TEST_FLATL2 = False
+
+    TEST_RPFK = True
+    # TEST_ANNOY = True
+    # TEST_IVFFLAT = True
+    # TEST_IVFFLAT10 = True
+    # TEST_IVFPQ = True
+    # TEST_IVFPQ10 = True
+    # TEST_HNSWFLAT = True
+    # TEST_FLATL2 = True
 
     # N = 2048
     # D = 2
@@ -160,27 +168,13 @@ if __name__ == "__main__":
     # DATA_SET = "MNIST"
     # DATA_SET = "LUCID_INCEPTION"
     DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+
     dataX, dataY = load_dataset(DATA_SET)
-    print(dataX.shape)
+    print("dataX.shape: {}".format(dataX.shape))
+    print("K = {}".format(K))
     new_indices = np.arange(len(dataX))
     # np.random.shuffle(new_indices)
 
-    
-
-    rptk = RPTK(K, random_state=0, nn_exploring_factor=0,
-                add_bit_random_motion=True)
-    indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
-                                                max_tree_chlidren=-1,
-                                                # max_tree_chlidren=len(dataX),
-                                                max_tree_depth=5000,
-                                                n_trees=1,
-                                                transposed_points=True,
-                                                # verbose=0)
-                                                # verbose=1)
-                                                verbose=2)
-
-    # exit()
-    
     '''
     neigh = NearestNeighbors(K, n_jobs=-1)
     neigh.fit(dataX)
@@ -193,31 +187,95 @@ if __name__ == "__main__":
     real_sqd_dist = real_sqd_dist[new_indices,:K]
     #'''
 
-    idx = np.arange(len(dataX)).reshape((-1,1))
-    
-    # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
-    # print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
+    if TEST_RPFK:
+        rptk = RPTK(K, random_state=0, nn_exploring_factor=30,
+                    add_bit_random_motion=True)
+        indices, dist = rptk.find_nearest_neighbors(dataX[new_indices],
+                                                    max_tree_chlidren=128,
+                                                    # max_tree_chlidren=len(dataX),
+                                                    max_tree_depth=5000,
+                                                    n_trees=30,
+                                                    transposed_points=True,
+                                                    random_motion_force=0.01,
+                                                    # verbose=0)
+                                                    # verbose=1)
+                                                    verbose=2)
 
-    # print(indices.shape, dist.shape)
-    # print(real_indices.shape, real_sqd_dist.shape)
+        # exit()
+        
+        # idx = np.arange(len(dataX)).reshape((-1,1))
+        # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
+        # print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
 
-    print("RPTK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
+        # print(indices.shape, dist.shape)
+        # print(real_indices.shape, real_sqd_dist.shape)
+
+        # Sanity check
+        negative_indices = np.sum(indices==-1)
+        if negative_indices > 0:
+            raise Exception('{} Negative indices'.format(negative_indices))
+
+        print("RPTK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
 
 
-    # print(np.sum(indices==-1))
-    # for i in np.where(indices==-1)[0]:
-    #     print(indices[i])
+        # print(np.sum(indices==-1))
+        # for i in np.where(indices==-1)[0]:
+        #     print(indices[i])
 
 
 
-    # Sanity check
-    negative_indices = np.sum(indices==-1)
-    if negative_indices > 0:
-        raise Exception('{} Negative indices'.format(negative_indices))
+        
 
 
     # exit()
 
+    if TEST_ANNOY:
+        from annoy import AnnoyIndex
+        import random
+        from tqdm import tqdm
+        from multiprocessing import Pool
+        import multiprocessing
+        WORKERS = multiprocessing.cpu_count()
+
+        init_t = time.time()
+
+        f = dataX.shape[1]
+        t = AnnoyIndex(f, 'euclidean')  # Length of item vector that will be indexed
+        for i,v in enumerate(dataX):
+            t.add_item(i, v)
+
+        t.build(50) # 10 trees
+        indices = []
+        distances = [] 
+
+        def individual_query(i):
+            return t.get_nns_by_item(i, K,
+                                    #  search_k=1,
+                                     search_k=-1,
+                                     include_distances=True)
+        p = Pool(WORKERS)
+        arguments = [i for i in range(len(dataX))]
+        ziped_result = list(tqdm(p.imap(individual_query, arguments),
+                       total=len(arguments),
+                       desc="Computing ANNOY"))
+        p.terminate()
+
+
+        for idx,d in ziped_result:
+            indices.append(idx)
+            distances.append(d)
+        
+        indices = np.array(indices)
+
+        # t.save('test.ann')
+        print("ANNOY takes {} seconds".format(time.time() - init_t))
+        print("ANNOY NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
+
+        # ...
+
+        # u = AnnoyIndex(f, 'angular')
+        # u.load('test.ann') # super fast, will just mmap the file
+        # print(u.get_nns_by_item(0, 1000)) # will find the 1000 nearest neighbors
 
 
 
@@ -231,7 +289,7 @@ if __name__ == "__main__":
 
     #!/usr/bin/env python2
 
-    if TEST_IVFFLAT or TEST_IVFFLAT10 or TEST_IVFPQ or TEST_IVFPQ10:
+    if TEST_IVFFLAT or TEST_IVFFLAT10 or TEST_IVFPQ or TEST_IVFPQ10 or TEST_HNSWFLAT or TEST_FLATL2:
         import os
         import time
         import numpy as np
@@ -239,8 +297,6 @@ if __name__ == "__main__":
 
         import faiss
         # from faiss.datasets import load_sift1M, evaluate
-
-
 
         res = faiss.StandardGpuResources()  # use a single GPU
         # xb, xq, xt, gt = load_sift1M()
@@ -255,7 +311,6 @@ if __name__ == "__main__":
         init_t = time.time()
         quantizer = faiss.IndexFlatL2(d)  # the other index
         index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
-        index = faiss.index_cpu_to_gpu(res, 0, index)
 
         # here we specify METRIC_L2, by default it performs inner-product search
         assert not index.is_trained
@@ -263,49 +318,76 @@ if __name__ == "__main__":
         assert index.is_trained
         index.add(xb)                  # add may be a bit slower as well
         index.nprobe = 1              # default nprobe is 1, try a few more
+        index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # actual search
         print("FAISS IVFFLAT takes {} seconds".format(time.time() - init_t))
         print("FAISS IVFFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
     if TEST_IVFFLAT10:
         quantizer = faiss.IndexFlatL2(d)  # the other index
         index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
+        index.nprobe = 10              # default nprobe is 1, try a few more
         # here we specify METRIC_L2, by default it performs inner-product search
         assert not index.is_trained
         index.train(xb)
         assert index.is_trained
         init_t = time.time()
         index.add(xb)                  # add may be a bit slower as well
-        index.nprobe = 10              # default nprobe is 1, try a few more
+        
+        index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # actual search
         print("FAISS IVFFLAT (nprob=10) takes {} seconds".format(time.time() - init_t))
         print("FAISS IVFFLAT NNE (nprob=10): {}".format(get_nne_rate(real_indices,I, max_k=K)))
     if TEST_IVFPQ:
         init_t = time.time()
-        m=8
+        # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
+        m = 5
         quantizer = faiss.IndexFlatL2(d)  # this remains the same
         index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)
                                         # 8 specifies that each sub-vector is encoded as 8 bits
         index.nprobe = 1              # make comparable with experiment above
         index.train(xb)
         index.add(xb)
-        index.nprobe = 1              # make comparable with experiment above
+        index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # search
         print("FAISS IVFPQ takes {} seconds".format(time.time() - init_t))
         print("FAISS IVFPQ NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
     if TEST_IVFPQ10:
         init_t = time.time()
-        m=8
+        m = 4
+        # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
         quantizer = faiss.IndexFlatL2(d)  # this remains the same
         index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)
-                                        # 8 specifies that each sub-vector is encoded as 8 bits
         index.nprobe = 1              # make comparable with experiment above
+                                        # 8 specifies that each sub-vector is encoded as 8 bits
         index.train(xb)
         index.add(xb)
         index.nprobe = 10              # make comparable with experiment above
+        index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # search
         print("FAISS IVFPQ (nprob=10) takes {} seconds".format(time.time() - init_t))
         print("FAISS IVFPQ NNE (nprob=10): {}".format(get_nne_rate(real_indices,I, max_k=K)))
-
+    if TEST_HNSWFLAT:
+        init_t = time.time()
+        m=8
+        index = faiss.IndexHNSWFlat(d,m)
+        # index = faiss.index_cpu_to_gpu(res, 0, index)
+                                        # 8 specifies that each sub-vector is encoded as 8 bits
+        index.train(xb)
+        index.add(xb)
+        D, I = index.search(xq, K)     # search
+        print("FAISS HNSWFLAT takes {} seconds".format(time.time() - init_t))
+        print("FAISS HNSWFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+    if TEST_FLATL2:
+        init_t = time.time()
+        # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
+        index = faiss.IndexFlatL2(d)
+        index = faiss.index_cpu_to_gpu(res, 0, index)
+                                        # 8 specifies that each sub-vector is encoded as 8 bits
+        index.train(xb)
+        index.add(xb)
+        D, I = index.search(xq, K)     # search
+        print("FAISS FLATL2 takes {} seconds".format(time.time() - init_t))
+        print("FAISS FLATL2 NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
 
 
     '''
