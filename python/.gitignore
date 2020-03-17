@@ -1,3 +1,3 @@
-../python/build/
-../python/dist/
-../python/gpu_rpfk.egg-info/
+build/
+dist/
+gpu_rpfk.egg-info/

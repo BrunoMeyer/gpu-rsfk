@@ -1,14 +1,3 @@
-"""Bindings for the Barnes Hut TSNE algorithm with fast nearest neighbors
-
-Refs:
-References
-[1] van der Maaten, L.J.P.; Hinton, G.E. Visualizing High-Dimensional Data
-Using t-SNE. Journal of Machine Learning Research 9:2579-2605, 2008.
-[2] van der Maaten, L.J.P. t-Distributed Stochastic Neighbor Embedding
-http://homepage.tudelft.nl/19j49/t-SNE.html
-
-"""
-
 import numpy as np
 import ctypes
 import os
@@ -32,7 +21,7 @@ class RPFK(object):
         self.nn_exploring_factor = int(nn_exploring_factor)
         
         # Build the hooks for the BH T-SNE library
-        self._path = pkg_resources.resource_filename('RPFK','') # Load from current location
+        self._path = pkg_resources.resource_filename('gpu_rpfk','') # Load from current location
         # self._faiss_lib = np.ctypeslib.load_library('libfaiss', self._path) # Load the ctypes library
         # self._gpufaiss_lib = np.ctypeslib.load_library('libgpufaiss', self._path) # Load the ctypes library
         self._lib = np.ctypeslib.load_library('librpfk', self._path) # Load the ctypes library
