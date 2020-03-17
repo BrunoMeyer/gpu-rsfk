@@ -42,7 +42,7 @@ struct is_greater_than_zero
 };
 
 
-#include "matplotlibcpp.h"
+#include "third_party/matplotlibcpp.h"
 namespace plt = matplotlibcpp;
 
 #include <iostream> 

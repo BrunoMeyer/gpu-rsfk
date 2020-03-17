@@ -4,7 +4,7 @@
 // #include "pymodule_ext.h"
 
 #include <sys/types.h>
-#include "rpfk.cu"
+#include "../rpfk.cu"
 
 extern "C" {
     void pymodule_rpfk_knn(int n_trees,
