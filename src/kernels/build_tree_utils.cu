@@ -9,13 +9,17 @@ build_tree_utils(int* actual_depth,
                  int* tree_count,
                  int* accumulated_nodes_count,
                  int* child_count,
-                 int* accumulated_child_count){
+                 int* accumulated_child_count,
+                 int* device_active_points_count)
+// Executed at end of each iteration of tree building
+{
     depth_level_count[*actual_depth] = *count_new_nodes;
     accumulated_nodes_count[*actual_depth] = accumulated_nodes_count[*actual_depth-1] + *count_new_nodes;
     
     *actual_depth = *actual_depth+1;
     *count_new_nodes = 0;
     *tree_count = 0;
+    *device_active_points_count = 0;
 }
 
 

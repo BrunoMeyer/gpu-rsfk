@@ -17,8 +17,8 @@ setup(
     # license = "BSD",
     # keywords = "example documentation tutorial",
     # url = "http://packages.python.org/an_example_pypi_project",
-    packages=['gpu-rpfk'],
-    package_data={'gpu-rpfk': ['librpfk.so']},
+    packages=['gpu_rpfk'],
+    package_data={'gpu_rpfk': ['librpfk.so']},
     install_requires=[
         'numpy >= 1.14.1',
     ],

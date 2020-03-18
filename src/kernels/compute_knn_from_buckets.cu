@@ -88,7 +88,9 @@ void compute_knn_from_buckets_perwarp_coalesced(int* points_parent,
     int knn_id;
     int tidw = threadIdx.x % 32; // my id on warp
     int init_warp_on_block = threadIdx.x-tidw;
-    extern __shared__ typepoints local_candidate_dist_val[];
+    // extern __shared__ typepoints local_candidate_dist_val[];
+    __shared__ typepoints local_candidate_dist_val[1024];
+    
     int bid, p, _p, i, j;
     int tmp_candidate, tmp_p;
     

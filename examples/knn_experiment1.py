@@ -9,6 +9,8 @@ import multiprocessing
 WORKERS = multiprocessing.cpu_count()
 
 import os
+import gc
+
 import time
 import numpy as np
 import pdb
@@ -22,37 +24,27 @@ import faiss
 
 from datasets import load_dataset, load_dataset_knn
 
-
-def get_nne_rate(h_indices, l_indices, random_state=0, max_k=32,
-                 verbose=0):
-    
-
-
-    if verbose >= 2:
-        print("Precision \t|\t Recall")
-    
-    if verbose >= 1:
-        iterator_1 = tqdm(zip(h_indices, l_indices))
-    else:
-        iterator_1 = zip(h_indices, l_indices)
-
-    total_T = 0
-    for x,y in iterator_1:
-        T = len(set(x).intersection(set(y)))
-        total_T+=T
-
-    N = len(h_indices)
-    qnx = float(total_T)/(N * max_k)
-
-    rnx = ((N-1)*qnx-max_k)/(N-1-max_k)
-    # return qnx
-    return rnx
+from utils.knn_compare import get_nne_rate, KnnResult
 
 
 if __name__ == "__main__":
+    knn_result_exp = KnnResult(".","exp1")
+
+    # N = 2048
+    # D = 2
+    # dataX = np.random.random((N,D)).astype(np.float32)
+    # DATA_SET = "MNIST_SKLEARN"
+    # DATA_SET = "CIFAR"
+    # DATA_SET = "MNIST"
+    # DATA_SET = "LUCID_INCEPTION"
+    DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    # DATA_SET = "GOOGLE_NEWS300"
+
+    K = 8
+    quality_name = "nne"
+    dataset_name = DATA_SET
     
-    K = 32
-    
+
     TEST_RPFK = False
     TEST_ANNOY = False
     TEST_IVFFLAT = False
@@ -71,14 +63,7 @@ if __name__ == "__main__":
     # TEST_HNSWFLAT = True
     # TEST_FLATL2 = True
 
-    # N = 2048
-    # D = 2
-    # dataX = np.random.random((N,D)).astype(np.float32)
-    DATA_SET = "MNIST_SKLEARN"
-    # DATA_SET = "CIFAR"
-    # DATA_SET = "MNIST"
-    # DATA_SET = "LUCID_INCEPTION"
-    # DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    
 
     dataX, dataY = load_dataset(DATA_SET)
     print("dataX.shape: {}".format(dataX.shape))
@@ -92,46 +77,67 @@ if __name__ == "__main__":
     real_sqd_dist, real_indices = neigh.kneighbors(dataX)
     '''
     
-    #'''
+    # '''
     real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
     real_indices = real_indices[new_indices,:K].astype(np.int)
     real_sqd_dist = real_sqd_dist[new_indices,:K]
-    #'''
+    # '''
 
     if TEST_RPFK:
-        rpfk = RPFK(K, random_state=0, nn_exploring_factor=1,
-                    add_bit_random_motion=True)
-        indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
-                                                    max_tree_chlidren=-1,
-                                                    # max_tree_chlidren=len(dataX),
-                                                    max_tree_depth=5000,
-                                                    n_trees=10,
-                                                    transposed_points=True,
-                                                    random_motion_force=0.01,
-                                                    # verbose=0)
-                                                    # verbose=1)
-                                                    verbose=2)
+        for nnef in [0,1,2]:
+            if nnef > 0:
+                # knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
+                knn_method_name = "RPFK MTC32 (NN exploring factor = {})".format(nnef)
+            else:
+                # knn_method_name = "RPFK"
+                knn_method_name = "RPFK MTC32"
 
-        # exit()
-        
-        # idx = np.arange(len(dataX)).reshape((-1,1))
-        # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
-        # print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
+            parameter_name = "n_trees"
+            parameter_list = [x+1 for x in range(1,21,2)]
+            quality_list = []
+            time_list = []
+            for n_trees in parameter_list:
+                init_t = time.time()
+                rpfk = RPFK(K, random_state=0, nn_exploring_factor=nnef,
+                            add_bit_random_motion=True)
+                indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
+                                                            max_tree_chlidren=32,
+                                                            # max_tree_chlidren=len(dataX),
+                                                            max_tree_depth=5000,
+                                                            n_trees=n_trees,
+                                                            transposed_points=True,
+                                                            random_motion_force=0.1,
+                                                            # verbose=0)
+                                                            # verbose=1)
+                                                            verbose=2)
+                
+                t = time.time() - init_t
+                nne_rate = get_nne_rate(real_indices,indices, max_k=K)
+                
+                time_list.append(t)
+                quality_list.append(nne_rate)
+                # exit()
+                
+                # idx = np.arange(len(dataX)).reshape((-1,1))
+                # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
+                # print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
 
-        # print(indices.shape, dist.shape)
-        # print(real_indices.shape, real_sqd_dist.shape)
+                # print(indices.shape, dist.shape)
+                # print(real_indices.shape, real_sqd_dist.shape)
 
-        # Sanity check
-        negative_indices = np.sum(indices==-1)
-        if negative_indices > 0:
-            raise Exception('{} Negative indices'.format(negative_indices))
+                # Sanity check
+                negative_indices = np.sum(indices==-1)
+                if negative_indices > 0:
+                    raise Exception('{} Negative indices'.format(negative_indices))
 
-        print("RPFK NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
+                print("RPFK NNP: {}".format(nne_rate))
+                
+            knn_result_exp.add_knn_result(dataset_name, K, knn_method_name, parameter_name, parameter_list,
+                                            quality_name, quality_list, time_list)
 
-
-        # print(np.sum(indices==-1))
-        # for i in np.where(indices==-1)[0]:
-        #     print(indices[i])
+            # print(np.sum(indices==-1))
+            # for i in np.where(indices==-1)[0]:
+            #     print(indices[i])
 
 
 
@@ -141,45 +147,63 @@ if __name__ == "__main__":
     # exit()
 
     if TEST_ANNOY:
-        init_t = time.time()
+        knn_method_name = "ANNOY"
+        parameter_name = "n_trees"
+        parameter_list = [x+1 for x in range(1,21,2)]
+        quality_list = []
+        time_list = []
 
-        f = dataX.shape[1]
-        t = AnnoyIndex(f, 'euclidean')  # Length of item vector that will be indexed
-        for i,v in enumerate(dataX):
-            t.add_item(i, v)
+        for n_trees in parameter_list:
+            init_t = time.time()
 
-        t.build(50) # 10 trees
-        indices = []
-        distances = [] 
+            f = dataX.shape[1]
+            t = AnnoyIndex(f, 'euclidean')  # Length of item vector that will be indexed
+            for i,v in enumerate(dataX):
+                t.add_item(i, v)
 
-        def individual_query(i):
-            return t.get_nns_by_item(i, K,
-                                    #  search_k=1,
-                                     search_k=-1,
-                                     include_distances=True)
-        p = Pool(WORKERS)
-        arguments = [i for i in range(len(dataX))]
-        ziped_result = list(tqdm(p.imap(individual_query, arguments),
-                       total=len(arguments),
-                       desc="Computing ANNOY"))
-        p.terminate()
+            t.build(n_trees) # 10 trees
+            indices = []
+            distances = [] 
 
+            gc.collect()
 
-        for idx,d in ziped_result:
-            indices.append(idx)
-            distances.append(d)
-        
-        indices = np.array(indices)
+            def individual_query(i):
+                return t.get_nns_by_item(i, K,
+                                        #  search_k=1,
+                                        search_k=-1,
+                                        include_distances=True)
+            p = Pool(WORKERS)
+            arguments = [i for i in range(len(dataX))]
+            ziped_result = list(tqdm(p.imap(individual_query, arguments),
+                        total=len(arguments),
+                        desc="Computing ANNOY"))
+            p.terminate()
+            t = time.time() - init_t
+            gc.collect()
 
-        # t.save('test.ann')
-        print("ANNOY takes {} seconds".format(time.time() - init_t))
-        print("ANNOY NNP: {}".format(get_nne_rate(real_indices,indices, max_k=K)))
+            for idx,d in ziped_result:
+                indices.append(idx)
+                distances.append(d)
 
-        # ...
+            gc.collect()
 
-        # u = AnnoyIndex(f, 'angular')
-        # u.load('test.ann') # super fast, will just mmap the file
-        # print(u.get_nns_by_item(0, 1000)) # will find the 1000 nearest neighbors
+            indices = np.array(indices)
+            nne_rate = get_nne_rate(real_indices,indices, max_k=K)
+            time_list.append(t)
+            quality_list.append(nne_rate)
+
+            # t.save('test.ann')
+            print("{} takes {} seconds".format(knn_method_name,t))
+            print("{} NNP: {}".format(knn_method_name,nne_rate))
+            knn_result_exp.add_knn_result(dataset_name, K, knn_method_name, parameter_name, parameter_list,
+                                            quality_name, quality_list, time_list)
+
+            # ...
+            gc.collect()
+
+            # u = AnnoyIndex(f, 'angular')
+            # u.load('test.ann') # super fast, will just mmap the file
+            # print(u.get_nns_by_item(0, 1000)) # will find the 1000 nearest neighbors
 
 
 
@@ -219,21 +243,41 @@ if __name__ == "__main__":
         D, I = index.search(xq, K)     # actual search
         print("FAISS IVFFLAT takes {} seconds".format(time.time() - init_t))
         print("FAISS IVFFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+
     if TEST_IVFFLAT10:
-        quantizer = faiss.IndexFlatL2(d)  # the other index
-        index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
-        index.nprobe = 20              # default nprobe is 1, try a few more
-        # here we specify METRIC_L2, by default it performs inner-product search
-        assert not index.is_trained
-        index.train(xb)
-        assert index.is_trained
-        init_t = time.time()
-        index.add(xb)                  # add may be a bit slower as well
+        knn_method_name = "IVFFLAT"
+        parameter_name = "nprobe"
+        parameter_list = [x+1 for x in range(10)]
+        quality_list = []
+        time_list = []
         
-        index = faiss.index_cpu_to_gpu(res, 0, index)
-        D, I = index.search(xq, K)     # actual search
-        print("FAISS IVFFLAT (nprob=10) takes {} seconds".format(time.time() - init_t))
-        print("FAISS IVFFLAT NNE (nprob=10): {}".format(get_nne_rate(real_indices,I, max_k=K)))
+        
+        for nprobe in parameter_list:
+            quantizer = faiss.IndexFlatL2(d)  # the other index
+            index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
+            index.nprobe = nprobe              # default nprobe is 1, try a few more
+            # here we specify METRIC_L2, by default it performs inner-product search
+            assert not index.is_trained
+            index.train(xb)
+            assert index.is_trained
+            init_t = time.time()
+            index.add(xb)                  # add may be a bit slower as well
+            
+            index = faiss.index_cpu_to_gpu(res, 0, index)
+            D, I = index.search(xq, K)     # actual search
+
+            t = time.time() - init_t
+            nne_rate = get_nne_rate(real_indices,I, max_k=K)
+
+            print("FAISS IVFFLAT (nprobe={}) takes {} seconds".format(nprobe,t))
+            print("FAISS IVFFLAT NNE (nprobe={}): {}".format(nprobe,nne_rate))
+            quality_list.append(nne_rate)
+            time_list.append(t)
+        
+        knn_result_exp.add_knn_result(dataset_name, K, knn_method_name, parameter_name, parameter_list,
+                                      quality_name, quality_list, time_list)
+    
+        
     if TEST_IVFPQ:
         init_t = time.time()
         # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
@@ -274,6 +318,12 @@ if __name__ == "__main__":
         print("FAISS HNSWFLAT takes {} seconds".format(time.time() - init_t))
         print("FAISS HNSWFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
     if TEST_FLATL2:
+        knn_method_name = "FLATL2"
+        parameter_name = "Brute Force"
+        parameter_list = [None, None]
+        quality_list = []
+        time_list = []
+        
         init_t = time.time()
         # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
         index = faiss.IndexFlatL2(d)
@@ -282,47 +332,19 @@ if __name__ == "__main__":
         index.train(xb)
         index.add(xb)
         D, I = index.search(xq, K)     # search
-        print("FAISS FLATL2 takes {} seconds".format(time.time() - init_t))
-        print("FAISS FLATL2 NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+        
+        t = time.time() - init_t
+        nne_rate = get_nne_rate(real_indices,I, max_k=K)
+        
+        time_list = [t]*2
+        quality_list = [0.0,1.0]
+        
+        print("FAISS FLATL2 takes {} seconds".format(t))
+        print("FAISS FLATL2 NNE: {}".format(nne_rate))
+        knn_result_exp.add_knn_result(dataset_name, K, knn_method_name, parameter_name, parameter_list,
+                                      quality_name, quality_list, time_list)
 
-
-    '''
-    print("benchmark")
-
-    for lnprobe in range(10):
-        nprobe = 1 << lnprobe
-        index.setNumProbes(nprobe)
-        t, r = evaluate(index, xq, gt, 100)
-
-        print("nprobe=%4d %.3f ms recalls= %.4f %.4f %.4f" % (nprobe, t, r[1], r[10], r[100]))
-    '''
-
-    '''
-
-
-    init_t = time.time()
-    tree = VpTree(dataX)
     
-    vpt_distances, vpt_indices = tree.getNearestNeighborsBatch(dataX, K) # split the work between threads
-    vpt_time = time.time() - init_t
-    
-    
-    print(indices[0])
-    print(vpt_indices[0])
-    print(real_indices[0])
-    print("")
-    print(indices[500])
-    print(vpt_indices[500])
-    print(real_indices[500])
-    print("")
-    print(np.sort(dist[0]))
-    print(np.array(vpt_distances[0],dtype=np.float32)**2)
-    print(real_sqd_dist[0])
-    print("")
-    print(np.sort(dist[500]))
-    print(np.array(vpt_distances[500],dtype=np.float32)**2)
-    print(real_sqd_dist[500])
-
-    print("VPT time: {}".format(vpt_time))
-    print("VPT NNP: {}".format(get_nne_rate(real_indices,vpt_indices, max_k=K)))
-    '''
+    knn_result_exp.save()
+    knn_result_exp.plot(dataset_name, K, quality_name, dataX,
+                        dash_method=["FLATL2"])

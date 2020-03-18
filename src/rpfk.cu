@@ -209,12 +209,15 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
     thrust::device_vector<int> device_is_right_child(N, 0);
     thrust::device_vector<int> device_sample_candidate_points(2*N, -1);
     thrust::device_vector<int> device_points_id_on_sample(N, -1);
+    thrust::device_vector<int> device_active_points(N, -1);
+
 
     thrust::device_vector<int> device_depth_level_count(MAX_DEPTH,-1);
     thrust::device_vector<int> device_accumulated_nodes_count(MAX_DEPTH,-1);
     thrust::device_vector<int> device_tree_count(1,0);
     thrust::device_vector<int> device_count_new_nodes(1,0);
     thrust::device_vector<int> device_actual_depth(1,0);
+    thrust::device_vector<int> device_active_points_count(1, 0);
 
 
     // Automatically get the ideal number of threads per block and total of blocks
@@ -251,7 +254,7 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
         std::cout << std::endl;
     }
 
-    Cron total_cron, update_parents_cron, create_nodes_cron,
+    Cron total_cron, check_active_points_cron, update_parents_cron, create_nodes_cron,
          check_points_side_cron, tree_count_cron, organize_sample_candidate_cron,
          dynamic_memory_allocation_cron;
 
@@ -265,8 +268,20 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
         
         cudaDeviceSynchronize();
         
+        check_active_points_cron.start();
+        build_tree_check_active_points<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                                  thrust::raw_pointer_cast(device_points_depth.data()),
+                                                  thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
+                                                  thrust::raw_pointer_cast(device_actual_depth.data()),
+                                                  thrust::raw_pointer_cast(device_active_points.data()),
+                                                  thrust::raw_pointer_cast(device_active_points_count.data()),
+                                                  N);
+        cudaDeviceSynchronize();
+        check_active_points_cron.stop();
+        CudaTest((char *)"build_tree_check_active_points Kernel failed!");
+
         check_points_side_cron.start();
-        build_tree_check_points_side<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+        build_tree_check_points_side_coalesced<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_points_parent.data()),
@@ -282,6 +297,8 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
                                    thrust::raw_pointer_cast(device_count_points_on_leafs[depth-1]->data()),
                                    thrust::raw_pointer_cast(device_sample_candidate_points.data()),
                                    thrust::raw_pointer_cast(device_points_id_on_sample.data()),
+                                   thrust::raw_pointer_cast(device_active_points.data()),
+                                   thrust::raw_pointer_cast(device_active_points_count.data()),
                                    N, D, RANDOM_SEED);
         cudaDeviceSynchronize();
         check_points_side_cron.stop();
@@ -421,7 +438,8 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
                                       thrust::raw_pointer_cast(device_tree_count.data()),
                                       thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
                                       thrust::raw_pointer_cast(device_child_count[depth]->data()), // new depth is created
-                                      thrust::raw_pointer_cast(device_accumulated_child_count[depth]->data()) // new depth is created
+                                      thrust::raw_pointer_cast(device_accumulated_child_count[depth]->data()), // new depth is created
+                                      thrust::raw_pointer_cast(device_active_points_count.data())
                                       );
             cudaDeviceSynchronize();
             CudaTest((char *)"build_tree_utils Kernel failed!");
@@ -503,8 +521,6 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_set_leafs_idx Kernel failed!");
     }
-
-
     
     
     build_tree_bucket_points<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
@@ -683,6 +699,7 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
 
     if(VERBOSE >= 1){
         printf("Total tree building takes %lf seconds\n", total_cron.t_total/1000);
+        printf("\tCheck active points Kernel takes %lf seconds\n", check_active_points_cron.t_total/1000);
         printf("\tCheck points side Kernel takes %lf seconds\n", check_points_side_cron.t_total/1000);
         printf("\tCount new nodes Kernel takes %lf seconds\n", tree_count_cron.t_total/1000);
         printf("\tDynamic memory allocation takes %lf seconds\n", dynamic_memory_allocation_cron.t_total/1000);
