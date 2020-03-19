@@ -79,7 +79,7 @@ class KnnResult(object):
             json.dump(self.data, json_file, indent=4)
 
     def plot(self, dataset_name, K, quality_name, dataX=None, dash_method=[]):
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig, ax = plt.subplots(figsize=(16, 8))
 
         for knn_method_name in self.data[dataset_name][str(K)]:
             for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
@@ -102,4 +102,4 @@ class KnnResult(object):
 
         
         ax.legend()
-        fig.savefig("a.png")
+        fig.savefig("{}.png".format(self._experiment_name))

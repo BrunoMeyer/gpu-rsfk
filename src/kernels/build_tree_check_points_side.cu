@@ -16,7 +16,7 @@ int check_hyperplane_side(int node_idx, int p, typepoints* tree, typepoints* poi
 
 __device__
 inline
-int check_hyperplane_side_coalesced(int node_idx, int p, typepoints* tree,
+void check_hyperplane_side_coalesced(int node_idx, int p, typepoints* tree,
                                     typepoints* points, int D, int N,
                                     int tidw, typepoints* product)
 {
@@ -109,7 +109,7 @@ void build_tree_check_points_side_coalesced(typepoints* tree,
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
-    int i, j, p, tmp_p, is_right;
+    int i, j, p, tmp_p;
     int csi; //candidate_sample_id;
     
 

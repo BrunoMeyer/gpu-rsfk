@@ -86,7 +86,7 @@ static void CudaTest(char* msg)
 {
   cudaError_t e;
 
-  cudaThreadSynchronize();
+  cudaDeviceSynchronize();
   if (cudaSuccess != (e = cudaGetLastError())) {
     fprintf(stderr, "%s: %d\n", msg, e);
     fprintf(stderr, "%s\n", cudaGetErrorString(e));

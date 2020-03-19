@@ -76,67 +76,75 @@ void nearest_neighbors_exploring_coalesced(typepoints* points,
                                  typepoints* knn_sqr_dist,
                                  int N, int D, int K)
 {
-    int tid = blockDim.x*blockIdx.x+threadIdx.x;
-
-    int max_id_point, p_neigh, p_neigh_neigh;
-    typepoints max_dist_val;
     
+    int p, tmp_p, tmp_candidate, max_id_point, p_neigh, p_neigh_neigh;
+    int i,j,k;
     int knn_id;
+    typepoints max_dist_val;
 
+    __shared__ typepoints candidate_dist_val[1024];
+
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
     int tidw = threadIdx.x % 32; // my id on warp
-    int wid =  threadIdx.x/32; // warp id
-
-    __shared__ typepoints candidate_dist_val[1024/32];
+    int init_warp_on_block = threadIdx.x-tidw;
 
 
-    for(int p = tid/32; p < N; p+=blockDim.x*gridDim.x/32){
-        knn_id = p*K;
-        // __syncthreads();
-        // __syncwarp();
+    for(p = tid; __any_sync(__activemask(), p < N); p+=blockDim.x*gridDim.x){
+        if(p < N){
+            knn_id = p*K;
+            // __syncthreads();
+            // __syncwarp();
 
-        max_id_point = knn_id;
-        max_dist_val = knn_sqr_dist[knn_id];
+            max_id_point = knn_id;
+            max_dist_val = knn_sqr_dist[knn_id];
 
 
-        for(int j=1; j < K; ++j){
-            if(knn_sqr_dist[knn_id+j] > max_dist_val){
-                max_id_point = knn_id+j;
-                max_dist_val = knn_sqr_dist[knn_id+j];
+            for(j=1; j < K; ++j){
+                if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                    max_id_point = knn_id+j;
+                    max_dist_val = knn_sqr_dist[knn_id+j];
+                }
             }
         }
-        
-        for(int i=0; i < K; ++i){
-            p_neigh = old_knn_indices[knn_id+i];
-            for(int k=0; k < K; ++k){
-                __syncthreads();
-                candidate_dist_val[wid] = 0.0f;
-                __syncthreads();
+        __syncwarp();
+        for(i=0; i < K; ++i){
+            if(p < N) p_neigh = old_knn_indices[knn_id+i];
+            for(k=0; k < K; ++k){
+                p_neigh_neigh = -1;
 
-                p_neigh_neigh = old_knn_indices[p_neigh*K + k];
-                if(p == p_neigh_neigh) continue;
-                
-                for(int j=0; j < K; ++j){
-                    if(p_neigh_neigh == knn_indices[knn_id+j]){
-                        p_neigh_neigh = -1;
-                        break;
+                if(p < N){
+                    p_neigh_neigh = old_knn_indices[p_neigh*K + k];
+                    
+                    for(j=0; j < K; ++j){
+                        if(p_neigh_neigh == knn_indices[knn_id+j]){
+                            p_neigh_neigh = -1;
+                            break;
+                        }
                     }
+                    candidate_dist_val[init_warp_on_block+tidw] = 0.0f;
                 }
+
+                __syncthreads();
+                // tmp_dist_val = euclidean_distance_sqr(&points[p_neigh_neigh*D], &points[p*D], D);
+                for(j=0; j < 32; ++j){
+                    tmp_candidate = __shfl_sync(__activemask(), p_neigh_neigh, j);
+                    if(tmp_candidate == -1) continue;
+                    tmp_p = __shfl_sync(__activemask(), p, j);
+                    euclidean_distance_sqr_coalesced(tmp_candidate, tmp_p, points, D, N,
+                                                     tidw, &candidate_dist_val[init_warp_on_block+j]);
+                }
+                __syncwarp();
                 if(p_neigh_neigh == -1) continue;
 
-                // tmp_dist_val = euclidean_distance_sqr(&points[p_neigh_neigh*D], &points[p*D], D);
-                euclidean_distance_sqr_coalesced(p_neigh_neigh, p, points, D, N,
-                                                 tidw, &candidate_dist_val[wid]);
-                __syncwarp();   
-
                 
-                if(tidw == 0 && candidate_dist_val[wid] < max_dist_val){
+                if(candidate_dist_val[init_warp_on_block+tidw] < max_dist_val){
                     // printf("%d %d\n", knn_indices[max_id_point] ,p_neigh_neigh);
                     knn_indices[max_id_point] = p_neigh_neigh;
-                    knn_sqr_dist[max_id_point] = candidate_dist_val[wid];
+                    knn_sqr_dist[max_id_point] = candidate_dist_val[init_warp_on_block+tidw];
 
                     max_id_point = knn_id;
                     max_dist_val = knn_sqr_dist[knn_id];
-                    for(int j=1; j < K; ++j){
+                    for(j=1; j < K; ++j){
                         if(knn_sqr_dist[knn_id+j] > max_dist_val){
                             max_id_point = knn_id+j;
                             max_dist_val = knn_sqr_dist[knn_id+j];

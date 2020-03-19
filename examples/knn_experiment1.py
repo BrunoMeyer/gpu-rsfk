@@ -17,18 +17,76 @@ import pdb
 
 import faiss
 
+import argparse
+
 # from faiss.datasets import load_sift1M, evaluate
 
 # from vptree import VpTree
 
 
-from datasets import load_dataset, load_dataset_knn
+from datasets import load_dataset, load_dataset_knn, get_dataset_options
 
 from utils.knn_compare import get_nne_rate, KnnResult
 
 
 if __name__ == "__main__":
-    knn_result_exp = KnnResult(".","exp1")
+    parser = argparse.ArgumentParser(description="Parameters used to init experiments")
+    parser.add_argument("-n", "--name", help="Experiment name used to create json log",
+                        type=str, default="exp1")
+    parser.add_argument("-p", "--path", help="Experiment path used to create json log",
+                        type=str, default=".")
+    parser.add_argument("-v", "--rpfk_verbose", help="RPFK verbose level ",
+                        type=int, default=1)
+    parser.add_argument("-k", "--n_neighbors", help="Number of neighbors (K) used in KNN",
+                        type=int, default=32)
+    parser.add_argument("-d", "--dataset", help="Dataset name",
+                        type=str, default="MNIST_SKLEARN",
+                        choices=get_dataset_options())
+    
+    # parser.add_argument("-nn", "--numneigh", help="Number of nearest neighbors used in KNN",type=int,default=DEFAULT_NUM_NEIGHBORS)
+    # parser.add_argument("-p", "--perplexity", help="Perplexity",type=float,default=DEFAULT_PERPLEXITY)
+    # parser.add_argument("-ms", "--maxsamples", help="Max samples from dataset. Default is use all samples",
+    #                     type=int,default=DEFAULT_MAX_SAMPLES)
+
+    # parser.add_argument('--pre_knn', dest='pre_knn', action='store_true', default=False,
+    #                     help="Fetch pre KNN already computed and stored in file")
+    # parser.add_argument('--cpu_knn', dest='cpu_knn', action='store_true', default=False,
+    #                     help="Pre compute KNN in CPU. No effect if pre_knn is enabled")
+
+    # parser.add_argument('--save', dest='save_log', action='store_true', default=False,
+    #                     help="Save log in results")
+    # parser.add_argument('--plot', dest='plot', action='store_true', default=False,
+    #                     help="Plot embedding into 2 dimensions")
+    
+    parser.add_argument('--save_plot', dest='save_plot', action='store_true', default=False,
+                        help="Create and save a plot into a png comparing different executions from log file")
+
+    parser.add_argument('--skip_save', dest='skip_save', action='store_true', default=False,
+                        help="Doesnt change log file")
+
+
+    args = parser.parse_args()
+
+    exp_name = args.name
+    exp_path = args.path
+    rpfk_verbose = args.rpfk_verbose
+
+    # embsize = args.embsize
+    DATA_SET = args.dataset
+    # maxsamples = args.maxsamples
+    # numneigh = args.numneigh
+    # perplexity = args.perplexity
+    
+    # pre_knn = args.pre_knn
+    # cpu_knn = args.cpu_knn
+    # save_log = args.save_log
+    # plot = args.plot
+
+    save_plot = args.save_plot
+    skip_save = args.skip_save
+    K = args.n_neighbors
+
+    knn_result_exp = KnnResult(exp_path, exp_name)
 
     # N = 2048
     # D = 2
@@ -37,10 +95,9 @@ if __name__ == "__main__":
     # DATA_SET = "CIFAR"
     # DATA_SET = "MNIST"
     # DATA_SET = "LUCID_INCEPTION"
-    DATA_SET = "AMAZON_REVIEW_ELETRONICS"
+    # DATA_SET = "AMAZON_REVIEW_ELETRONICS"
     # DATA_SET = "GOOGLE_NEWS300"
 
-    K = 8
     quality_name = "nne"
     dataset_name = DATA_SET
     
@@ -84,13 +141,15 @@ if __name__ == "__main__":
     # '''
 
     if TEST_RPFK:
-        for nnef in [0,1,2]:
+        # for nnef in [1]:
+        for nnef in [1,2]:
+        # for nnef in [0,1,2]:
             if nnef > 0:
-                # knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
-                knn_method_name = "RPFK MTC32 (NN exploring factor = {})".format(nnef)
+                knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
+                # knn_method_name = "RPFK MTC64 (NN exploring factor = {})".format(nnef)
             else:
-                # knn_method_name = "RPFK"
-                knn_method_name = "RPFK MTC32"
+                knn_method_name = "RPFK"
+                # knn_method_name = "RPFK MTC64"
 
             parameter_name = "n_trees"
             parameter_list = [x+1 for x in range(1,21,2)]
@@ -101,7 +160,7 @@ if __name__ == "__main__":
                 rpfk = RPFK(K, random_state=0, nn_exploring_factor=nnef,
                             add_bit_random_motion=True)
                 indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
-                                                            max_tree_chlidren=32,
+                                                            max_tree_chlidren=-1,
                                                             # max_tree_chlidren=len(dataX),
                                                             max_tree_depth=5000,
                                                             n_trees=n_trees,
@@ -109,7 +168,8 @@ if __name__ == "__main__":
                                                             random_motion_force=0.1,
                                                             # verbose=0)
                                                             # verbose=1)
-                                                            verbose=2)
+                                                            # verbose=2)
+                                                            verbose=rpfk_verbose)
                 
                 t = time.time() - init_t
                 nne_rate = get_nne_rate(real_indices,indices, max_k=K)
@@ -345,6 +405,9 @@ if __name__ == "__main__":
                                       quality_name, quality_list, time_list)
 
     
-    knn_result_exp.save()
-    knn_result_exp.plot(dataset_name, K, quality_name, dataX,
-                        dash_method=["FLATL2"])
+    if not skip_save:
+        knn_result_exp.save()
+    
+    if save_plot:
+        knn_result_exp.plot(dataset_name, K, quality_name, dataX,
+                            dash_method=["FLATL2"])

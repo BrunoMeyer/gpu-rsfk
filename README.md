@@ -1,5 +1,14 @@
-GPU Random Projection Forest K-NN
+# GPU Random Projection Forest K-NN
 
-# Similarity Search
+## Compiling and Compiling
+```bash
+make && sudo make install
+make && make install SETUP_FLAG="--user"
+make python_arch75 && make install SETUP_FLAG="--user"
+make main && ./rpfk
+make main_arch75 && ./rpfk
+```
 
-# ANNOY
+## Similarity Search
+
+## ANNOY
