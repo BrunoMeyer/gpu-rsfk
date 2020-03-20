@@ -1,6 +1,6 @@
 # GPU Random Projection Forest K-NN
 
-## Compiling and Compiling
+## Compiling and Installing
 ```bash
 make && sudo make install
 make && make install SETUP_FLAG="--user"

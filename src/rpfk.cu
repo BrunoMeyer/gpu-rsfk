@@ -23,23 +23,6 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-struct is_true
-{
-  __host__ __device__
-  bool operator()(const bool x)
-  {
-    return x;
-  }
-};
-
-struct is_greater_than_zero
-{
-  __host__ __device__
-  bool operator()(const int x)
-  {
-    return x > 0;
-  }
-};
 
 
 #include "third_party/matplotlibcpp.h"
@@ -96,25 +79,6 @@ static void CudaTest(char* msg)
 
 
 
-int countDistinct(int* arr, int n) 
-{ 
-    // Creates an empty hashset 
-    unordered_set<int> s; 
-  
-    // Traverse the input array 
-    int res = 0; 
-    for (int i = 0; i < n; i++) { 
-  
-        // If not present, then put it in 
-        // hashtable and increment result 
-        if (s.find(arr[i]) == s.end()) { 
-            s.insert(arr[i]); 
-            res++; 
-        } 
-    } 
-  
-    return res; 
-}
 
 class Cron
 {
@@ -140,15 +104,47 @@ class Cron
         }
 };
 
+// Class used to construct Random Projection forest and execute KNN
 class RPFK
 {
 public:
-    typepoints* points;
+    
+    // Data points. It will be stored as POINTS x DIMENSION or
+    // DIMENSION x POINTS considering the defined POINTS_STRUCTURE
+    typepoints* points; 
+    
+    // Indices of the estimated k-nearest neighbors for each point
+    // and squared distances between
+    // It can be previously initialized before the execution of RPFK
+    // with valid indices and distances, otherwise it must assume that indices
+    // have -1 value and distances FLT_MAX (or DBL_MAX)
+    // The indices ARE NOT sorted by the relative distances
     int* knn_indices;
     typepoints* knn_sqr_distances;
+    
+    // Maximum number of points that will be present in each leaf node (bucket)
+    // This affect the local KNN step after the construction of each tree
     int MAX_TREE_CHILD;
+
+    // The limit of the tree depth. The algorithm may break if a tree reach
+    // a higher value than this parameter. When the tree is 'ready',
+    // there is a early stop and this limit will not be reached
+    // Known Bug: It may be necessary to add a 'random motion' before the
+    // execution of the algorithm to prevent that two points be positioned
+    // in the the same location, leading to the impossibility of the
+    // tree construction and the reach of MAX_DEPTH 
     int MAX_DEPTH;
+
+    // SEED used to the pseudorandom number generator
     int RANDOM_SEED;
+
+    // Nearest neighbor exploring is a pos-processing technique that will improve
+    // the accuracy of the approximated KNN. The neighbors of the neighbors
+    // will be treated as neighbor candidates for each point, which is a
+    // O(N*D*(K^2)) time cost step. This can be executed several times using the
+    // updated indices as the new input, and this ammount is represented by
+    // nn_exploring_factor. When nn_exploring_factor=0 the Nearest Neighbor Exploring
+    // will not be executed
     int nn_exploring_factor;
     
     RPFK(typepoints* points,
@@ -166,35 +162,65 @@ public:
          RANDOM_SEED(RANDOM_SEED),
          nn_exploring_factor(nn_exploring_factor){}
     
-    void knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
-                      thrust::device_vector<int> &device_old_knn_indices,
-                      thrust::device_vector<int> &device_knn_indices,
-                      thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                      int K, int N, int D, int VERBOSE,
-                      string run_name);
+
+    // Create a random projection tree and update the indices by considering
+    // the points in the same leaf node as candidates to neighbor
+    // This ensure that each point will have K valid neighbors indices, which
+    // can be very inaccurate.
+    // The device_knn_indices parameter can be previously initialized with
+    // valid indices or -1 values. If it has valid indices, also will be necessary
+    // to add the precomputed squared distances (device_knn_sqr_distances) 
+    void add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
+                                    thrust::device_vector<int> &device_old_knn_indices,
+                                    thrust::device_vector<int> &device_knn_indices,
+                                    thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                    int K, int N, int D, int VERBOSE,
+                                    string run_name);
     
+    
+    // Run n_tree times the add_random_projection_tree procedure and the nearest
+    // neighbors exploring if necessary
     void knn_gpu_rpfk_forest(int n_trees,
                              int K, int N, int D, int VERBOSE,
                              string run_name);
 };
 
-void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
+void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
                         thrust::device_vector<int> &device_old_knn_indices,
                         thrust::device_vector<int> &device_knn_indices,
                         thrust::device_vector<typepoints> &device_knn_sqr_distances,
                         int K, int N, int D, int VERBOSE,
                         string run_name="out.png")
 {
+    // They are pointers to each vector that represent a level of the tree
+    // These vectors are allocated dynamically during the tree construction
+    
+    // Tree nodes hyperplanes values (equations of size D+1)
     thrust::device_vector<typepoints>** device_tree = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
+    
+    // Id of the parent (from the last level) of each node at current level
     thrust::device_vector<int>** device_tree_parents = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+
+    // Id of the two children (of the next level) of each node at current level
     thrust::device_vector<int>** device_tree_children = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+
+    // Flag that indicates if this node is a leaf (bucket)
     thrust::device_vector<bool>** device_is_leaf = (thrust::device_vector<bool>**) malloc(sizeof(thrust::device_vector<bool>*)*MAX_DEPTH);
+    
+    // Total of points "inside" of each node
     thrust::device_vector<int>** device_child_count = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    
+    // Vector with the cumulative sum of the number of points "inside" each node
+    // The id of each node is used to assume an arbitrary order
     thrust::device_vector<int>** device_accumulated_child_count = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
+    
+    // Same that device_child_count. This is used in check_points_side and 
+    // device_child_count is used in update_parents
+    // TODO: Remove redundant processing 
     thrust::device_vector<int>** device_count_points_on_leafs = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
 
 
-
+    // Allocates the vectors for the first level of the tree
     int MAX_NODES = 1;
     device_tree[0] = new thrust::device_vector<typepoints>(((D+1)*MAX_NODES));
     device_tree_parents[0] = new thrust::device_vector<int>(MAX_NODES,-1);
@@ -204,21 +230,57 @@ void RPFK::knn_gpu_rpfk(thrust::device_vector<typepoints> &device_points,
     device_accumulated_child_count[0] = new thrust::device_vector<int>(2*MAX_NODES, 0);
     device_count_points_on_leafs[0] = new thrust::device_vector<int>(2*MAX_NODES, 0);
 
+
+
+    // Structures that cost O(N) space
+
+    // The id of the node parent for each point. Note that nodes from
+    // different levels of the tree can have the same id 
     thrust::device_vector<int> device_points_parent(N, 0);
+
+    // The level of the node parent of each point
     thrust::device_vector<int> device_points_depth(N, 0);
+
+    // Flag that indicates if the parent of each point is left (0) or right (1)
     thrust::device_vector<int> device_is_right_child(N, 0);
+
+    // Vector that sequentially put points candidates to be selected in the
+    // creation of a new hyperplane
     thrust::device_vector<int> device_sample_candidate_points(2*N, -1);
+
+    // The id of each point inside of each subvector of device_sample_candidate_points
     thrust::device_vector<int> device_points_id_on_sample(N, -1);
+
+    // Flag that indicates if a point is already inside a leaf (bucket) node
     thrust::device_vector<int> device_active_points(N, -1);
 
 
+
+
+    // Structures that cost O(MAX_DEPTH) or O(1) space
+    // MAX_DEPTH is assumed to be constant
+
+    // Total of nodes inside each level
+    // This is used to allocate several structures dynamically
     thrust::device_vector<int> device_depth_level_count(MAX_DEPTH,-1);
+
+    // An vector with the values of device_depth_level_count as a cumulative sum
     thrust::device_vector<int> device_accumulated_nodes_count(MAX_DEPTH,-1);
+
+    // Count the total of nodes allocated in the tree
     thrust::device_vector<int> device_tree_count(1,0);
+
+    // Count the number of new nodes in the current level
     thrust::device_vector<int> device_count_new_nodes(1,0);
+
+    // Index of the current level of tree
     thrust::device_vector<int> device_actual_depth(1,0);
+
+    // Total of points that are not already in a leaf (bucket)
     thrust::device_vector<int> device_active_points_count(1, 0);
 
+
+    
 
     // Automatically get the ideal number of threads per block and total of blocks
     // used in kernels
@@ -746,15 +808,15 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
                                string run_name="tree")
 {
+    Cron forest_total_cron;
+    forest_total_cron.start();
     thrust::device_vector<typepoints> device_points(points, points+N*D);
     thrust::device_vector<int> device_old_knn_indices(knn_indices, knn_indices+N*K);
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
     thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
 
-    Cron forest_total_cron;
-    forest_total_cron.start();
     for(int i=0; i < n_trees; ++i){
-        knn_gpu_rpfk(device_points,
+        add_random_projection_tree(device_points,
                      device_old_knn_indices,
                      device_knn_indices,
                      device_knn_sqr_distances,
@@ -805,8 +867,7 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
         if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
         cudaDeviceSynchronize();
     }
-    cron_nearest_neighbors_exploring.stop();    
-    
+    cron_nearest_neighbors_exploring.stop();
     if(VERBOSE >= 1){
         printf("Nearest Neighbors Exploring computation Kernel takes %lf seconds\n", cron_nearest_neighbors_exploring.t_total/1000);
     }
@@ -823,6 +884,8 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     device_old_knn_indices.shrink_to_fit();
     device_knn_sqr_distances.clear();
     device_knn_sqr_distances.shrink_to_fit();
+
+    
 }
 
 int main(int argc,char* argv[]) {
