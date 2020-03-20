@@ -1,7 +1,9 @@
 import numpy as np
 import ctypes
-import os
 import pkg_resources
+import time
+
+
 
 def ord_string(s):
     b = bytearray()
@@ -47,6 +49,7 @@ class RPFK(object):
     def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500,
                                verbose=1, max_tree_chlidren=-1,
                                transposed_points=False, random_motion_force=1.0):
+
         n_trees = int(n_trees)
         max_tree_depth = int(max_tree_depth)
         verbose = int(verbose)
@@ -63,6 +66,7 @@ class RPFK(object):
         # if(self.add_bit_random_motion):
         #     points=points + np.random.uniform(-0.0001,0.0001,points.shape)
 
+        
         if(self.add_bit_random_motion):
             for d in range(D):
                 min_d = np.min(points[:,d])
@@ -80,7 +84,7 @@ class RPFK(object):
         self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
-
+        t_init = time.time()
         self._lib.pymodule_rpfk_knn(
                 ctypes.c_int(n_trees), # number of trees
                 ctypes.c_int(K), # number of nearest neighbors
@@ -94,13 +98,14 @@ class RPFK(object):
                 self.points,
                 self._knn_indices,
                 self._knn_squared_dist)
+        self._last_search_time = time.time() - t_init
 
         return self._knn_indices, self._knn_squared_dist
 
 
 
 def test():
-    test_N = 10000
+    test_N = 3000
     test_D = 200
     test_K = 30
     dataX = np.random.random((test_N, test_D))

@@ -87,6 +87,8 @@ if __name__ == "__main__":
     K = args.n_neighbors
 
     knn_result_exp = KnnResult(exp_path, exp_name)
+    max_tree_chlidren = -1
+    # max_tree_chlidren = 128
 
     # N = 2048
     # D = 2
@@ -111,10 +113,10 @@ if __name__ == "__main__":
     TEST_HNSWFLAT = False
     TEST_FLATL2 = False
 
-    TEST_RPFK = True
+    # TEST_RPFK = True
     # TEST_ANNOY = True
     # TEST_IVFFLAT = True
-    # TEST_IVFFLAT10 = True
+    TEST_IVFFLAT10 = True
     # TEST_IVFPQ = True
     # TEST_IVFPQ10 = True
     # TEST_HNSWFLAT = True
@@ -142,14 +144,19 @@ if __name__ == "__main__":
 
     if TEST_RPFK:
         # for nnef in [1]:
-        for nnef in [1,2]:
-        # for nnef in [0,1,2]:
+        # for nnef in [1,2]:
+        for nnef in [0,1,2]:
+        # for nnef in [3]:
             if nnef > 0:
-                knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
-                # knn_method_name = "RPFK MTC64 (NN exploring factor = {})".format(nnef)
+                if max_tree_chlidren == -1:
+                    knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
+                else:
+                    knn_method_name = "RPFK MTC{} (NN exploring factor = {})".format(max_tree_chlidren, nnef)
             else:
-                knn_method_name = "RPFK"
-                # knn_method_name = "RPFK MTC64"
+                if max_tree_chlidren == -1:
+                    knn_method_name = "RPFK"
+                else:
+                    knn_method_name = "RPFK MTC{}".format(max_tree_chlidren)
 
             parameter_name = "n_trees"
             parameter_list = [x+1 for x in range(1,21,2)]
@@ -160,7 +167,7 @@ if __name__ == "__main__":
                 rpfk = RPFK(K, random_state=0, nn_exploring_factor=nnef,
                             add_bit_random_motion=True)
                 indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
-                                                            max_tree_chlidren=-1,
+                                                            max_tree_chlidren=max_tree_chlidren,
                                                             # max_tree_chlidren=len(dataX),
                                                             max_tree_depth=5000,
                                                             n_trees=n_trees,
@@ -170,8 +177,9 @@ if __name__ == "__main__":
                                                             # verbose=1)
                                                             # verbose=2)
                                                             verbose=rpfk_verbose)
-                
-                t = time.time() - init_t
+                # t = time.time() - init_t
+                t = rpfk._last_search_time # Ignore data initialization time
+
                 nne_rate = get_nne_rate(real_indices,indices, max_k=K)
                 
                 time_list.append(t)
