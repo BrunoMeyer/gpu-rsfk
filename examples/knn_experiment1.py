@@ -26,7 +26,7 @@ import argparse
 
 from datasets import load_dataset, load_dataset_knn, get_dataset_options
 
-from utils.knn_compare import get_nne_rate, KnnResult
+from utils.knn_compare import get_nne_rate, create_recall_eps, KnnResult
 
 
 if __name__ == "__main__":
@@ -39,10 +39,21 @@ if __name__ == "__main__":
                         type=int, default=1)
     parser.add_argument("-k", "--n_neighbors", help="Number of neighbors (K) used in KNN",
                         type=int, default=32)
+    parser.add_argument("--mtc", help="Max Tree Chlidren parameter in RPFK",
+                        type=int, default=-1)
     parser.add_argument("-d", "--dataset", help="Dataset name",
                         type=str, default="MNIST_SKLEARN",
                         choices=get_dataset_options())
+    parser.add_argument("--recall_eps_val", help="Recall-e value",
+                        type=float, default=0.01)
     
+    parser.add_argument('-e', '--nnexp_factor_list', type=int, nargs='+',
+                        default=[0,1,2],
+                        help='Nearest Neighbors Exploring factor list to test')
+
+    parser.add_argument('-t','--n_trees_list', type=int, nargs='+',
+                        default=[x for x in range(1,21,2)],
+                        help='List of total of trees to test')
     # parser.add_argument("-nn", "--numneigh", help="Number of nearest neighbors used in KNN",type=int,default=DEFAULT_NUM_NEIGHBORS)
     # parser.add_argument("-p", "--perplexity", help="Perplexity",type=float,default=DEFAULT_PERPLEXITY)
     # parser.add_argument("-ms", "--maxsamples", help="Max samples from dataset. Default is use all samples",
@@ -85,10 +96,12 @@ if __name__ == "__main__":
     save_plot = args.save_plot
     skip_save = args.skip_save
     K = args.n_neighbors
-
+    max_tree_chlidren = args.mtc
+    nnexp_factor_list = args.nnexp_factor_list
+    n_trees_list = args.n_trees_list
     knn_result_exp = KnnResult(exp_path, exp_name)
-    max_tree_chlidren = -1
-    # max_tree_chlidren = 128
+    # max_tree_chlidren = 126
+    # max_tree_chlidren = 30
 
     # N = 2048
     # D = 2
@@ -101,6 +114,15 @@ if __name__ == "__main__":
     # DATA_SET = "GOOGLE_NEWS300"
 
     quality_name = "nne"
+    quality_name = "recall_eps"
+    recall_eps_val = args.recall_eps_val
+
+    if quality_name == "nne":
+        quality_function = get_nne_rate
+    if quality_name == "recall_eps":
+        quality_function = create_recall_eps(recall_eps_val)
+        quality_name = "{}_{}".format(quality_name, recall_eps_val)
+
     dataset_name = DATA_SET
     
 
@@ -113,10 +135,10 @@ if __name__ == "__main__":
     TEST_HNSWFLAT = False
     TEST_FLATL2 = False
 
-    # TEST_RPFK = True
+    TEST_RPFK = True
     # TEST_ANNOY = True
     # TEST_IVFFLAT = True
-    TEST_IVFFLAT10 = True
+    # TEST_IVFFLAT10 = True
     # TEST_IVFPQ = True
     # TEST_IVFPQ10 = True
     # TEST_HNSWFLAT = True
@@ -143,9 +165,11 @@ if __name__ == "__main__":
     # '''
 
     if TEST_RPFK:
+        # for nnef in [0]:
         # for nnef in [1]:
         # for nnef in [1,2]:
-        for nnef in [0,1,2]:
+        # for nnef in [0,1,2]:
+        for nnef in nnexp_factor_list:
         # for nnef in [3]:
             if nnef > 0:
                 if max_tree_chlidren == -1:
@@ -159,7 +183,8 @@ if __name__ == "__main__":
                     knn_method_name = "RPFK MTC{}".format(max_tree_chlidren)
 
             parameter_name = "n_trees"
-            parameter_list = [x+1 for x in range(1,21,2)]
+            parameter_list = n_trees_list
+            # parameter_list = [10]
             quality_list = []
             time_list = []
             for n_trees in parameter_list:
@@ -180,10 +205,13 @@ if __name__ == "__main__":
                 # t = time.time() - init_t
                 t = rpfk._last_search_time # Ignore data initialization time
 
-                nne_rate = get_nne_rate(real_indices,indices, max_k=K)
+                nne_rate = quality_function(real_indices,indices, real_sqd_dist, dist, max_k=K)
                 
                 time_list.append(t)
                 quality_list.append(nne_rate)
+                print("RPFK Time: {}".format(t), flush=True)
+                print("RPFK NNP: {}".format(nne_rate), flush=True)
+                print("")
                 # exit()
                 
                 # idx = np.arange(len(dataX)).reshape((-1,1))
@@ -197,8 +225,8 @@ if __name__ == "__main__":
                 negative_indices = np.sum(indices==-1)
                 if negative_indices > 0:
                     raise Exception('{} Negative indices'.format(negative_indices))
-
-                print("RPFK NNP: {}".format(nne_rate))
+                
+                
                 
             knn_result_exp.add_knn_result(dataset_name, K, knn_method_name, parameter_name, parameter_list,
                                             quality_name, quality_list, time_list)
@@ -256,7 +284,8 @@ if __name__ == "__main__":
             gc.collect()
 
             indices = np.array(indices)
-            nne_rate = get_nne_rate(real_indices,indices, max_k=K)
+            distances = np.array(distances)
+            nne_rate = quality_function(real_indices,indices, real_sqd_dist, distances, max_k=K)
             time_list.append(t)
             quality_list.append(nne_rate)
 
@@ -310,7 +339,7 @@ if __name__ == "__main__":
         index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # actual search
         print("FAISS IVFFLAT takes {} seconds".format(time.time() - init_t))
-        print("FAISS IVFFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+        print("FAISS IVFFLAT NNE: {}".format(quality_function(real_indices,I, max_k=K)))
 
     if TEST_IVFFLAT10:
         knn_method_name = "IVFFLAT"
@@ -335,7 +364,7 @@ if __name__ == "__main__":
             D, I = index.search(xq, K)     # actual search
 
             t = time.time() - init_t
-            nne_rate = get_nne_rate(real_indices,I, max_k=K)
+            nne_rate = quality_function(real_indices, I, real_sqd_dist, D, max_k=K)
 
             print("FAISS IVFFLAT (nprobe={}) takes {} seconds".format(nprobe,t))
             print("FAISS IVFFLAT NNE (nprobe={}): {}".format(nprobe,nne_rate))
@@ -359,7 +388,7 @@ if __name__ == "__main__":
         index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # search
         print("FAISS IVFPQ takes {} seconds".format(time.time() - init_t))
-        print("FAISS IVFPQ NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+        print("FAISS IVFPQ NNE: {}".format(quality_function(real_indices,I, max_k=K)))
     if TEST_IVFPQ10:
         init_t = time.time()
         m = 4
@@ -374,7 +403,7 @@ if __name__ == "__main__":
         index = faiss.index_cpu_to_gpu(res, 0, index)
         D, I = index.search(xq, K)     # search
         print("FAISS IVFPQ (nprob=10) takes {} seconds".format(time.time() - init_t))
-        print("FAISS IVFPQ NNE (nprob=10): {}".format(get_nne_rate(real_indices,I, max_k=K)))
+        print("FAISS IVFPQ NNE (nprob=10): {}".format(quality_function(real_indices,I, max_k=K)))
     if TEST_HNSWFLAT:
         init_t = time.time()
         m=16
@@ -384,7 +413,7 @@ if __name__ == "__main__":
         index.add(xb)
         D, I = index.search(xq, K)     # search
         print("FAISS HNSWFLAT takes {} seconds".format(time.time() - init_t))
-        print("FAISS HNSWFLAT NNE: {}".format(get_nne_rate(real_indices,I, max_k=K)))
+        print("FAISS HNSWFLAT NNE: {}".format(quality_function(real_indices,I, max_k=K)))
     if TEST_FLATL2:
         knn_method_name = "FLATL2"
         parameter_name = "Brute Force"
@@ -402,7 +431,8 @@ if __name__ == "__main__":
         D, I = index.search(xq, K)     # search
         
         t = time.time() - init_t
-        nne_rate = get_nne_rate(real_indices,I, max_k=K)
+        nne_rate = quality_function(real_indices, I, real_sqd_dist, D, max_k=K)
+        
         
         time_list = [t]*2
         quality_list = [0.0,1.0]

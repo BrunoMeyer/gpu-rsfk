@@ -17,7 +17,6 @@ build_tree_utils(int* actual_depth,
     accumulated_nodes_count[*actual_depth] = accumulated_nodes_count[*actual_depth-1] + *count_new_nodes;
     
     *actual_depth = *actual_depth+1;
-    *count_new_nodes = 0;
     *tree_count = 0;
     *device_active_points_count = 0;
 }
@@ -60,9 +59,9 @@ build_tree_max_leaf_size(int* max_leaf_size,
 
 __global__
 void
-build_tree_set_leafs_idx(int* leaf_idx_to_node_idx,
+build_tree_set_leaves_idx(int* leaf_idx_to_node_idx,
                          int* node_idx_to_leaf_idx,
-                         int* total_leafs,
+                         int* total_leaves,
                          bool* is_leaf,
                          int* depth_level_count,
                          int* accumulated_nodes_count,
@@ -74,9 +73,30 @@ build_tree_set_leafs_idx(int* leaf_idx_to_node_idx,
     for(int node=tid; node < depth_level_count[depth]; node+=blockDim.x*gridDim.x){
         if(is_leaf[node]){
             acc_idx = accumulated_nodes_count[depth] + node;
-            new_idx = atomicAdd(total_leafs, 1);
+            new_idx = atomicAdd(total_leaves, 1);
             leaf_idx_to_node_idx[new_idx] = acc_idx;
             node_idx_to_leaf_idx[acc_idx] = new_idx;
+        }
+    }
+}
+
+__global__
+void
+debug_count_hist_leaf_size(int* hist,
+                           int* max_leaf_size,
+                           int* min_leaf_size,
+                           int* total_leafs,
+                           bool* is_leaf,
+                           int* child_count,
+                           int* count_nodes,
+                           int* depth_level_count,
+                           int depth)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+
+    for(int node=tid; node < depth_level_count[depth]; node+=blockDim.x*gridDim.x){
+        if(is_leaf[node]){
+            atomicAdd(&hist[child_count[node]-*min_leaf_size], 1);
         }
     }
 }

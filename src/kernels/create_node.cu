@@ -9,6 +9,7 @@ void create_root(typepoints* tree,
                  int* tree_count,
                  int p1,
                  int p2,
+                 int* count_new_nodes,
                  typepoints* points,
                  int D, int N)
 {
@@ -21,13 +22,14 @@ void create_root(typepoints* tree,
     *tree_count = 0;
 
     int i;
-    tree[node_idx*(D+1) + D] = 0.0f;
+    // tree[node_idx*(D+1) + D] = 0.0f;
+    tree[get_tree_idx(node_idx,D,*count_new_nodes,D)] = 0.0f;
 
     for(i=0;i < D; ++i){
         // tree[node_idx*(D+1) + i] = points[p1*D+i]-points[p2*D+i];
         // tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[p1*D+i]+points[p2*D+i])/2; // multiply the point of plane and the normal vector 
-        tree[node_idx*(D+1) + i] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
-        tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 
+        tree[get_tree_idx(node_idx,i,*count_new_nodes,D)] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
+        tree[get_tree_idx(node_idx,D,*count_new_nodes,D)]+= tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 
     }
 }
 
@@ -53,13 +55,14 @@ void create_node(int parent,
     
     tree_children[2*parent+is_right_child] = node_idx;
     int i;
-    tree[node_idx*(D+1) + D] = 0.0f;
+    // tree[node_idx*(D+1) + D] = 0.0f;
+    tree[get_tree_idx(node_idx,D,*count_new_nodes,D)] = 0.0f;
 
     for(i=0; i < D; ++i){
         // tree[node_idx*(D+1) + i] = points[p1*D+i]-points[p2*D+i];
         // tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[p1*D+i]+points[p2*D+i])/2; // multiply the point of plane and the normal vector 
-        tree[node_idx*(D+1) + i] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
-        tree[node_idx*(D+1) + D]+= tree[node_idx*(D+1) + i]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 
+        tree[get_tree_idx(node_idx,i,*count_new_nodes,D)] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
+        tree[get_tree_idx(node_idx,D,*count_new_nodes,D)]+= tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 
     }
 }
 

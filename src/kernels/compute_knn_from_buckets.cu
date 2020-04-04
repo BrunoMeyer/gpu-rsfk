@@ -55,8 +55,8 @@ float euclidean_distance_sqr_small_block(int p1, int p2, typepoints* local_point
 
 __device__
 inline
-void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
-                                      int N, int tidw, typepoints* diff_sqd)
+void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points, int D,
+                                             int N, int tidw, typepoints* diff_sqd)
 {
     typepoints diff;
 
@@ -64,6 +64,21 @@ void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
         diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
         atomicAdd(diff_sqd,diff*diff);
     }
+}
+
+__device__
+inline
+void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
+                                      int N, int tidw, typepoints* diff_sqd)
+{
+    typepoints diff;
+    typepoints s = 0.0f;
+    for(int i=tidw; i < D; i+=32){
+        diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
+        s+=diff*diff;
+        // atomicAdd(diff_sqd,diff*diff);
+    }
+    atomicAdd(diff_sqd,s);
 }
 
 

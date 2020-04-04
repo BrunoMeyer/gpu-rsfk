@@ -60,8 +60,13 @@ class RPFK(object):
         
         if max_tree_chlidren == -1:
             max_tree_chlidren = 2*K+2
-        if max_tree_chlidren < 2*K+1:
+        if max_tree_chlidren < 2*K+2:
             raise Exception('max_tree_chlidren = {} \t => max_tree_chlidren must be at least 2*K+1'.format(max_tree_chlidren))
+        
+        # if max_tree_chlidren == -1:
+        #     max_tree_chlidren = K+1
+        # if max_tree_chlidren < K+1:
+        #     raise Exception('max_tree_chlidren = {} \t => max_tree_chlidren must be at least K+1'.format(max_tree_chlidren))
         
         # if(self.add_bit_random_motion):
         #     points=points + np.random.uniform(-0.0001,0.0001,points.shape)
