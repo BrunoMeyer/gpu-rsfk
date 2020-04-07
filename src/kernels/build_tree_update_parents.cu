@@ -18,7 +18,8 @@ void build_tree_update_parents(typepoints* tree,
                                int* tree_count,
                                int* depth_level_count,
                                int* count_new_nodes,
-                               int N, int D, int K, int MAX_TREE_CHILD)
+                               int N, int D,
+                               int MIN_TREE_CHILD, int MAX_TREE_CHILD)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
@@ -63,7 +64,8 @@ void build_tree_post_update_parents(typepoints* tree,
                                     #if COMPILE_TYPE == DEBUG
                                     int* count_undo_leaf,
                                     #endif
-                                    int N, int D, int K, int MAX_TREE_CHILD)
+                                    int N, int D,
+                                    int MIN_TREE_CHILD, int MAX_TREE_CHILD)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
@@ -72,7 +74,7 @@ void build_tree_post_update_parents(typepoints* tree,
     int new_count;
     // Set nodes parent in the new depth
     for(p = tid; p < N; p+=blockDim.x*gridDim.x){
-        if(points_depth[p] == *actual_depth && child_count_new_depth[points_parent[p]] <= K){
+        if(points_depth[p] == *actual_depth && child_count_new_depth[points_parent[p]] < MIN_TREE_CHILD){
             child_count_new_depth[points_parent[p]] = 0;
             is_leaf_new_depth[points_parent[p]] = false;
             

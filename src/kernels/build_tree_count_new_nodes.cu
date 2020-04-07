@@ -15,7 +15,8 @@ void build_tree_count_new_nodes(typepoints* tree,
                                 int* tree_count,
                                 int* depth_level_count,
                                 int* count_new_nodes,
-                                int N, int D, int K, int MAX_TREE_CHILD)
+                                int N, int D,
+                                int MIN_TREE_CHILD, int MAX_TREE_CHILD)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     // printf("%s: line %d : %d %d \n", __FILE__, __LINE__, depth_level_count[*actual_depth-1], *actual_depth);

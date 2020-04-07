@@ -60,6 +60,18 @@ using namespace std;
     #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+1)+dimension)
 #endif
 
+
+// EDV = EUCLIDIEAN DISTANCE VERSION
+#define EDV_ATOMIC_OK               0
+#define EDV_ATOMIC_CSE              1   // common subexpression elimination
+#define EDV_NOATOMIC                2
+#define EDV_NOATOMIC_NOSHM          3   // value returned in register (NO SHM)
+#define EDV_WARP_REDUCE_XOR         4
+#define EDV_WARP_REDUCE_XOR_NOSHM   5   // value returned in register (NO SHM)
+
+#define EUCLIDEAN_DISTANCE_VERSION EDV_WARP_REDUCE_XOR_NOSHM
+
+
 #define RELEASE 0
 #define DEBUG 1
 #define COMPILE_TYPE RELEASE
@@ -133,8 +145,9 @@ public:
     int* knn_indices;
     typepoints* knn_sqr_distances;
     
-    // Maximum number of points that will be present in each leaf node (bucket)
+    // Maximum and Minimum number of points that will be present in each leaf node (bucket)
     // This affect the local KNN step after the construction of each tree
+    int MIN_TREE_CHILD;
     int MAX_TREE_CHILD;
 
     // The limit of the tree depth. The algorithm may break if a tree reach
@@ -161,6 +174,7 @@ public:
     RPFK(typepoints* points,
          int* knn_indices,
          typepoints* knn_sqr_distances,
+         int MIN_TREE_CHILD,
          int MAX_TREE_CHILD,
          int MAX_DEPTH,
          int RANDOM_SEED,
@@ -168,6 +182,7 @@ public:
          points(points),
          knn_indices(knn_indices),
          knn_sqr_distances(knn_sqr_distances),
+         MIN_TREE_CHILD(MIN_TREE_CHILD),
          MAX_TREE_CHILD(MAX_TREE_CHILD),
          MAX_DEPTH(MAX_DEPTH),
          RANDOM_SEED(RANDOM_SEED),
@@ -357,9 +372,9 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     count_new_nodes = 1;
     for(depth=1; depth < MAX_DEPTH; ++depth){
         // thrust::fill(thrust::device, device_sample_candidate_points.begin(), device_sample_candidate_points.end(), -1);
+        check_active_points_cron.start();
         cudaDeviceSynchronize();
         
-        check_active_points_cron.start();
         build_tree_check_active_points<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
                                                   thrust::raw_pointer_cast(device_points_depth.data()),
                                                   thrust::raw_pointer_cast(device_is_leaf[depth-1]->data()),
@@ -411,7 +426,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
                                               thrust::raw_pointer_cast(device_tree_count.data()),
                                               thrust::raw_pointer_cast(device_depth_level_count.data()),
                                               thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                              N, D, K, MAX_TREE_CHILD);
+                                              N, D, MIN_TREE_CHILD, MAX_TREE_CHILD);
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_count_new_nodes Kernel failed!");
         thrust::copy(device_count_new_nodes.begin(), device_count_new_nodes.begin()+1, &count_new_nodes);
@@ -485,7 +500,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
                                                thrust::raw_pointer_cast(device_accumulated_child_count[depth-1]->data()),
                                                thrust::raw_pointer_cast(device_count_points_on_leaves[depth-1]->data()),
                                                thrust::raw_pointer_cast(device_sample_candidate_points.data()),
-                                               N, D, K, MAX_TREE_CHILD, RANDOM_SEED);
+                                               N, D, MIN_TREE_CHILD, MAX_TREE_CHILD, RANDOM_SEED);
             cudaDeviceSynchronize();
             CudaTest((char *)"build_tree_create_nodes Kernel failed!");
             create_nodes_cron.stop();
@@ -507,7 +522,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
                                                 thrust::raw_pointer_cast(device_tree_count.data()),
                                                 thrust::raw_pointer_cast(device_depth_level_count.data()),
                                                 thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                                N, D, K, MAX_TREE_CHILD);
+                                                N, D, MIN_TREE_CHILD, MAX_TREE_CHILD);
             cudaDeviceSynchronize();
             CudaTest((char *)"build_tree_update_parents Kernel failed!");
             build_tree_post_update_parents<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
@@ -528,7 +543,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
                                                     #if COMPILE_TYPE == DEBUG
                                                         thrust::raw_pointer_cast(device_count_undo_leaf.data()),
                                                     #endif
-                                                    N, D, K, MAX_TREE_CHILD);
+                                                    N, D, MIN_TREE_CHILD, MAX_TREE_CHILD);
             cudaDeviceSynchronize();
             CudaTest((char *)"build_tree_post_update_parents Kernel failed!");
             
@@ -549,7 +564,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
 
         
 
-        if(VERBOSE >= 1){
+        if(VERBOSE >= 2){
             std::cout << "\e[ABuilding Tree Depth: " << depth+1 << "/" << MAX_DEPTH;
             std::cout << " | Total nodes: " << count_total_nodes << std::endl;
         }
@@ -634,6 +649,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     #endif
     
     if(VERBOSE >= 1){
+        std::cout << "Tree depth: " << reached_max_depth << std::endl;
         std::cout << "Max child count: " << max_child << std::endl;
         std::cout << "Min child count: " << min_child << std::endl;
         std::cout << "Total leaves: " << total_leaves << std::endl;
@@ -688,7 +704,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
 
     // cudaFuncSetCacheConfig(compute_knn_from_buckets, cudaFuncCachePreferL1);
     cudaFuncSetCacheConfig(compute_knn_from_buckets_coalesced, cudaFuncCachePreferL1);
-    cudaFuncSetCacheConfig(compute_knn_from_buckets_perwarp_coalesced, cudaFuncCachePreferL1);
+    // cudaFuncSetCacheConfig(compute_knn_from_buckets_perwarp_coalesced, cudaFuncCachePreferL1);
 
     Cron cron_knn;
     cron_knn.start();
@@ -725,7 +741,8 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     //                                               thrust::raw_pointer_cast(device_knn_indices.data()),
     //                                               thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
     //                                               N, D, max_child, K, MAX_TREE_CHILD);
-    compute_knn_from_buckets_perwarp_coalesced<<<NB,NT, NT*sizeof(typepoints)>>>(
+    compute_knn_from_buckets_perwarp_coalesced<<<NB,NT>>>(
+    // compute_knn_from_buckets_perblock_coalesced_symmetric<<<total_leaves,NT>>>(
                                               thrust::raw_pointer_cast(device_points_parent.data()),
                                               thrust::raw_pointer_cast(device_points_depth.data()),
                                               thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
@@ -1046,7 +1063,8 @@ int main(int argc,char* argv[]) {
     }
 
     int nn_exploring_factor = 0;
-    RPFK rpfk_knn(points, knn_indices, knn_sqr_distances, K, MAX_DEPTH, RANDOM_SEED, nn_exploring_factor);
+    RPFK rpfk_knn(points, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
+                  RANDOM_SEED, nn_exploring_factor);
     rpfk_knn.knn_gpu_rpfk_forest(5, K, N, D, VERBOSE, "tree");
 
 

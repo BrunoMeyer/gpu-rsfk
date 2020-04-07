@@ -82,11 +82,16 @@ void nearest_neighbors_exploring_coalesced(typepoints* points,
     int knn_id;
     typepoints max_dist_val;
 
-    __shared__ typepoints candidate_dist_val[1024];
-
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
-    int tidw = threadIdx.x % 32; // my id on warp
-    int init_warp_on_block = threadIdx.x-tidw;
+    int lane = threadIdx.x % 32; // my id on warp
+    
+    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+    __shared__ typepoints candidate_dist_val[1024];
+    int init_warp_on_block = threadIdx.x-lane;
+    #else
+    typepoints candidate_dist_val, tmp_candidate_dist_val;
+    #endif
+
 
 
     for(p = tid; __any_sync(__activemask(), p < N); p+=blockDim.x*gridDim.x){
@@ -121,7 +126,11 @@ void nearest_neighbors_exploring_coalesced(typepoints* points,
                             break;
                         }
                     }
-                    candidate_dist_val[init_warp_on_block+tidw] = 0.0f;
+                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    candidate_dist_val[init_warp_on_block+lane] = 0.0f;
+                    #else
+                    candidate_dist_val = 0.0f;
+                    #endif
                 }
 
                 __syncthreads();
@@ -130,17 +139,31 @@ void nearest_neighbors_exploring_coalesced(typepoints* points,
                     tmp_candidate = __shfl_sync(__activemask(), p_neigh_neigh, j);
                     if(tmp_candidate == -1) continue;
                     tmp_p = __shfl_sync(__activemask(), p, j);
+                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
                     euclidean_distance_sqr_coalesced(tmp_candidate, tmp_p, points, D, N,
-                                                     tidw, &candidate_dist_val[init_warp_on_block+j]);
+                                                     lane, &candidate_dist_val[init_warp_on_block+j]);
+                    #else
+                    tmp_candidate_dist_val = euclidean_distance_sqr_coalesced(
+                                                tmp_candidate, tmp_p, points, D, N,
+                                                lane);
+                    if(lane == j) candidate_dist_val = tmp_candidate_dist_val;
+                    #endif
                 }
                 __syncwarp();
                 if(p_neigh_neigh == -1) continue;
 
-                
-                if(candidate_dist_val[init_warp_on_block+tidw] < max_dist_val){
+                #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                if(candidate_dist_val[init_warp_on_block+lane] < max_dist_val){
+                #else
+                if(candidate_dist_val < max_dist_val){
+                #endif
                     // printf("%d %d\n", knn_indices[max_id_point] ,p_neigh_neigh);
                     knn_indices[max_id_point] = p_neigh_neigh;
-                    knn_sqr_dist[max_id_point] = candidate_dist_val[init_warp_on_block+tidw];
+                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    knn_sqr_dist[max_id_point] = candidate_dist_val[init_warp_on_block+lane];
+                    #else
+                    knn_sqr_dist[max_id_point] = candidate_dist_val;
+                    #endif
 
                     max_id_point = knn_id;
                     max_dist_val = knn_sqr_dist[knn_id];

@@ -22,7 +22,7 @@ void build_tree_create_nodes(typepoints* tree_new_depth,
                              int* accumulated_child_count,
                              int* count_points_on_leafs,
                              int* sample_candidate_points,
-                             int N, int D, int K, int MAX_TREE_CHILD, int RANDOM_SEED)
+                             int N, int D, int MIN_TREE_CHILD, int MAX_TREE_CHILD, int RANDOM_SEED)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     curandState_t r; 
@@ -45,7 +45,7 @@ void build_tree_create_nodes(typepoints* tree_new_depth,
                     rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
                     p2 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  +  rand_id];
                     
-                    while(p1 == p2 && count_points_on_leafs[2*node_thread+is_right] > K){
+                    while(p1 == p2 && count_points_on_leafs[2*node_thread+is_right] >= MIN_TREE_CHILD){
                         rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
                         p2 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  + rand_id];
                     }
