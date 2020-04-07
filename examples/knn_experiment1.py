@@ -39,7 +39,9 @@ if __name__ == "__main__":
                         type=int, default=1)
     parser.add_argument("-k", "--n_neighbors", help="Number of neighbors (K) used in KNN",
                         type=int, default=32)
-    parser.add_argument("--mtc", help="Max Tree Chlidren parameter in RPFK",
+    parser.add_argument("--mntc", help="Max Tree Chlidren parameter in RPFK",
+                        type=int, default=-1)
+    parser.add_argument("--mxtc", help="Max Tree Chlidren parameter in RPFK",
                         type=int, default=-1)
     parser.add_argument("-d", "--dataset", help="Dataset name",
                         type=str, default="MNIST_SKLEARN",
@@ -52,7 +54,7 @@ if __name__ == "__main__":
                         help='Nearest Neighbors Exploring factor list to test')
 
     parser.add_argument('-t','--n_trees_list', type=int, nargs='+',
-                        default=[x for x in range(1,21,2)],
+                        default=[x for x in range(1,25,2)],
                         help='List of total of trees to test')
     # parser.add_argument("-nn", "--numneigh", help="Number of nearest neighbors used in KNN",type=int,default=DEFAULT_NUM_NEIGHBORS)
     # parser.add_argument("-p", "--perplexity", help="Perplexity",type=float,default=DEFAULT_PERPLEXITY)
@@ -76,11 +78,24 @@ if __name__ == "__main__":
                         help="Doesnt change log file")
 
 
+    parser.add_argument('--test_rpfk', dest='test_rpfk', action='store_true', default=False,
+                        help="Test Random Projection Forest KNN")
+    parser.add_argument('--test_ivfflat', dest='test_ivfflat', action='store_true', default=False,
+                        help="Test FAISS-IVFFLAT")
+    parser.add_argument('--test_flatl2', dest='test_flatl2', action='store_true', default=False,
+                        help="Test FAISS-FLATL2")
+
+
+    parser.add_argument('--sanity_check', dest='sanity_check', action='store_true', default=False,
+                        help="Test FAISS-FLATL2")
+
+
     args = parser.parse_args()
 
     exp_name = args.name
     exp_path = args.path
     rpfk_verbose = args.rpfk_verbose
+    sanity_check = args.sanity_check
 
     # embsize = args.embsize
     DATA_SET = args.dataset
@@ -96,7 +111,8 @@ if __name__ == "__main__":
     save_plot = args.save_plot
     skip_save = args.skip_save
     K = args.n_neighbors
-    max_tree_chlidren = args.mtc
+    min_tree_chlidren = args.mntc
+    max_tree_chlidren = args.mxtc
     nnexp_factor_list = args.nnexp_factor_list
     n_trees_list = args.n_trees_list
     knn_result_exp = KnnResult(exp_path, exp_name)
@@ -114,7 +130,7 @@ if __name__ == "__main__":
     # DATA_SET = "GOOGLE_NEWS300"
 
     quality_name = "nne"
-    quality_name = "recall_eps"
+    # quality_name = "recall_eps"
     recall_eps_val = args.recall_eps_val
 
     if quality_name == "nne":
@@ -126,16 +142,16 @@ if __name__ == "__main__":
     dataset_name = DATA_SET
     
 
-    TEST_RPFK = False
+    TEST_RPFK = args.test_rpfk
     TEST_ANNOY = False
     TEST_IVFFLAT = False
-    TEST_IVFFLAT10 = False
+    TEST_IVFFLAT10 = args.test_ivfflat
     TEST_IVFPQ = False
     TEST_IVFPQ10 = False
     TEST_HNSWFLAT = False
-    TEST_FLATL2 = False
+    TEST_FLATL2 = args.test_flatl2
 
-    TEST_RPFK = True
+    # TEST_RPFK = True
     # TEST_ANNOY = True
     # TEST_IVFFLAT = True
     # TEST_IVFFLAT10 = True
@@ -175,13 +191,14 @@ if __name__ == "__main__":
                 if max_tree_chlidren == -1:
                     knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
                 else:
-                    knn_method_name = "RPFK MTC{} (NN exploring factor = {})".format(max_tree_chlidren, nnef)
+                    knn_method_name = "RPFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_chlidren, max_tree_chlidren, nnef)
             else:
                 if max_tree_chlidren == -1:
                     knn_method_name = "RPFK"
                 else:
-                    knn_method_name = "RPFK MTC{}".format(max_tree_chlidren)
+                    knn_method_name = "RPFK MNTC{} MXTC{}".format(min_tree_chlidren, max_tree_chlidren)
 
+            print("Testing knn method: {}".format(knn_method_name))
             parameter_name = "n_trees"
             parameter_list = n_trees_list
             # parameter_list = [10]
@@ -192,12 +209,14 @@ if __name__ == "__main__":
                 rpfk = RPFK(K, random_state=0, nn_exploring_factor=nnef,
                             add_bit_random_motion=True)
                 indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
+                                                            min_tree_chlidren=min_tree_chlidren,
                                                             max_tree_chlidren=max_tree_chlidren,
                                                             # max_tree_chlidren=len(dataX),
                                                             max_tree_depth=5000,
                                                             n_trees=n_trees,
                                                             transposed_points=True,
                                                             random_motion_force=0.1,
+                                                            ensure_valid_indices=True,
                                                             # verbose=0)
                                                             # verbose=1)
                                                             # verbose=2)
@@ -222,9 +241,10 @@ if __name__ == "__main__":
                 # print(real_indices.shape, real_sqd_dist.shape)
 
                 # Sanity check
-                negative_indices = np.sum(indices==-1)
-                if negative_indices > 0:
-                    raise Exception('{} Negative indices'.format(negative_indices))
+                if sanity_check:
+                    negative_indices = np.sum(indices==-1)
+                    if negative_indices > 0:
+                        raise Exception('{} Negative indices'.format(negative_indices))
                 
                 
                 

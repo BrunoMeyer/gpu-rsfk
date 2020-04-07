@@ -54,18 +54,20 @@ def create_recall_eps(eps):
     return get_recall_eps
 
 class KnnResult(object):
-    def __init__(self, dir_path=".", experiment_name="exp"):
+    def __init__(self, dir_path=".", experiment_name="exp",
+                 save_after_add=False):
         self._dir_path = dir_path
         self._path = os.path.join(dir_path,"{}.json".format(experiment_name))
         self._experiment_name = experiment_name
-
+        self.save_after_add = save_after_add
+        
         self.data = {}
         if os.path.exists(self._path):
             with open(self._path) as handle:
                 self.data = json.loads(handle.read())
 
     def add_knn_result(self, dataset_name, K, knn_method_name, parameter_name, parameter_list,
-                       quality_name, quality_list, time_list, save_after_add=True):
+                       quality_name, quality_list, time_list):
         obj = self.data
         
         if not dataset_name in obj:
@@ -94,7 +96,7 @@ class KnnResult(object):
             "time": time_list,
         }
 
-        if save_after_add:
+        if self.save_after_add:
             self.save()
 
     def save(self):
@@ -117,7 +119,11 @@ class KnnResult(object):
                         new_data[dn][k][method_name] = self.data[dn][k][method_name]
         self.data = new_data
         
-    def plot(self, dataset_name, K, quality_name, dataX=None, dash_method=[]):
+    def plot(self, dataset_name, K, quality_name, dataX=None, dash_method=[],
+             fig_name=None):
+        if fig_name is None:
+            fig_name = "{}_{}".format(quality_name,dataset_name)+str(self._experiment_name)+"_K{}".format(K)
+        
         fig, ax = plt.subplots(figsize=(16, 8))
 
         for knn_method_name in self.data[dataset_name][str(K)]:
@@ -143,4 +149,4 @@ class KnnResult(object):
 
         
         ax.legend()
-        fig.savefig("{}.png".format(self._experiment_name))
+        fig.savefig("{}.png".format(fig_name))
