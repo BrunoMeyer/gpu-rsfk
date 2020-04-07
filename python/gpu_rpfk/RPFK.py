@@ -35,6 +35,7 @@ class RPFK(object):
                 ctypes.c_int, # number of nearest neighbors
                 ctypes.c_int, # total of points
                 ctypes.c_int, # dimensions of points
+                ctypes.c_int, # minimum tree node children
                 ctypes.c_int, # maximum tree node children
                 ctypes.c_int, # maximum depth of tree
                 ctypes.c_int, # verbose (1,2,3 or 4)
@@ -47,8 +48,10 @@ class RPFK(object):
                 ]
 
     def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500,
-                               verbose=1, max_tree_chlidren=-1,
-                               transposed_points=False, random_motion_force=1.0):
+                               verbose=1, min_tree_chlidren=-1,
+                               max_tree_chlidren=-1, transposed_points=False,
+                               random_motion_force=1.0,
+                               ensure_valid_indices=True):
 
         n_trees = int(n_trees)
         max_tree_depth = int(max_tree_depth)
@@ -58,10 +61,14 @@ class RPFK(object):
         D = points.shape[1]
         K = self.num_nearest_neighbors
         
+        if min_tree_chlidren == -1:
+            min_tree_chlidren = K+1
+        if min_tree_chlidren < 0:
+            raise Exception('min_tree_chlidren = {} \t => min_tree_chlidren must be at least 1'.format(min_tree_chlidren))
         if max_tree_chlidren == -1:
-            max_tree_chlidren = 2*K+2
-        if max_tree_chlidren < 2*K+2:
-            raise Exception('max_tree_chlidren = {} \t => max_tree_chlidren must be at least 2*K+1'.format(max_tree_chlidren))
+            max_tree_chlidren = 2*min_tree_chlidren
+        if max_tree_chlidren < 2*min_tree_chlidren:
+            raise Exception('min_tree_chlidren = {}, max_tree_chlidren = {} \t => max_tree_chlidren must be at least 2*min_tree_chlidren'.format(min_tree_chlidren, max_tree_chlidren))
         
         # if max_tree_chlidren == -1:
         #     max_tree_chlidren = K+1
@@ -86,8 +93,13 @@ class RPFK(object):
         
         # self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
 
-        self._knn_indices = np.require(np.full((N,K), -1), np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
-        self._knn_squared_dist = np.require(np.full((N,K), np.inf), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+        init_knn_indices = np.full((N,K), -1)
+        init_knn_indices[:,0] = np.arange(N)
+        init_squared_dist = np.full((N,K), np.inf)
+        init_squared_dist[:,0] = np.zeros(N)
+
+        self._knn_indices = np.require(init_knn_indices, np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+        self._knn_squared_dist = np.require(init_squared_dist, np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
         t_init = time.time()
         self._lib.pymodule_rpfk_knn(
@@ -95,7 +107,8 @@ class RPFK(object):
                 ctypes.c_int(K), # number of nearest neighbors
                 ctypes.c_int(N), # total of points
                 ctypes.c_int(D), # dimensions of points
-                ctypes.c_int(max_tree_chlidren), # maximum depth of tree
+                ctypes.c_int(min_tree_chlidren), # minimum tree node children
+                ctypes.c_int(max_tree_chlidren), # maximum tree node children
                 ctypes.c_int(max_tree_depth), # maximum depth of tree
                 ctypes.c_int(verbose), # verbose (1,2,3 or 4)
                 ctypes.c_int(self.random_state), # random state/seed
@@ -103,8 +116,24 @@ class RPFK(object):
                 self.points,
                 self._knn_indices,
                 self._knn_squared_dist)
-        self._last_search_time = time.time() - t_init
 
+        if ensure_valid_indices and min_tree_chlidren < K+1:
+            self._lib.pymodule_rpfk_knn(
+                    ctypes.c_int(1), # number of trees
+                    ctypes.c_int(K), # number of nearest neighbors
+                    ctypes.c_int(N), # total of points
+                    ctypes.c_int(D), # dimensions of points
+                    ctypes.c_int(K+1), # minimum tree node children
+                    ctypes.c_int(2*(K+1)), # maximum tree node children
+                    ctypes.c_int(max_tree_depth), # maximum depth of tree
+                    ctypes.c_int(verbose), # verbose (1,2,3 or 4)
+                    ctypes.c_int(self.random_state), # random state/seed
+                    ctypes.c_int(self.nn_exploring_factor), # random state/seed
+                    self.points,
+                    self._knn_indices,
+                    self._knn_squared_dist)
+        
+        self._last_search_time = time.time() - t_init
         return self._knn_indices, self._knn_squared_dist
 
 
