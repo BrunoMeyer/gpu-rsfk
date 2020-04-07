@@ -363,7 +363,7 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
     #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
     __shared__ typepoints candidate_dist_val[32];
     #else
-    typepoints candidate_dist_val, tmp_dist_val;
+    typepoints candidate_dist_val;
     #endif
 
     int bid, p1, p2, real_p1, real_p2, _p, i, j;
@@ -394,6 +394,7 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
                 max_dist_val[i] = knn_sqr_dist[knn_id+j];
             }
         }
+
     }
 
     __syncthreads();
@@ -435,9 +436,14 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
             done_p2 = candidate_dist_val >= max_dist_val[p2];
             #endif
 
+            for(j=0; j < K && (!done_p1 || !done_p2); ++j){
+                done_p1 |= real_p2 == knn_indices[real_p1*K+j];
+                done_p2 |= real_p1 == knn_indices[real_p2*K+j];
+            }
+
             while(!done_p1 || !done_p2){
-                if(!done_p1 && !atomicOr(&lock_point[p1], 1)){
-                // if(!done_p1 && !atomicCAS(&lock_point[p1], 0, 1)){
+                // if(!done_p1 && !atomicOr(&lock_point[p1], 1)){
+                if(!done_p1 && !atomicCAS(&lock_point[p1], 0, 1)){
                     done_p1 = 1;
                     // If the candidate is closer than the pre-computed furthest point,
                     // switch them
@@ -446,6 +452,8 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
                     #else
                     if(candidate_dist_val < max_dist_val[p1]){
                     #endif
+                        // if(real_p1 == 500) printf("%d %d %d %f %f %d\n",max_position[p1], max_position[p1]/K, max_position[p1] %K, max_dist_val[p1], candidate_dist_val[wid], real_p2);
+
                         knn_indices[max_position[p1]] = real_p2;
                         #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val[wid];
@@ -469,8 +477,8 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
                     // lock_point[p1] = 0;
                 }
 
-                if(!done_p2 && !atomicOr(&lock_point[p2], 1)){
-                // if(!done_p2 && !atomicCAS(&lock_point[p2], 0, 1)){
+                // if(!done_p2 && !atomicOr(&lock_point[p2], 1)){
+                if(!done_p2 && !atomicCAS(&lock_point[p2], 0, 1)){
                     done_p2 = 1;
                     // If the candidate is closer than the pre-computed furthest point,
                     // switch them
