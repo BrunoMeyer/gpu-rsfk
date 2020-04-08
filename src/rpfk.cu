@@ -741,8 +741,10 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     //                                               thrust::raw_pointer_cast(device_knn_indices.data()),
     //                                               thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
     //                                               N, D, max_child, K, MAX_TREE_CHILD);
-    compute_knn_from_buckets_perwarp_coalesced<<<NB,NT>>>(
+    // compute_knn_from_buckets_perwarp_coalesced<<<NB,NT>>>(
     // compute_knn_from_buckets_perblock_coalesced_symmetric<<<total_leaves,NT>>>(
+    // compute_knn_from_buckets_perblock_coalesced_symmetric<<<NB,NT>>>(
+    compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
                                               thrust::raw_pointer_cast(device_points_parent.data()),
                                               thrust::raw_pointer_cast(device_points_depth.data()),
                                               thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),

@@ -370,6 +370,7 @@ if __name__ == "__main__":
         
         
         for nprobe in parameter_list:
+            init_t = time.time()
             quantizer = faiss.IndexFlatL2(d)  # the other index
             index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
             index.nprobe = nprobe              # default nprobe is 1, try a few more
@@ -377,7 +378,7 @@ if __name__ == "__main__":
             assert not index.is_trained
             index.train(xb)
             assert index.is_trained
-            init_t = time.time()
+
             index.add(xb)                  # add may be a bit slower as well
             
             index = faiss.index_cpu_to_gpu(res, 0, index)
