@@ -197,7 +197,6 @@ public:
     // valid indices or -1 values. If it has valid indices, also will be necessary
     // to add the precomputed squared distances (device_knn_sqr_distances) 
     void add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
-                                    thrust::device_vector<int> &device_old_knn_indices,
                                     thrust::device_vector<int> &device_knn_indices,
                                     thrust::device_vector<typepoints> &device_knn_sqr_distances,
                                     int K, int N, int D, int VERBOSE,
@@ -212,11 +211,10 @@ public:
 };
 
 void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
-                        thrust::device_vector<int> &device_old_knn_indices,
-                        thrust::device_vector<int> &device_knn_indices,
-                        thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                        int K, int N, int D, int VERBOSE,
-                        string run_name="out.png")
+                                      thrust::device_vector<int> &device_knn_indices,
+                                      thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                      int K, int N, int D, int VERBOSE,
+                                      string run_name="out.png")
 {
     Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
@@ -438,6 +436,9 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
             dynamic_memory_allocation_cron.start();
             count_total_nodes+=count_new_nodes;
 
+            device_tree[depth-1]->clear();
+            device_tree[depth-1]->shrink_to_fit();
+            
             device_tree[depth] = new thrust::device_vector<typepoints>(((D+1)*count_new_nodes));
             // device_random_directions[depth] = new thrust::device_vector<typepoints>((2*D*count_new_nodes));
             device_tree_parents[depth] = new thrust::device_vector<int>(count_new_nodes,-1);
@@ -507,7 +508,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
 
 
             update_parents_cron.start();
-            build_tree_update_parents<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+            build_tree_update_parents<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth]->data()),
                                                 thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
                                                 thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                                 thrust::raw_pointer_cast(device_points_parent.data()),
@@ -525,7 +526,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
                                                 N, D, MIN_TREE_CHILD, MAX_TREE_CHILD);
             cudaDeviceSynchronize();
             CudaTest((char *)"build_tree_update_parents Kernel failed!");
-            build_tree_post_update_parents<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
+            build_tree_post_update_parents<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth]->data()),
                                                     thrust::raw_pointer_cast(device_tree_parents[depth]->data()), // new depth is created
                                                     thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
                                                     thrust::raw_pointer_cast(device_points_parent.data()),
@@ -574,6 +575,9 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
             break;
         }
     }
+    device_tree[depth-1]->clear();
+    device_tree[depth-1]->shrink_to_fit();
+
     reached_max_depth = depth;
     build_tree_fix<<<1,1>>>(thrust::raw_pointer_cast(device_depth_level_count.data()),
                             thrust::raw_pointer_cast(device_tree_count.data()),
@@ -837,8 +841,6 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     device_total_leaves.shrink_to_fit();
     
     for(depth=0; depth < reached_max_depth; ++depth){
-        device_tree[depth]->clear();
-        device_tree[depth]->shrink_to_fit();
         // device_random_directions[depth]->clear();
         // device_random_directions[depth]->shrink_to_fit();
         // device_min_random_proj_values[depth]->clear();
@@ -913,17 +915,15 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     Cron forest_total_cron;
     forest_total_cron.start();
     thrust::device_vector<typepoints> device_points(points, points+N*D);
-    thrust::device_vector<int> device_old_knn_indices(knn_indices, knn_indices+N*K);
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
     thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
 
     for(int i=0; i < n_trees; ++i){
         add_random_projection_tree(device_points,
-                     device_old_knn_indices,
-                     device_knn_indices,
-                     device_knn_sqr_distances,
-                     K, N, D, VERBOSE-1,
-                     run_name+"_"+std::to_string(i)+".png");
+                                   device_knn_indices,
+                                   device_knn_sqr_distances,
+                                   K, N, D, VERBOSE-1,
+                                   run_name+"_"+std::to_string(i)+".png");
         RANDOM_SEED++;
     }
 
@@ -937,37 +937,42 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     Cron cron_nearest_neighbors_exploring;
     cron_nearest_neighbors_exploring.start();
 
-    // TODO: Automatically specify another id of GPU device rather than 0
-    // Automatically get the ideal number of threads per block and total of blocks
-    // used in kernels
-    int devUsed = 0;
-    cudaSetDevice(devUsed);
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, devUsed);
-    const int NT = deviceProp.maxThreadsPerBlock;
-    const int NB = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/deviceProp.maxThreadsPerBlock);
-
-    if(VERBOSE >= 2 && nn_exploring_factor > 0){
-        for(int i=0; i < 80*4; ++i) std::cout<<" ";
-        std::cout << std::endl;
-        std::cout << "\e[ANearest Neighbor Exploring: " << "0/" << nn_exploring_factor << std::endl;
-    }
-    for(int i=0; i < nn_exploring_factor; ++i){
-        thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + K*N, device_old_knn_indices.begin());
-        cudaDeviceSynchronize();
-        // nearest_neighbors_exploring<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
-        //                                        thrust::raw_pointer_cast(device_old_knn_indices.data()),
-        //                                        thrust::raw_pointer_cast(device_knn_indices.data()),
-        //                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-        //                                        N, D, K);
-        nearest_neighbors_exploring_coalesced<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
-                                                         thrust::raw_pointer_cast(device_old_knn_indices.data()),
-                                                         thrust::raw_pointer_cast(device_knn_indices.data()),
-                                                         thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                                         N, D, K);
-        CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
-        if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
-        cudaDeviceSynchronize();
+    if(nn_exploring_factor > 0){
+        thrust::device_vector<int> device_old_knn_indices(knn_indices, knn_indices+N*K);
+        // TODO: Automatically specify another id of GPU device rather than 0
+        // Automatically get the ideal number of threads per block and total of blocks
+        // used in kernels
+        int devUsed = 0;
+        cudaSetDevice(devUsed);
+        cudaDeviceProp deviceProp;
+        cudaGetDeviceProperties(&deviceProp, devUsed);
+        const int NT = deviceProp.maxThreadsPerBlock;
+        const int NB = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/deviceProp.maxThreadsPerBlock);
+    
+        if(VERBOSE >= 2){
+            for(int i=0; i < 80*4; ++i) std::cout<<" ";
+            std::cout << std::endl;
+            std::cout << "\e[ANearest Neighbor Exploring: " << "0/" << nn_exploring_factor << std::endl;
+        }
+        for(int i=0; i < nn_exploring_factor; ++i){
+            thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + K*N, device_old_knn_indices.begin());
+            cudaDeviceSynchronize();
+            // nearest_neighbors_exploring<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
+            //                                        thrust::raw_pointer_cast(device_old_knn_indices.data()),
+            //                                        thrust::raw_pointer_cast(device_knn_indices.data()),
+            //                                        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+            //                                        N, D, K);
+            nearest_neighbors_exploring_coalesced<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
+                                                             thrust::raw_pointer_cast(device_old_knn_indices.data()),
+                                                             thrust::raw_pointer_cast(device_knn_indices.data()),
+                                                             thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                                             N, D, K);
+            CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
+            if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
+            cudaDeviceSynchronize();
+        }
+        device_old_knn_indices.clear();
+        device_old_knn_indices.shrink_to_fit();
     }
     cron_nearest_neighbors_exploring.stop();
     if(VERBOSE >= 1){
@@ -982,8 +987,6 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     device_points.shrink_to_fit();
     device_knn_indices.clear();
     device_knn_indices.shrink_to_fit();
-    device_old_knn_indices.clear();
-    device_old_knn_indices.shrink_to_fit();
     device_knn_sqr_distances.clear();
     device_knn_sqr_distances.shrink_to_fit();
 

@@ -48,32 +48,32 @@ class RPFK(object):
                 ]
 
     def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500,
-                               verbose=1, min_tree_chlidren=-1,
-                               max_tree_chlidren=-1, transposed_points=False,
+                               verbose=1, min_tree_children=-1,
+                               max_tree_children=-1, transposed_points=False,
                                random_motion_force=1.0,
                                ensure_valid_indices=True):
 
         n_trees = int(n_trees)
         max_tree_depth = int(max_tree_depth)
         verbose = int(verbose)
-        max_tree_chlidren = int(max_tree_chlidren)
+        max_tree_children = int(max_tree_children)
         N = points.shape[0]
         D = points.shape[1]
         K = self.num_nearest_neighbors
         
-        if min_tree_chlidren == -1:
-            min_tree_chlidren = K+1
-        if min_tree_chlidren < 0:
-            raise Exception('min_tree_chlidren = {} \t => min_tree_chlidren must be at least 1'.format(min_tree_chlidren))
-        if max_tree_chlidren == -1:
-            max_tree_chlidren = 2*min_tree_chlidren
-        if max_tree_chlidren < 2*min_tree_chlidren:
-            raise Exception('min_tree_chlidren = {}, max_tree_chlidren = {} \t => max_tree_chlidren must be at least 2*min_tree_chlidren'.format(min_tree_chlidren, max_tree_chlidren))
+        if min_tree_children == -1:
+            min_tree_children = K+1
+        if min_tree_children < 0:
+            raise Exception('min_tree_children = {} \t => min_tree_children must be at least 1'.format(min_tree_children))
+        if max_tree_children == -1:
+            max_tree_children = 2*min_tree_children
+        if max_tree_children < 2*min_tree_children:
+            raise Exception('min_tree_children = {}, max_tree_children = {} \t => max_tree_children must be at least 2*min_tree_children'.format(min_tree_children, max_tree_children))
         
-        # if max_tree_chlidren == -1:
-        #     max_tree_chlidren = K+1
-        # if max_tree_chlidren < K+1:
-        #     raise Exception('max_tree_chlidren = {} \t => max_tree_chlidren must be at least K+1'.format(max_tree_chlidren))
+        # if max_tree_children == -1:
+        #     max_tree_children = K+1
+        # if max_tree_children < K+1:
+        #     raise Exception('max_tree_children = {} \t => max_tree_children must be at least K+1'.format(max_tree_children))
         
         # if(self.add_bit_random_motion):
         #     points=points + np.random.uniform(-0.0001,0.0001,points.shape)
@@ -102,13 +102,28 @@ class RPFK(object):
         self._knn_squared_dist = np.require(init_squared_dist, np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
 
         t_init = time.time()
+        # self._lib.pymodule_rpfk_knn(
+        #         ctypes.c_int(10), # number of trees
+        #         ctypes.c_int(K), # number of nearest neighbors
+        #         ctypes.c_int(N), # total of points
+        #         ctypes.c_int(D), # dimensions of points
+        #         ctypes.c_int(min_tree_children), # minimum tree node children
+        #         ctypes.c_int(max_tree_children), # maximum tree node children
+        #         ctypes.c_int(max_tree_depth), # maximum depth of tree
+        #         ctypes.c_int(verbose), # verbose (1,2,3 or 4)
+        #         ctypes.c_int(self.random_state), # random state/seed
+        #         ctypes.c_int(self.nn_exploring_factor), # random state/seed
+        #         self.points,
+        #         self._knn_indices,
+        #         self._knn_squared_dist)
+        
         self._lib.pymodule_rpfk_knn(
                 ctypes.c_int(n_trees), # number of trees
                 ctypes.c_int(K), # number of nearest neighbors
                 ctypes.c_int(N), # total of points
                 ctypes.c_int(D), # dimensions of points
-                ctypes.c_int(min_tree_chlidren), # minimum tree node children
-                ctypes.c_int(max_tree_chlidren), # maximum tree node children
+                ctypes.c_int(min_tree_children), # minimum tree node children
+                ctypes.c_int(max_tree_children), # maximum tree node children
                 ctypes.c_int(max_tree_depth), # maximum depth of tree
                 ctypes.c_int(verbose), # verbose (1,2,3 or 4)
                 ctypes.c_int(self.random_state), # random state/seed
@@ -117,7 +132,7 @@ class RPFK(object):
                 self._knn_indices,
                 self._knn_squared_dist)
 
-        if ensure_valid_indices and min_tree_chlidren < K+1:
+        if ensure_valid_indices and min_tree_children < K+1:
             self._lib.pymodule_rpfk_knn(
                     ctypes.c_int(1), # number of trees
                     ctypes.c_int(K), # number of nearest neighbors
@@ -146,8 +161,8 @@ def test():
     rptk = RPFK(test_K, random_state=0, nn_exploring_factor=2,
                 add_bit_random_motion=True)
     indices, dist = rptk.find_nearest_neighbors(dataX,
-                                                max_tree_chlidren=128,
-                                                # max_tree_chlidren=len(dataX),
+                                                max_tree_children=128,
+                                                # max_tree_children=len(dataX),
                                                 max_tree_depth=5000,
                                                 n_trees=10,
                                                 transposed_points=True,
