@@ -2,6 +2,7 @@ import os
 import json
 import matplotlib.pyplot as plt
 import numpy as np
+import warnings
 
 def get_nne_rate(real_indices, indices, real_dist=None, dist=None,
                  random_state=0, max_k=32, verbose=0):
@@ -120,15 +121,25 @@ class KnnResult(object):
         self.data = new_data
         
     def plot(self, dataset_name, K, quality_name, dataX=None, dash_method=[],
-             fig_name=None):
+             fig_name=None, ignore_outliers=True):
         if fig_name is None:
             fig_name = "{}_{}".format(quality_name,dataset_name)+str(self._experiment_name)+"_K{}".format(K)
         
-        fig, ax = plt.subplots(figsize=(16, 8))
+        fig, ax = plt.subplots(figsize=(8, 8))
 
-        for knn_method_name in self.data[dataset_name][str(K)]:
+        method_list = list(self.data[dataset_name][str(K)].keys())
+        if "FLATL2" in method_list:
+            method_list.remove("FLATL2")
+            method_list = ["FLATL2"]+method_list
+        if "IVFFLAT" in method_list:
+            method_list.remove("IVFFLAT")
+            method_list = ["IVFFLAT"]+method_list
+            
+        for knn_method_name in method_list:
             for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
-                legend_name = str(knn_method_name)+" ({})".format(parameter_name)
+                # legend_name = str(knn_method_name)+" ({})".format(parameter_name)
+                legend_name = str(knn_method_name)
+                legend_name = legend_name.replace("RPFK", "RSFK")
                 data = self.data[dataset_name][str(K)][knn_method_name][parameter_name]
                 if not quality_name in data:
                     continue
@@ -143,10 +154,30 @@ class KnnResult(object):
                 idx = np.argsort(quality_list)
 
                 if knn_method_name in dash_method:
-                    ax.plot(quality_list[idx], time_list[idx], ":", label=legend_name)
+                    ax.plot(quality_list[idx], time_list[idx], ":|", label=legend_name)
                 else:
-                    ax.plot(quality_list[idx], time_list[idx], label=legend_name)
+                    ax.plot(quality_list[idx], time_list[idx], "-|", label=legend_name)
 
         
         ax.legend()
-        fig.savefig("{}.png".format(fig_name))
+        ax.set_xlabel('KNN graph Accuracy')
+        ax.set_ylabel('Average of points treated per second')
+        # ax1.set_title('a sine wave')
+        fig_title  = "{}-Nearest Neighbors".format(K)
+        plt.yscale('log')
+        if dataset_name == "GOOGLE_NEWS300":
+            if quality_name == "dist_mean":
+                plt.xlim(3.25,5.5)
+            fig_title = "GoogleNews300 {}-Nearest Neighbors".format(K)
+        if dataset_name == "AMAZON_REVIEW_ELETRONICS":
+            fig_title = "Amazon Electronics {}-Nearest Neighbors".format(K)
+        if dataset_name == "LUCID_INCEPTION":
+            fig_title = "Lucid Inception {}-Nearest Neighbors".format(K)
+        if dataset_name == "MNIST":
+            fig_title = "MNIST {}-Nearest Neighbors".format(K)
+        if dataset_name == "CIFAR":
+            fig_title = "CIFAR {}-Nearest Neighbors".format(K)
+        
+        ax.set_title(fig_title)
+        
+        fig.savefig("{}.pdf".format(fig_name))

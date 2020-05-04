@@ -54,7 +54,7 @@ if __name__ == "__main__":
                         help='Nearest Neighbors Exploring factor list to test')
 
     parser.add_argument('-t','--n_trees_list', type=int, nargs='+',
-                        default=[x for x in range(1,25,2)],
+                        default=[x for x in range(1,29,2)],
                         help='List of total of trees to test')
     # parser.add_argument("-nn", "--numneigh", help="Number of nearest neighbors used in KNN",type=int,default=DEFAULT_NUM_NEIGHBORS)
     # parser.add_argument("-p", "--perplexity", help="Perplexity",type=float,default=DEFAULT_PERPLEXITY)
@@ -111,13 +111,13 @@ if __name__ == "__main__":
     save_plot = args.save_plot
     skip_save = args.skip_save
     K = args.n_neighbors
-    min_tree_chlidren = args.mntc
-    max_tree_chlidren = args.mxtc
+    min_tree_children = args.mntc
+    max_tree_children = args.mxtc
     nnexp_factor_list = args.nnexp_factor_list
     n_trees_list = args.n_trees_list
     knn_result_exp = KnnResult(exp_path, exp_name)
-    # max_tree_chlidren = 126
-    # max_tree_chlidren = 30
+    # max_tree_children = 126
+    # max_tree_children = 30
 
     # N = 2048
     # D = 2
@@ -175,7 +175,20 @@ if __name__ == "__main__":
     '''
     
     # '''
-    real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
+
+    if DATA_SET != "GOOGLE_NEWS300" or K <=32:
+        t = time.time()
+        real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
+    else:
+        def dist_mean(real_indices, indices, real_dist, dist,
+                     random_state=0, max_k=32, verbose=0):
+            return np.average(dist, weights=np.ones_like(dist)/len(dist))
+        quality_function = dist_mean
+        quality_name = "dist_mean"
+        
+        real_sqd_dist = np.zeros((len(dataX),K))
+        real_indices = np.zeros((len(dataX),K))
+    
     real_indices = real_indices[new_indices,:K].astype(np.int)
     real_sqd_dist = real_sqd_dist[new_indices,:K]
     # '''
@@ -188,15 +201,15 @@ if __name__ == "__main__":
         for nnef in nnexp_factor_list:
         # for nnef in [3]:
             if nnef > 0:
-                if max_tree_chlidren == -1:
+                if max_tree_children == -1:
                     knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
                 else:
-                    knn_method_name = "RPFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_chlidren, max_tree_chlidren, nnef)
+                    knn_method_name = "RPFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
             else:
-                if max_tree_chlidren == -1:
+                if max_tree_children == -1:
                     knn_method_name = "RPFK"
                 else:
-                    knn_method_name = "RPFK MNTC{} MXTC{}".format(min_tree_chlidren, max_tree_chlidren)
+                    knn_method_name = "RPFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
 
             print("Testing knn method: {}".format(knn_method_name))
             parameter_name = "n_trees"
@@ -209,9 +222,9 @@ if __name__ == "__main__":
                 rpfk = RPFK(K, random_state=0, nn_exploring_factor=nnef,
                             add_bit_random_motion=True)
                 indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
-                                                            min_tree_chlidren=min_tree_chlidren,
-                                                            max_tree_chlidren=max_tree_chlidren,
-                                                            # max_tree_chlidren=len(dataX),
+                                                            min_tree_children=min_tree_children,
+                                                            max_tree_children=max_tree_children,
+                                                            # max_tree_children=len(dataX),
                                                             max_tree_depth=5000,
                                                             n_trees=n_trees,
                                                             transposed_points=True,
@@ -364,7 +377,8 @@ if __name__ == "__main__":
     if TEST_IVFFLAT10:
         knn_method_name = "IVFFLAT"
         parameter_name = "nprobe"
-        parameter_list = [x+1 for x in range(10)]
+        parameter_list = [x+1 for x in range(20)]
+        # parameter_list = [20]
         quality_list = []
         time_list = []
         
