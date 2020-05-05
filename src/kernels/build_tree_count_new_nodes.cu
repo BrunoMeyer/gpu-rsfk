@@ -26,9 +26,9 @@ void build_tree_count_new_nodes(typepoints* tree,
             // if((sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 1);
             // if((sample_points[4*node_thread+0] != -1 && sample_points[4*node_thread+1] != -1) ||
             //    (sample_points[4*node_thread+2] != -1 && sample_points[4*node_thread+3] != -1)) atomicAdd(count_new_nodes, 2);
-            if(count_points_on_leafs[2*node_thread+0] > 0 || count_points_on_leafs[2*node_thread+1] > 0) atomicAdd(count_new_nodes, 2);
+            if(count_points_on_leafs[2*node_thread] > 0 || count_points_on_leafs[2*node_thread+1] > 0) atomicAdd(count_new_nodes, 2);
             
-            // printf("%s: line %d : %d %d \n", __FILE__, __LINE__, depth_level_count[*actual_depth-1], *actual_depth);
+            // printf("%s: line %d : %d %d %d\n", __FILE__, __LINE__, node_thread, is_leaf[node_thread], depth_level_count[*actual_depth-1]);
         }
     }
 }

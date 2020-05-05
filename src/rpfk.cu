@@ -410,7 +410,14 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
         check_points_side_cron.stop();
         
         tree_count_cron.start();
-        thrust::fill(thrust::device, device_count_new_nodes.begin(), device_count_new_nodes.end(), 0);
+        thrust::fill(thrust::device, device_count_new_nodes.begin(), device_count_new_nodes.begin()+1, 0);
+        cudaDeviceSynchronize();
+        
+        // thrust::plus<int> binary_op;
+        // // compute sum on the device
+        // int sum_test = thrust::reduce(device_is_leaf[depth-1]->begin(), device_is_leaf[depth-1]->end(), 0, binary_op);
+        // std::cout << sum_test << " "<< device_is_leaf[depth-1]->size() << " <<<<#####" << std::endl;
+
         build_tree_count_new_nodes<<<NB,NT>>>(thrust::raw_pointer_cast(device_tree[depth-1]->data()),
                                               thrust::raw_pointer_cast(device_tree_parents[depth-1]->data()),
                                               thrust::raw_pointer_cast(device_tree_children[depth-1]->data()),
@@ -431,7 +438,6 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
         cudaDeviceSynchronize();
         tree_count_cron.stop();
         
-        
         if(count_new_nodes > 0){
             dynamic_memory_allocation_cron.start();
             count_total_nodes+=count_new_nodes;
@@ -443,7 +449,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
             // device_random_directions[depth] = new thrust::device_vector<typepoints>((2*D*count_new_nodes));
             device_tree_parents[depth] = new thrust::device_vector<int>(count_new_nodes,-1);
             device_tree_children[depth] = new thrust::device_vector<int>(2*count_new_nodes,-1);
-            device_is_leaf[depth] = new thrust::device_vector<bool>(count_new_nodes, false);
+            device_is_leaf[depth] = new thrust::device_vector<bool>(count_new_nodes, true);
             device_child_count[depth] = new thrust::device_vector<int>(count_new_nodes, 0);
             device_accumulated_child_count[depth] = new thrust::device_vector<int>(2*count_new_nodes, 0);
             device_count_points_on_leaves[depth] = new thrust::device_vector<int>(2*count_new_nodes, 0);
@@ -562,8 +568,6 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
             CudaTest((char *)"build_tree_utils Kernel failed!");
             update_parents_cron.stop();
         }
-
-        
 
         if(VERBOSE >= 2){
             std::cout << "\e[ABuilding Tree Depth: " << depth+1 << "/" << MAX_DEPTH;

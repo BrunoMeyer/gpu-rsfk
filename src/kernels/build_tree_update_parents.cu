@@ -33,12 +33,18 @@ void build_tree_update_parents(typepoints* tree,
             points_depth[p] = *actual_depth;
             updated_count = atomicAdd(&child_count_new_depth[points_parent[p]],1)+1;
 
-            if(updated_count <= MAX_TREE_CHILD-2){
-                is_leaf_new_depth[points_parent[p]] = true;
-            }
-            else{
+            if(updated_count > MAX_TREE_CHILD-2){
                 is_leaf_new_depth[points_parent[p]] = false;
             }
+
+            // if(updated_count <= MAX_TREE_CHILD-2){
+            //     is_leaf_new_depth[points_parent[p]] = true;
+            //     printf("%s: line %d : %d %d\n", __FILE__, __LINE__, updated_count, points_parent[p]);
+            // }
+            // else{
+                // is_leaf_new_depth[points_parent[p]] = false;
+                // printf("%s: line %d : %d %d\n", __FILE__, __LINE__, updated_count, points_parent[p]);
+            // }
         }
         // __syncwarp();
         // __syncthreads();
@@ -96,7 +102,6 @@ void build_tree_post_update_parents(typepoints* tree,
                 #if COMPILE_TYPE == DEBUG
                 if(new_count-1 == MAX_TREE_CHILD) atomicAdd(count_undo_leaf,1);
                 #endif
-
                 is_leaf_new_depth[points_parent[p]] = false;
             }
         }
