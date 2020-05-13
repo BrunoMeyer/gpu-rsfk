@@ -1,7 +1,7 @@
 #ifndef __COMPUTE_KNN_FROM_BUCKETS__CU
 #define __COMPUTE_KNN_FROM_BUCKETS__CU
 
-
+#include "../include/common.h"
 
 // __device__
 // inline

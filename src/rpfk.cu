@@ -35,56 +35,29 @@ using namespace std;
 #include <cmath>
 #include <bits/stdc++.h> 
 
+#include "include/common.h"
+#include "include/rpfk.h"
+
+#include "include/kernels/build_tree_bucket_points.h"
+#include "include/kernels/build_tree_check_points_side.h"
+#include "include/kernels/build_tree_count_new_nodes.h"
+#include "include/kernels/build_tree_create_nodes.h"
+#include "include/kernels/build_tree_init.h"
+#include "include/kernels/build_tree_update_parents.h"
+#include "include/kernels/build_tree_utils.h"
+#include "include/kernels/compute_knn_from_buckets.h"
+#include "include/kernels/nearest_neighbors_exploring.h"
 
 
-#define typepoints float
-
-// Lines per column
-#define N_D 0
-
-// Columns 
-#define D_N 1
-
-#define POINTS_STRUCTURE N_D
-#define TREE_STRUCTURE N_D
-
-#if   POINTS_STRUCTURE == D_N
-    #define get_point_idx(point,dimension,N,D) (dimension*N+point)
-#elif POINTS_STRUCTURE == N_D
-    #define get_point_idx(point,dimension,N,D) (point*D+dimension)
-#endif
-
-#if   TREE_STRUCTURE == D_N
-    #define get_tree_idx(nidx,dimension,N,D) (dimension*N+nidx)
-#elif TREE_STRUCTURE == N_D
-    #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+1)+dimension)
-#endif
-
-
-// EDV = EUCLIDIEAN DISTANCE VERSION
-#define EDV_ATOMIC_OK               0
-#define EDV_ATOMIC_CSE              1   // common subexpression elimination
-#define EDV_NOATOMIC                2
-#define EDV_NOATOMIC_NOSHM          3   // value returned in register (NO SHM)
-#define EDV_WARP_REDUCE_XOR         4
-#define EDV_WARP_REDUCE_XOR_NOSHM   5   // value returned in register (NO SHM)
-
-#define EUCLIDEAN_DISTANCE_VERSION EDV_WARP_REDUCE_XOR_NOSHM
-
-
-#define RELEASE 0
-#define DEBUG 1
-#define COMPILE_TYPE RELEASE
-
-#include "kernels/build_tree_init.cu"
-#include "kernels/build_tree_check_points_side.cu"
-#include "kernels/build_tree_count_new_nodes.cu"
-#include "kernels/build_tree_create_nodes.cu"
-#include "kernels/build_tree_update_parents.cu"
-#include "kernels/build_tree_utils.cu"
-#include "kernels/build_tree_bucket_points.cu"
-#include "kernels/compute_knn_from_buckets.cu"
-#include "kernels/nearest_neighbors_exploring.cu"
+// #include "kernels/build_tree_bucket_points.cu"
+// #include "kernels/build_tree_init.cu"
+// #include "kernels/build_tree_check_points_side.cu"
+// #include "kernels/build_tree_count_new_nodes.cu"
+// #include "kernels/build_tree_create_nodes.cu"
+// #include "kernels/build_tree_update_parents.cu"
+// #include "kernels/build_tree_utils.cu"
+// #include "kernels/compute_knn_from_buckets.cu"
+// #include "kernels/nearest_neighbors_exploring.cu"
 
 
 
@@ -127,88 +100,6 @@ class Cron
         }
 };
 
-// Class used to construct Random Projection forest and execute KNN
-class RPFK
-{
-public:
-    
-    // Data points. It will be stored as POINTS x DIMENSION or
-    // DIMENSION x POINTS considering the defined POINTS_STRUCTURE
-    typepoints* points; 
-    
-    // Indices of the estimated k-nearest neighbors for each point
-    // and squared distances between
-    // It can be previously initialized before the execution of RPFK
-    // with valid indices and distances, otherwise it must assume that indices
-    // have -1 value and distances FLT_MAX (or DBL_MAX)
-    // The indices ARE NOT sorted by the relative distances
-    int* knn_indices;
-    typepoints* knn_sqr_distances;
-    
-    // Maximum and Minimum number of points that will be present in each leaf node (bucket)
-    // This affect the local KNN step after the construction of each tree
-    int MIN_TREE_CHILD;
-    int MAX_TREE_CHILD;
-
-    // The limit of the tree depth. The algorithm may break if a tree reach
-    // a higher value than this parameter. When the tree is 'ready',
-    // there is a early stop and this limit will not be reached
-    // Known Bug: It may be necessary to add a 'random motion' before the
-    // execution of the algorithm to prevent that two points be positioned
-    // in the the same location, leading to the impossibility of the
-    // tree construction and the reach of MAX_DEPTH 
-    int MAX_DEPTH;
-
-    // SEED used to the pseudorandom number generator
-    int RANDOM_SEED;
-
-    // Nearest neighbor exploring is a pos-processing technique that will improve
-    // the accuracy of the approximated KNN. The neighbors of the neighbors
-    // will be treated as neighbor candidates for each point, which is a
-    // O(N*D*(K^2)) time cost step. This can be executed several times using the
-    // updated indices as the new input, and this ammount is represented by
-    // nn_exploring_factor. When nn_exploring_factor=0 the Nearest Neighbor Exploring
-    // will not be executed
-    int nn_exploring_factor;
-    
-    RPFK(typepoints* points,
-         int* knn_indices,
-         typepoints* knn_sqr_distances,
-         int MIN_TREE_CHILD,
-         int MAX_TREE_CHILD,
-         int MAX_DEPTH,
-         int RANDOM_SEED,
-         int nn_exploring_factor):
-         points(points),
-         knn_indices(knn_indices),
-         knn_sqr_distances(knn_sqr_distances),
-         MIN_TREE_CHILD(MIN_TREE_CHILD),
-         MAX_TREE_CHILD(MAX_TREE_CHILD),
-         MAX_DEPTH(MAX_DEPTH),
-         RANDOM_SEED(RANDOM_SEED),
-         nn_exploring_factor(nn_exploring_factor){}
-    
-
-    // Create a random projection tree and update the indices by considering
-    // the points in the same leaf node as candidates to neighbor
-    // This ensure that each point will have K valid neighbors indices, which
-    // can be very inaccurate.
-    // The device_knn_indices parameter can be previously initialized with
-    // valid indices or -1 values. If it has valid indices, also will be necessary
-    // to add the precomputed squared distances (device_knn_sqr_distances) 
-    void add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
-                                    thrust::device_vector<int> &device_knn_indices,
-                                    thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                                    int K, int N, int D, int VERBOSE,
-                                    string run_name);
-    
-    
-    // Run n_tree times the add_random_projection_tree procedure and the nearest
-    // neighbors exploring if necessary
-    void knn_gpu_rpfk_forest(int n_trees,
-                             int K, int N, int D, int VERBOSE,
-                             string run_name);
-};
 
 void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
                                       thrust::device_vector<int> &device_knn_indices,
@@ -782,28 +673,10 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
 
     // cudaDeviceSynchronize();
 
-    if(VERBOSE >= 2){
-        thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
-        thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
-        std::cout << "Points neighbors" << std::endl;
-        for(int i=0; i < 1*16; i+=1){
-            std::cout << i << ": ";
-            for(int j=0; j < K; ++j) std::cout << knn_indices[i*K+j] << " ";
-            std::cout << std::endl;
-        }
-        for(int i=N-4; i < N; ++i){
-            std::cout << i << ": ";
-            for(int j=0; j < K; ++j) std::cout << knn_indices[i*K+j] << " ";
-            std::cout << std::endl;
-        }
-        // std::cout << "Bucket HEAP" << std::endl;
-        // for(int i=MAX_NODES-1; i >= MAX_NODES-8; --i){
-        //     // std::cout << i << "(" << bucket_sizes[i] << ") : ";
-        //     for(int j=0; j < bucket_sizes[i]; ++j) std::cout << nodes_buckets[i*max_child+j] << " ";
-        //     // for(int j=0; j < max_child; ++j) std::cout << nodes_buckets[i*max_child+j] << " ";
-        //     std::cout << std::endl;
-        // }
-    }
+    // if(VERBOSE >= 3){
+    //     thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
+    //     thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
+    // }
     
     
     

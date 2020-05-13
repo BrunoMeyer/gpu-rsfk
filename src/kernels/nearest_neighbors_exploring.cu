@@ -1,6 +1,7 @@
 #ifndef __NEAREST_NEIGHBORS_EXPLORING__CU
 #define __NEAREST_NEIGHBORS_EXPLORING__CU
 
+#include "../include/common.h"
 
 __global__
 void nearest_neighbors_exploring(typepoints* points,

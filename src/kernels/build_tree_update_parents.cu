@@ -1,6 +1,7 @@
 #ifndef __BUILD_TREE_UPDATE_PARENTS__CU
 #define __BUILD_TREE_UPDATE_PARENTS__CU
 
+#include "../include/common.h"
 
 __global__
 void build_tree_update_parents(typepoints* tree,

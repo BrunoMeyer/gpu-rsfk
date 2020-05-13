@@ -1,6 +1,8 @@
 #ifndef __BUILD_TREE_COUNT_NEW_NODES__CU
 #define __BUILD_TREE_COUNT_NEW_NODES__CU
 
+#include "../include/common.h"
+
 __global__
 void build_tree_count_new_nodes(typepoints* tree,
                                 int* tree_parents,

@@ -1,7 +1,7 @@
 #ifndef __BUILD_TREE_CREATE_NODES__CU
 #define __BUILD_TREE_CREATE_NODES__CU
 
-#include "create_node.cu"
+#include "../include/common.h"
 
 __global__
 void build_tree_create_nodes(typepoints* tree_new_depth,

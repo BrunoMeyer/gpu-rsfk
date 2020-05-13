@@ -1,6 +1,8 @@
 #ifndef __CREATE_NODE__CU
 #define __CREATE_NODE__CU
 
+#include "../include/common.h"
+
 __device__
 inline
 void create_root(typepoints* tree,

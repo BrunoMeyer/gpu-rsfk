@@ -1,6 +1,7 @@
 #ifndef __BUILD_TREE_CHECK_POINTS_SIDE__CU
 #define __BUILD_TREE_CHECK_POINTS_SIDE__CU
 
+#include "../include/common.h"
 
 __device__
 inline

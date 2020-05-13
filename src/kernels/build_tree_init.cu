@@ -1,7 +1,7 @@
 #ifndef __BUILD_TREE_INIT__CU
 #define __BUILD_TREE_INIT__CU
 
-#include "create_node.cu"
+#include "../include/common.h"
 
 __global__
 void build_tree_init(typepoints* tree,

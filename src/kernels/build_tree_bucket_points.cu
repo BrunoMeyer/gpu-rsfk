@@ -1,6 +1,8 @@
 #ifndef __BUILD_TREE_BUCKET_POINTS__CU
 #define __BUILD_TREE_BUCKET_POINTS__CU
 
+#include "../include/common.h"
+
 __global__
 void build_tree_bucket_points(int* points_parent,
                               int* points_depth,

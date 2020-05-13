@@ -1,6 +1,8 @@
 #ifndef __BUILD_TREE_UTILS__CU
 #define __BUILD_TREE_UTILS__CU
 
+#include "../include/common.h"
+
 __global__
 void
 build_tree_utils(int* actual_depth,
