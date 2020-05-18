@@ -29,7 +29,8 @@ void
 build_tree_fix(int* depth_level_count,
                int* tree_count,
                int* accumulated_nodes_count,
-               int max_depth){
+               int max_depth)
+{
     *tree_count = 0;
     for(int i=0; i < max_depth; ++i){
         accumulated_nodes_count[i] = *tree_count;
@@ -49,7 +50,6 @@ build_tree_max_leaf_size(int* max_leaf_size,
                          int depth)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
-
     for(int node=tid; node < depth_level_count[depth]; node+=blockDim.x*gridDim.x){
         if(is_leaf[node]){
             atomicMax(max_leaf_size, child_count[node]);

@@ -37,18 +37,7 @@ void build_tree_update_parents(typepoints* tree,
             if(updated_count > MAX_TREE_CHILD-2){
                 is_leaf_new_depth[points_parent[p]] = false;
             }
-
-            // if(updated_count <= MAX_TREE_CHILD-2){
-            //     is_leaf_new_depth[points_parent[p]] = true;
-            //     printf("%s: line %d : %d %d\n", __FILE__, __LINE__, updated_count, points_parent[p]);
-            // }
-            // else{
-                // is_leaf_new_depth[points_parent[p]] = false;
-                // printf("%s: line %d : %d %d\n", __FILE__, __LINE__, updated_count, points_parent[p]);
-            // }
         }
-        // __syncwarp();
-        // __syncthreads();
     }
 }
 
@@ -76,7 +65,7 @@ void build_tree_post_update_parents(typepoints* tree,
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
-    int p, right_child/*, new_path*/;
+    int p, right_child;
     int parent_leaf_node;
     int new_count;
     // Set nodes parent in the new depth

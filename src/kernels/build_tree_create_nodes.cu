@@ -62,6 +62,8 @@ void build_tree_create_nodes(typepoints* tree_new_depth,
 
 
 /*
+// TODO: SPLIT BY PROJECTION INTO A RANDOM DIRECTION
+
 __global__
 void init_random_directions(typepoints* random_directions,
                             int random_directions_size,
