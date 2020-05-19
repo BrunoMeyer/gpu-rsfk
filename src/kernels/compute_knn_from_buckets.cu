@@ -484,11 +484,8 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
 // This kernel is a optmization of compute_knn_from_buckets_perblock_coalesced_symmetric kernel
 // The optimization consists use and communicate idle threads during lock system
 __global__
-void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(int* points_parent,
-                              int* points_depth,
-                              int* accumulated_nodes_count,
+void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
                               typepoints* points,
-                              int* node_idx_to_leaf_idx,
                               int* nodes_bucket,
                               int* bucket_size,
                               int* knn_indices,

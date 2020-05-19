@@ -1,3 +1,6 @@
+#ifndef __RPFK__CU
+#define __RPFK__CU
+
 // Thrust includes
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -86,11 +89,11 @@ class Cron
 };
 
 
-void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
-                                      thrust::device_vector<int> &device_knn_indices,
-                                      thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                                      int K, int N, int D, int VERBOSE,
-                                      string run_name="out.png")
+TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
+                                              thrust::device_vector<int> &device_knn_indices,
+                                              thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                              int K, int N, int D, int VERBOSE,
+                                              string run_name="out.png")
 {
     Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
@@ -98,8 +101,7 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     
     init_tree_cron.start();
     
-    
-         // They are pointers to each vector that represent a level of the tree
+    // They are pointers to each vector that represent a level of the tree
     // These vectors are allocated dynamically during the tree construction
     
     // Tree nodes hyperplanes values (equations of size D+1)
@@ -571,52 +573,8 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     cudaDeviceSynchronize();
     CudaTest((char *)"build_tree_bucket_points Kernel failed!");
     cron_classify_points.stop();
-
-
-    std::vector<int> nodes_buckets;
-    std::vector<int> bucket_sizes;
-    if(VERBOSE >= 3){
-        nodes_buckets.resize(total_leaves*max_child);
-        thrust::copy(device_nodes_buckets.begin(), device_nodes_buckets.begin() + total_leaves*max_child, nodes_buckets.begin());
-        bucket_sizes.resize(total_leaves);
-        thrust::copy(device_bucket_sizes.begin(), device_bucket_sizes.begin() + total_leaves, bucket_sizes.begin());
-        cudaDeviceSynchronize();
-    }
-
-    
-    
-    
-    // TODO: implement correct cudaFuncSetCacheConfig 
-    // cudaFuncSetCacheConfig(compute_knn_from_buckets, cudaFuncCachePreferL1);
-    // cudaFuncSetCacheConfig(compute_knn_from_buckets_coalesced, cudaFuncCachePreferL1);
-    // cudaFuncSetCacheConfig(compute_knn_from_buckets_perwarp_coalesced, cudaFuncCachePreferL1);
-    // cudaFuncSetCacheConfig(compute_knn_from_buckets_perblock_coalesced_symmetric_dividek, cudaFuncCachePreferL1);
-
-    Cron cron_knn;
-    cron_knn.start();
-
-    // TODO: Check if it is viable to use shared memory 
-    
-    // compute_knn_from_buckets_perwarp_coalesced<<<NB,NT>>>(
-    // compute_knn_from_buckets_perblock_coalesced_symmetric<<<total_leaves,NT>>>(
-    // compute_knn_from_buckets_perblock_coalesced_symmetric<<<NB,NT>>>(
-    compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
-                                              thrust::raw_pointer_cast(device_points_parent.data()),
-                                              thrust::raw_pointer_cast(device_points_depth.data()),
-                                              thrust::raw_pointer_cast(device_accumulated_nodes_count.data()),
-                                              thrust::raw_pointer_cast(device_points.data()),
-                                              thrust::raw_pointer_cast(device_node_idx_to_leaf_idx.data()),
-                                              thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                              thrust::raw_pointer_cast(device_bucket_sizes.data()),
-                                              thrust::raw_pointer_cast(device_knn_indices.data()),
-                                              thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                              N, D, max_child, K, MAX_TREE_CHILD, total_leaves);
-    cudaDeviceSynchronize();
-    CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
-    cron_knn.stop();    
     end_tree_cron.start();
-    
-    
+
     device_leaf_idx_to_node_idx.clear();
     device_leaf_idx_to_node_idx.shrink_to_fit();
     device_node_idx_to_leaf_idx.clear();
@@ -643,17 +601,13 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
     device_actual_depth.clear();
     device_actual_depth.shrink_to_fit();
     
-    device_nodes_buckets.clear();
-    device_nodes_buckets.shrink_to_fit();
-    device_bucket_sizes.clear();
-    device_bucket_sizes.shrink_to_fit();
     device_max_leaf_size.clear();
     device_max_leaf_size.shrink_to_fit();
     device_min_leaf_size.clear();
     device_min_leaf_size.shrink_to_fit();
     device_total_leaves.clear();
     device_total_leaves.shrink_to_fit();
-    
+
     for(depth=0; depth < reached_max_depth; ++depth){
         // Random Projection Forest
         // device_random_directions[depth]->clear();
@@ -676,7 +630,86 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
         device_count_points_on_leaves[depth]->shrink_to_fit();
     }
 
+    end_tree_cron.stop();
+    // Report total time of each step
+    if(VERBOSE >= 1){
+        printf("Init tree takes %lf seconds\n", init_tree_cron.t_total/1000);
+        printf("Total tree building takes %lf seconds\n", total_tree_build_cron.t_total/1000);
+        printf("\tCheck active points Kernel takes %lf seconds\n", check_active_points_cron.t_total/1000);
+        printf("\tCheck points side Kernel takes %lf seconds\n", check_points_side_cron.t_total/1000);
+        printf("\tCount new nodes Kernel takes %lf seconds\n", tree_count_cron.t_total/1000);
+        printf("\tDynamic memory allocation takes %lf seconds\n", dynamic_memory_allocation_cron.t_total/1000);
+        printf("\tPreprocessing split points Kernel takes %lf seconds\n", organize_sample_candidate_cron.t_total/1000);
+        printf("\tCreate nodes Kernel takes %lf seconds\n", create_nodes_cron.t_total/1000);
+        printf("\tUpdate parents Kernel takes %lf seconds\n", update_parents_cron.t_total/1000);
+        printf("Bucket creation Kernel takes %lf seconds\n", cron_classify_points.t_total/1000);
+        printf("End tree takes %lf seconds\n", end_tree_cron.t_total/1000);
+    }
 
+    TreeInfo tinfo = TreeInfo(total_leaves, max_child,
+                              device_nodes_buckets, device_bucket_sizes);
+
+    return tinfo;
+}
+
+void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
+                                          thrust::device_vector<int> &device_knn_indices,
+                                          thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                          int K, int N, int D, int VERBOSE, TreeInfo tinfo,
+                                          string run_name="out.png")
+{
+    int total_leaves = tinfo.total_leaves;
+    int max_child = tinfo.max_child;
+    thrust::device_vector<int> device_nodes_buckets = tinfo.device_nodes_buckets;
+    thrust::device_vector<int> device_bucket_sizes = tinfo.device_bucket_sizes;
+
+    // TODO: Automatically specify another id of GPU device rather than 0
+    // Automatically get the ideal number of threads per block and total of blocks
+    // used in kernels
+    int devUsed = 0;
+    cudaSetDevice(devUsed);
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, devUsed);
+    const int NT = deviceProp.maxThreadsPerBlock;
+    const int NB = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/deviceProp.maxThreadsPerBlock);
+
+    std::vector<int> nodes_buckets;
+    std::vector<int> bucket_sizes;
+    if(VERBOSE >= 3){
+        nodes_buckets.resize(total_leaves*max_child);
+        thrust::copy(device_nodes_buckets.begin(), device_nodes_buckets.begin() + total_leaves*max_child, nodes_buckets.begin());
+        bucket_sizes.resize(total_leaves);
+        thrust::copy(device_bucket_sizes.begin(), device_bucket_sizes.begin() + total_leaves, bucket_sizes.begin());
+        cudaDeviceSynchronize();
+    }
+
+    // TODO: implement correct cudaFuncSetCacheConfig 
+    // cudaFuncSetCacheConfig(compute_knn_from_buckets, cudaFuncCachePreferL1);
+    // cudaFuncSetCacheConfig(compute_knn_from_buckets_coalesced, cudaFuncCachePreferL1);
+    // cudaFuncSetCacheConfig(compute_knn_from_buckets_perwarp_coalesced, cudaFuncCachePreferL1);
+    // cudaFuncSetCacheConfig(compute_knn_from_buckets_perblock_coalesced_symmetric_dividek, cudaFuncCachePreferL1);
+
+    Cron cron_knn;
+    cron_knn.start();
+
+    // TODO: Check if it is viable to use shared memory 
+    
+    // compute_knn_from_buckets_perwarp_coalesced<<<NB,NT>>>(
+    // compute_knn_from_buckets_perblock_coalesced_symmetric<<<total_leaves,NT>>>(
+    // compute_knn_from_buckets_perblock_coalesced_symmetric<<<NB,NT>>>(
+    compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
+                                              thrust::raw_pointer_cast(device_points.data()),
+                                              thrust::raw_pointer_cast(device_nodes_buckets.data()),
+                                              thrust::raw_pointer_cast(device_bucket_sizes.data()),
+                                              thrust::raw_pointer_cast(device_knn_indices.data()),
+                                              thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                              N, D, max_child, K, MAX_TREE_CHILD, total_leaves);
+    cudaDeviceSynchronize();
+    CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
+    cron_knn.stop();    
+
+    tinfo.free();
+    
     // Plot the two first dimensions and labels of the tree partition with matplotlibcpp
     if(VERBOSE >= 3){
         set<int> s; 
@@ -705,21 +738,9 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
         plt::save(run_name);
     }
 
-    end_tree_cron.stop();
     // Report total time of each step
     if(VERBOSE >= 1){
-        printf("Init tree takes %lf seconds\n", init_tree_cron.t_total/1000);
-        printf("Total tree building takes %lf seconds\n", total_tree_build_cron.t_total/1000);
-        printf("\tCheck active points Kernel takes %lf seconds\n", check_active_points_cron.t_total/1000);
-        printf("\tCheck points side Kernel takes %lf seconds\n", check_points_side_cron.t_total/1000);
-        printf("\tCount new nodes Kernel takes %lf seconds\n", tree_count_cron.t_total/1000);
-        printf("\tDynamic memory allocation takes %lf seconds\n", dynamic_memory_allocation_cron.t_total/1000);
-        printf("\tPreprocessing split points Kernel takes %lf seconds\n", organize_sample_candidate_cron.t_total/1000);
-        printf("\tCreate nodes Kernel takes %lf seconds\n", create_nodes_cron.t_total/1000);
-        printf("\tUpdate parents Kernel takes %lf seconds\n", update_parents_cron.t_total/1000);
-        printf("Bucket creation Kernel takes %lf seconds\n", cron_classify_points.t_total/1000);
         printf("KNN computation Kernel takes %lf seconds\n", cron_knn.t_total/1000);
-        printf("End tree takes %lf seconds\n", end_tree_cron.t_total/1000);
     }
 }
 
@@ -733,13 +754,22 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     thrust::device_vector<typepoints> device_points(points, points+N*D);
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
     thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
+    
 
+    TreeInfo tinfo;
     for(int i=0; i < n_trees; ++i){
-        add_random_projection_tree(device_points,
-                                   device_knn_indices,
-                                   device_knn_sqr_distances,
-                                   K, N, D, VERBOSE-1,
-                                   run_name+"_"+std::to_string(i)+".png");
+        tinfo = create_bucket_from_sample_tree(device_points,
+                                               device_knn_indices,
+                                               device_knn_sqr_distances,
+                                               K, N, D, VERBOSE-1,
+                                               run_name+"_"+std::to_string(i)+".png");
+
+        update_knn_indice_with_buckets(device_points,
+                                       device_knn_indices,
+                                       device_knn_sqr_distances,
+                                       K, N, D, VERBOSE-1, tinfo,
+                                       run_name+"_"+std::to_string(i)+".png");
+
         RANDOM_SEED++;
     }
 
@@ -774,10 +804,10 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
             thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + K*N, device_old_knn_indices.begin());
             cudaDeviceSynchronize();
             nearest_neighbors_exploring<<<NB,NT>>>(thrust::raw_pointer_cast(device_points.data()),
-                                                             thrust::raw_pointer_cast(device_old_knn_indices.data()),
-                                                             thrust::raw_pointer_cast(device_knn_indices.data()),
-                                                             thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                                             N, D, K);
+                                                   thrust::raw_pointer_cast(device_old_knn_indices.data()),
+                                                   thrust::raw_pointer_cast(device_knn_indices.data()),
+                                                   thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+                                                   N, D, K);
             CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
             if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
             cudaDeviceSynchronize();
@@ -866,3 +896,4 @@ int main(int argc,char* argv[])
 
     return 0;
 }
+#endif

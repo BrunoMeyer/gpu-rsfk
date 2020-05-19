@@ -1,5 +1,34 @@
 #include "common.h"
 
+class TreeInfo{
+public:
+     int total_leaves;
+     int max_child;
+
+     thrust::device_vector<int> device_nodes_buckets;
+     thrust::device_vector<int> device_bucket_sizes;
+     
+     TreeInfo(){}
+
+     TreeInfo(int total_leaves,
+              int max_child,
+              thrust::device_vector<int> &_device_nodes_buckets,
+              thrust::device_vector<int> &_device_bucket_sizes):
+              total_leaves(total_leaves),
+              max_child(max_child)
+     {
+          device_nodes_buckets = _device_nodes_buckets;
+          device_bucket_sizes = _device_bucket_sizes;
+     }
+
+     void free(){
+          device_nodes_buckets.clear();
+          device_nodes_buckets.shrink_to_fit();
+          device_bucket_sizes.clear();
+          device_bucket_sizes.shrink_to_fit();
+     }
+};
+
 // Class used to construct Random Projection forest and execute KNN
 class RPFK
 {
@@ -69,11 +98,17 @@ public:
     // The device_knn_indices parameter can be previously initialized with
     // valid indices or -1 values. If it has valid indices, also will be necessary
     // to add the precomputed squared distances (device_knn_sqr_distances) 
-    void add_random_projection_tree(thrust::device_vector<typepoints> &device_points,
-                                    thrust::device_vector<int> &device_knn_indices,
-                                    thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                                    int K, int N, int D, int VERBOSE,
-                                    string run_name);
+    TreeInfo create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
+                                            thrust::device_vector<int> &device_knn_indices,
+                                            thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                            int K, int N, int D, int VERBOSE,
+                                            string run_name);
+
+    void update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
+                                        thrust::device_vector<int> &device_knn_indices,
+                                        thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                        int K, int N, int D, int VERBOSE, TreeInfo tinfo,
+                                        string run_name);
     
     
     // Run n_tree times the add_random_projection_tree procedure and the nearest
