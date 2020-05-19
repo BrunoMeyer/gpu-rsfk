@@ -30,3 +30,6 @@ install:
 clean:
 	rm -f rpfk
 	rm -f python/gpu_rpfk/librpfk.so
+	rm -rf python/build/
+	rm -rf python/dist/
+	rm -rf python/gpu_rpfk.egg-info/

@@ -99,8 +99,6 @@ public:
     // valid indices or -1 values. If it has valid indices, also will be necessary
     // to add the precomputed squared distances (device_knn_sqr_distances) 
     TreeInfo create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
-                                            thrust::device_vector<int> &device_knn_indices,
-                                            thrust::device_vector<typepoints> &device_knn_sqr_distances,
                                             int K, int N, int D, int VERBOSE,
                                             string run_name);
 
@@ -110,10 +108,16 @@ public:
                                         int K, int N, int D, int VERBOSE, TreeInfo tinfo,
                                         string run_name);
     
-    
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary
     void knn_gpu_rpfk_forest(int n_trees,
                              int K, int N, int D, int VERBOSE,
                              string run_name);
+
+    // Run n_tree times the add_random_projection_tree procedure and the nearest
+    // neighbors exploring if necessary
+    TreeInfo cluster_by_sample_tree(int K, int N, int D, int VERBOSE,
+                                    int** nodes_buckets,
+                                    int** bucket_sizes,
+                                    string run_name);
 };

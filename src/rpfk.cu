@@ -90,8 +90,6 @@ class Cron
 
 
 TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
-                                              thrust::device_vector<int> &device_knn_indices,
-                                              thrust::device_vector<typepoints> &device_knn_sqr_distances,
                                               int K, int N, int D, int VERBOSE,
                                               string run_name="out.png")
 {
@@ -759,8 +757,6 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     TreeInfo tinfo;
     for(int i=0; i < n_trees; ++i){
         tinfo = create_bucket_from_sample_tree(device_points,
-                                               device_knn_indices,
-                                               device_knn_sqr_distances,
                                                K, N, D, VERBOSE-1,
                                                run_name+"_"+std::to_string(i)+".png");
 
@@ -830,6 +826,43 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     device_knn_indices.shrink_to_fit();
     device_knn_sqr_distances.clear();
     device_knn_sqr_distances.shrink_to_fit();    
+}
+
+TreeInfo RPFK::cluster_by_sample_tree(int K, int N, int D, int VERBOSE,
+                                      int** nodes_buckets,
+                                      int** bucket_sizes,
+                                      string run_name="tree_cluster")
+{
+    Cron cluster_forest_cron;
+    cluster_forest_cron.start();
+    thrust::device_vector<typepoints> device_points(points, points+N*D);
+    
+    TreeInfo tinfo;
+    tinfo = create_bucket_from_sample_tree(device_points,
+                                           K, N, D, VERBOSE-1,
+                                           run_name+".png");
+
+    cluster_forest_cron.stop();
+    if(VERBOSE >= 1){
+        printf("Creating cluster with forest takes %lf seconds\n", cluster_forest_cron.t_total/1000);
+    }
+
+    int total_leaves = tinfo.total_leaves;
+    int max_child = tinfo.max_child;
+    thrust::device_vector<int> device_nodes_buckets = tinfo.device_nodes_buckets;
+    thrust::device_vector<int> device_bucket_sizes = tinfo.device_bucket_sizes;
+
+    *nodes_buckets = (int*)malloc(sizeof(int)*total_leaves*max_child);
+    *bucket_sizes  = (int*)malloc(sizeof(int)*total_leaves);
+    thrust::copy(device_nodes_buckets.begin(), device_nodes_buckets.begin() + total_leaves*max_child, *nodes_buckets);
+    thrust::copy(device_bucket_sizes.begin(),  device_bucket_sizes.begin()  + total_leaves,           *bucket_sizes);
+    cudaDeviceSynchronize();
+    tinfo.free();
+
+    device_points.clear();
+    device_points.shrink_to_fit();
+
+    return tinfo;
 }
 
 int main(int argc,char* argv[])

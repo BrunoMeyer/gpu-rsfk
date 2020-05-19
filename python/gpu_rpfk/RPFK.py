@@ -47,6 +47,24 @@ class RPFK(object):
                 # TODO: run name - Char pointer?
                 ]
 
+        self._lib.pymodule_cluster_by_sample_tree.restype = None
+        self._lib.pymodule_cluster_by_sample_tree.argtypes = [ 
+                ctypes.c_int, # number of nearest neighbors
+                ctypes.c_int, # total of points
+                ctypes.c_int, # dimensions of points
+                ctypes.c_int, # minimum tree node children
+                ctypes.c_int, # maximum tree node children
+                ctypes.c_int, # maximum depth of tree
+                ctypes.c_int, # verbose (1,2,3 or 4)
+                ctypes.c_int, # random state/seed
+                np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
+                ctypes.POINTER(ctypes.POINTER(ctypes.c_int)), # nodes buckets
+                ctypes.POINTER(ctypes.POINTER(ctypes.c_int)), # bucket sizes
+                ctypes.POINTER(ctypes.c_int), # total leaves
+                ctypes.POINTER(ctypes.c_int), # max child
+                # TODO: run name - Char pointer?
+                ]
+
     def find_nearest_neighbors(self, points, n_trees=1, max_tree_depth=500,
                                verbose=1, min_tree_children=-1,
                                max_tree_children=-1, transposed_points=False,
@@ -151,7 +169,74 @@ class RPFK(object):
         self._last_search_time = time.time() - t_init
         return self._knn_indices, self._knn_squared_dist
 
+    def cluster_by_sample_tree(self, points, max_tree_depth=500,
+                               verbose=1, min_tree_children=-1,
+                               max_tree_children=-1, transposed_points=False,
+                               random_motion_force=1.0,
+                               ensure_valid_indices=True):
 
+            max_tree_depth = int(max_tree_depth)
+            verbose = int(verbose)
+            max_tree_children = int(max_tree_children)
+            N = points.shape[0]
+            D = points.shape[1]
+            K = self.num_nearest_neighbors
+            
+            if min_tree_children == -1:
+                min_tree_children = K+1
+            if min_tree_children < 0:
+                raise Exception('min_tree_children = {} \t => min_tree_children must be at least 1'.format(min_tree_children))
+            if max_tree_children == -1:
+                max_tree_children = 2*min_tree_children
+            if max_tree_children < 2*min_tree_children:
+                raise Exception('min_tree_children = {}, max_tree_children = {} \t => max_tree_children must be at least 2*min_tree_children'.format(min_tree_children, max_tree_children))
+
+            
+            if(self.add_bit_random_motion):
+                for d in range(D):
+                    min_d = np.min(points[:,d])
+                    max_d = np.max(points[:,d])
+                    range_uniform = (max_d - min_d)/N
+                    points[:,d]=points[:,d] + random_motion_force*np.random.uniform(-range_uniform,range_uniform,N)
+            
+            if not transposed_points:
+                self.points = np.require(points.T, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+            else:
+                self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+            
+            # self.points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+
+            init_knn_indices = np.full((N,K), -1)
+            init_knn_indices[:,0] = np.arange(N)
+            init_squared_dist = np.full((N,K), np.inf)
+            init_squared_dist[:,0] = np.zeros(N)
+
+
+            t_init = time.time()
+            
+            nodes_buckets = ctypes.POINTER(ctypes.c_int)()
+            bucket_sizes  = ctypes.POINTER(ctypes.c_int)()
+            total_leaves = ctypes.c_int(0)
+            max_child = ctypes.c_int(0)
+
+            self._lib.pymodule_cluster_by_sample_tree(
+                    ctypes.c_int(K), # number of nearest neighbors
+                    ctypes.c_int(N), # total of points
+                    ctypes.c_int(D), # dimensions of points
+                    ctypes.c_int(min_tree_children), # minimum tree node children
+                    ctypes.c_int(max_tree_children), # maximum tree node children
+                    ctypes.c_int(max_tree_depth), # maximum depth of tree
+                    ctypes.c_int(verbose), # verbose (1,2,3 or 4)
+                    ctypes.c_int(self.random_state), # random state/seed
+                    self.points,
+                    ctypes.byref(nodes_buckets),
+                    ctypes.byref(bucket_sizes),
+                    ctypes.byref(total_leaves),
+                    ctypes.byref(max_child))
+
+            
+            self._last_search_time = time.time() - t_init
+            return total_leaves, max_child, nodes_buckets, bucket_sizes
 
 def test():
     test_N = 3000
