@@ -7,6 +7,8 @@ The K-Nearest Neighbor Graph is a problem that consists in: For each element of 
 The NN-Descent algorithm [[1]](#references) is an algorithm that computes an approximation of K-NNG using MapReduce primitives.
 
 ## Random Sample Forest KNN
+![](docs/img/cluster_forest.png)
+
 The RSFK algorithm presented in this project consists in combining the result of different "weak" approximations like the Random Projection Forest KNN algorithm [[2]](#references). Also, RSFK uses a very similar strategy like that described in [LarveVis](https://github.com/lferry007/LargeVis) paper, where the [ANNOY](https://github.com/spotify/annoy) project is used to construct the K-NNG.
 
 The Random Projection Forest KNN creates different trees. Each tree creates a partition of the set of points with *D* dimensions, dividing the points in different subsets. Each point considers all other points that are in its subset as potential neighbors. This limitation of exploration reduces the quadratic computational time complexity of the exact algorithm, leading to an approximation that is sufficient when several trees are created. Each tree is created as follow:
