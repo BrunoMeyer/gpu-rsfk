@@ -1,4 +1,55 @@
+#ifndef __RPFK__H
+#define __RPFK__H
+
 #include "common.h"
+
+// Thrust includes
+#include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
+#include <thrust/generate.h>
+#include <thrust/reduce.h>
+#include <thrust/functional.h>
+#include <thrust/random.h>
+#include <thrust/sequence.h>
+#include <thrust/transform.h>
+#include <thrust/transform_reduce.h>
+#include <thrust/iterator/counting_iterator.h>
+#include <thrust/iterator/transform_iterator.h>
+#include <thrust/iterator/permutation_iterator.h>
+#include <thrust/iterator/constant_iterator.h>
+#include <thrust/functional.h>
+#include <thrust/fill.h>
+#include <thrust/gather.h>
+#include <thrust/sort.h>
+#include <thrust/copy.h>
+#include <thrust/execution_policy.h>
+
+// CUDA includes
+#include <curand.h>
+#include <curand_kernel.h>
+
+
+
+
+#include <iostream> 
+#include <stdio.h>
+#include <cstdlib>
+#include <cmath>
+#include <bits/stdc++.h> 
+
+#include "common.h"
+
+#include "kernels/build_tree_bucket_points.h"
+#include "kernels/build_tree_check_points_side.h"
+#include "kernels/build_tree_count_new_nodes.h"
+#include "kernels/build_tree_create_nodes.h"
+#include "kernels/build_tree_init.h"
+#include "kernels/build_tree_update_parents.h"
+#include "kernels/build_tree_utils.h"
+#include "kernels/compute_knn_from_buckets.h"
+#include "kernels/nearest_neighbors_exploring.h"
+
+
 
 class TreeInfo{
 public:
@@ -99,25 +150,27 @@ public:
     // valid indices or -1 values. If it has valid indices, also will be necessary
     // to add the precomputed squared distances (device_knn_sqr_distances) 
     TreeInfo create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
-                                            int K, int N, int D, int VERBOSE,
-                                            string run_name);
+                                            int N, int D, int VERBOSE,
+                                            std::string run_name);
 
     void update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
                                         thrust::device_vector<int> &device_knn_indices,
                                         thrust::device_vector<typepoints> &device_knn_sqr_distances,
                                         int K, int N, int D, int VERBOSE, TreeInfo tinfo,
-                                        string run_name);
+                                        std::string run_name);
     
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary
     void knn_gpu_rpfk_forest(int n_trees,
                              int K, int N, int D, int VERBOSE,
-                             string run_name);
+                             std::string run_name);
 
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary
-    TreeInfo cluster_by_sample_tree(int K, int N, int D, int VERBOSE,
+    TreeInfo cluster_by_sample_tree(int N, int D, int VERBOSE,
                                     int** nodes_buckets,
                                     int** bucket_sizes,
-                                    string run_name);
+                                    std::string run_name);
 };
+
+#endif

@@ -1,56 +1,7 @@
 #ifndef __RPFK__CU
 #define __RPFK__CU
 
-// Thrust includes
-#include <thrust/host_vector.h>
-#include <thrust/device_vector.h>
-#include <thrust/generate.h>
-#include <thrust/reduce.h>
-#include <thrust/functional.h>
-#include <thrust/random.h>
-#include <thrust/sequence.h>
-#include <thrust/transform.h>
-#include <thrust/transform_reduce.h>
-#include <thrust/iterator/counting_iterator.h>
-#include <thrust/iterator/transform_iterator.h>
-#include <thrust/iterator/permutation_iterator.h>
-#include <thrust/iterator/constant_iterator.h>
-#include <thrust/functional.h>
-#include <thrust/fill.h>
-#include <thrust/gather.h>
-#include <thrust/sort.h>
-#include <thrust/copy.h>
-#include <thrust/execution_policy.h>
-
-// CUDA includes
-#include <curand.h>
-#include <curand_kernel.h>
-
-
-
-#include "third_party/matplotlibcpp.h"
-namespace plt = matplotlibcpp;
-
-#include <iostream> 
-#include <stdio.h>
-using namespace std;
-#include <cstdlib>
-#include <cmath>
-#include <bits/stdc++.h> 
-
-#include "include/common.h"
 #include "include/rpfk.h"
-
-#include "include/kernels/build_tree_bucket_points.h"
-#include "include/kernels/build_tree_check_points_side.h"
-#include "include/kernels/build_tree_count_new_nodes.h"
-#include "include/kernels/build_tree_create_nodes.h"
-#include "include/kernels/build_tree_init.h"
-#include "include/kernels/build_tree_update_parents.h"
-#include "include/kernels/build_tree_utils.h"
-#include "include/kernels/compute_knn_from_buckets.h"
-#include "include/kernels/nearest_neighbors_exploring.h"
-
 
 static void CudaTest(char* msg)
 {
@@ -90,8 +41,8 @@ class Cron
 
 
 TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
-                                              int K, int N, int D, int VERBOSE,
-                                              string run_name="out.png")
+                                              int N, int D, int VERBOSE,
+                                              std::string run_name="out.png")
 {
     Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
@@ -654,7 +605,7 @@ void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &dev
                                           thrust::device_vector<int> &device_knn_indices,
                                           thrust::device_vector<typepoints> &device_knn_sqr_distances,
                                           int K, int N, int D, int VERBOSE, TreeInfo tinfo,
-                                          string run_name="out.png")
+                                          std::string run_name="out.png")
 {
     int total_leaves = tinfo.total_leaves;
     int max_child = tinfo.max_child;
@@ -671,15 +622,6 @@ void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &dev
     const int NT = deviceProp.maxThreadsPerBlock;
     const int NB = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/deviceProp.maxThreadsPerBlock);
 
-    std::vector<int> nodes_buckets;
-    std::vector<int> bucket_sizes;
-    if(VERBOSE >= 3){
-        nodes_buckets.resize(total_leaves*max_child);
-        thrust::copy(device_nodes_buckets.begin(), device_nodes_buckets.begin() + total_leaves*max_child, nodes_buckets.begin());
-        bucket_sizes.resize(total_leaves);
-        thrust::copy(device_bucket_sizes.begin(), device_bucket_sizes.begin() + total_leaves, bucket_sizes.begin());
-        cudaDeviceSynchronize();
-    }
 
     // TODO: implement correct cudaFuncSetCacheConfig 
     // cudaFuncSetCacheConfig(compute_knn_from_buckets, cudaFuncCachePreferL1);
@@ -707,34 +649,6 @@ void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &dev
     cron_knn.stop();    
 
     tinfo.free();
-    
-    // Plot the two first dimensions and labels of the tree partition with matplotlibcpp
-    if(VERBOSE >= 3){
-        set<int> s; 
-        for(int b=0; b < total_leaves; ++b){
-            int count_cluster;
-        
-            count_cluster = bucket_sizes[b];
-            if(count_cluster == 0) continue;
-
-            std::vector<typepoints> X_axis(count_cluster);
-            std::vector<typepoints> Y_axis(count_cluster);
-
-            for(int i=0; i < count_cluster; ++i){
-                int p = nodes_buckets[b*max_child+i];
-                X_axis[i] = points[get_point_idx(p,0,N,D)];
-                Y_axis[i] = points[get_point_idx(p,1,N,D)];
-            }
-            plt::scatter<typepoints,typepoints>(X_axis, Y_axis,1.0,{
-                {"alpha", "0.8"}
-            });
-
-        }
-        // plt::show();
-        std::cerr << run_name << std::endl;
-
-        plt::save(run_name);
-    }
 
     // Report total time of each step
     if(VERBOSE >= 1){
@@ -745,7 +659,7 @@ void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &dev
 
 void RPFK::knn_gpu_rpfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
-                               string run_name="tree")
+                               std::string run_name="tree")
 {
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -757,7 +671,7 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     TreeInfo tinfo;
     for(int i=0; i < n_trees; ++i){
         tinfo = create_bucket_from_sample_tree(device_points,
-                                               K, N, D, VERBOSE-1,
+                                               N, D, VERBOSE-1,
                                                run_name+"_"+std::to_string(i)+".png");
 
         update_knn_indice_with_buckets(device_points,
@@ -828,10 +742,10 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     device_knn_sqr_distances.shrink_to_fit();    
 }
 
-TreeInfo RPFK::cluster_by_sample_tree(int K, int N, int D, int VERBOSE,
+TreeInfo RPFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
                                       int** nodes_buckets,
                                       int** bucket_sizes,
-                                      string run_name="tree_cluster")
+                                      std::string run_name="tree_cluster")
 {
     Cron cluster_forest_cron;
     cluster_forest_cron.start();
@@ -839,7 +753,7 @@ TreeInfo RPFK::cluster_by_sample_tree(int K, int N, int D, int VERBOSE,
     
     TreeInfo tinfo;
     tinfo = create_bucket_from_sample_tree(device_points,
-                                           K, N, D, VERBOSE-1,
+                                           N, D, VERBOSE-1,
                                            run_name+".png");
 
     cluster_forest_cron.stop();
@@ -895,7 +809,7 @@ int main(int argc,char* argv[])
     std::vector<int> labels(N*D);
 
     int l;
-    string type_init;
+    std::string type_init;
     if(DS == 0){
         type_init = "SPLITED_LINE";
     }

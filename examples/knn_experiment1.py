@@ -219,17 +219,18 @@ if __name__ == "__main__":
             time_list = []
             for n_trees in parameter_list:
                 init_t = time.time()
-                rpfk = RPFK(K, random_state=0, nn_exploring_factor=nnef,
-                            add_bit_random_motion=True)
+                rpfk = RPFK(random_state=0)
                 indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
+                                                            K,
                                                             min_tree_children=min_tree_children,
                                                             max_tree_children=max_tree_children,
                                                             # max_tree_children=len(dataX),
                                                             max_tree_depth=5000,
                                                             n_trees=n_trees,
-                                                            transposed_points=True,
                                                             random_motion_force=0.1,
                                                             ensure_valid_indices=True,
+                                                            nn_exploring_factor=nnef,
+                                                            add_bit_random_motion=True,
                                                             # verbose=0)
                                                             # verbose=1)
                                                             # verbose=2)
