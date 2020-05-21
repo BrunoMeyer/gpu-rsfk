@@ -15,56 +15,54 @@ class RPFK(object):
                  random_state=0):
         self.random_state = int(random_state)
         
-        # Build the hooks for the BH T-SNE library
         self._path = pkg_resources.resource_filename('gpu_rpfk','') # Load from current location
-        # self._faiss_lib = np.ctypeslib.load_library('libfaiss', self._path) # Load the ctypes library
-        # self._gpufaiss_lib = np.ctypeslib.load_library('libgpufaiss', self._path) # Load the ctypes library
         self._lib = np.ctypeslib.load_library('librpfk', self._path) # Load the ctypes library
         
-        # Hook the BH T-SNE function
+        # Hook the RSFK KNN methods
         self._lib.pymodule_rpfk_knn.restype = None
         self._lib.pymodule_rpfk_knn.argtypes = [ 
-                ctypes.c_int, # number of trees
-                ctypes.c_int, # number of nearest neighbors
-                ctypes.c_int, # total of points
-                ctypes.c_int, # dimensions of points
-                ctypes.c_int, # minimum tree node children
-                ctypes.c_int, # maximum tree node children
-                ctypes.c_int, # maximum depth of tree
-                ctypes.c_int, # verbose (1,2,3 or 4)
-                ctypes.c_int, # random state/seed
-                ctypes.c_int, # Nearest Neighbor exploring factor
-                np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
-                np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
-                np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
-                # TODO: run name - Char pointer?
-                ]
+            ctypes.c_int, # number of trees
+            ctypes.c_int, # number of nearest neighbors
+            ctypes.c_int, # total of points
+            ctypes.c_int, # dimensions of points
+            ctypes.c_int, # minimum tree node children
+            ctypes.c_int, # maximum tree node children
+            ctypes.c_int, # maximum depth of tree
+            ctypes.c_int, # verbose (1,2,3 or 4)
+            ctypes.c_int, # random state/seed
+            ctypes.c_int, # Nearest Neighbor exploring factor
+            np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
+            np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
+            np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
+            # TODO: run name - Char pointer?
+            ]
 
         self._lib.pymodule_cluster_by_sample_tree.restype = None
         self._lib.pymodule_cluster_by_sample_tree.argtypes = [ 
-                ctypes.c_int, # total of points
-                ctypes.c_int, # dimensions of points
-                ctypes.c_int, # minimum tree node children
-                ctypes.c_int, # maximum tree node children
-                ctypes.c_int, # maximum depth of tree
-                ctypes.c_int, # verbose (1,2,3 or 4)
-                ctypes.c_int, # random state/seed
-                np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
-                ctypes.POINTER(ctypes.POINTER(ctypes.c_int)), # nodes buckets
-                ctypes.POINTER(ctypes.POINTER(ctypes.c_int)), # bucket sizes
-                ctypes.POINTER(ctypes.c_int), # total leaves
-                ctypes.POINTER(ctypes.c_int), # max child
-                # TODO: run name - Char pointer?
-                ]
+            ctypes.c_int, # total of points
+            ctypes.c_int, # dimensions of points
+            ctypes.c_int, # minimum tree node children
+            ctypes.c_int, # maximum tree node children
+            ctypes.c_int, # maximum depth of tree
+            ctypes.c_int, # verbose (1,2,3 or 4)
+            ctypes.c_int, # random state/seed
+            np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_int)), # nodes buckets
+            ctypes.POINTER(ctypes.POINTER(ctypes.c_int)), # bucket sizes
+            ctypes.POINTER(ctypes.c_int), # total leaves
+            ctypes.POINTER(ctypes.c_int), # max child
+            # TODO: run name - Char pointer?
+            ]
 
     def find_nearest_neighbors(self, points, num_nearest_neighbors,
                                n_trees=1, max_tree_depth=5000,
-                               verbose=1, min_tree_children=-1,
+                               verbose=0, min_tree_children=-1,
                                max_tree_children=-1,
                                random_motion_force=1.0,
                                ensure_valid_indices=True,
-                               nn_exploring_factor=0,
-                               add_bit_random_motion=False):
+                               nn_exploring_factor=-1,
+                               add_bit_random_motion=False,
+                               point_in_self_neigh=True):
 
         points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
 
@@ -76,13 +74,19 @@ class RPFK(object):
         D = points.shape[1]
         K = num_nearest_neighbors
         
+        if nn_exploring_factor == -1:
+            if K <= 32:
+                nn_exploring_factor = 1
+            else:
+                nn_exploring_factor = 0
+
         if min_tree_children == -1:
             min_tree_children = K+1
         if min_tree_children < 0:
             raise Exception('min_tree_children = {} \t => min_tree_children must be at least 1'.format(min_tree_children))
         if max_tree_children == -1:
-            max_tree_children = 2*min_tree_children
-        if max_tree_children < 2*min_tree_children:
+            max_tree_children = 3*min_tree_children
+        if max_tree_children < 3*min_tree_children:
             raise Exception('min_tree_children = {}, max_tree_children = {} \t => max_tree_children must be at least 2*min_tree_children'.format(min_tree_children, max_tree_children))
         
         
@@ -92,13 +96,17 @@ class RPFK(object):
                 max_d = np.max(points[:,d])
                 range_uniform = (max_d - min_d)/N
                 points[:,d]=points[:,d] + random_motion_force*np.random.uniform(-range_uniform,range_uniform,N)
-        
+
+        # TODO: Prevent np.require to create a copy of the data. This double the memory usage              
         points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
         
         init_knn_indices = np.full((N,K), -1)
-        init_knn_indices[:,0] = np.arange(N)
+        if point_in_self_neigh:
+            init_knn_indices[:,0] = np.arange(N)
+        
         init_squared_dist = np.full((N,K), np.inf)
-        init_squared_dist[:,0] = np.zeros(N)
+        if point_in_self_neigh:
+            init_squared_dist[:,0] = np.zeros(N)
 
         knn_indices = np.require(init_knn_indices, np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         knn_squared_dist = np.require(init_squared_dist, np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
