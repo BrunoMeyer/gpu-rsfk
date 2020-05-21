@@ -1,24 +1,9 @@
 from gpu_rpfk.RPFK import RPFK
 
-import time
-from tqdm import tqdm
-from multiprocessing import Pool
-import multiprocessing
-WORKERS = multiprocessing.cpu_count()
-
-import os
-import gc
-
-import time
 import numpy as np
-
+import matplotlib.pyplot as plt
 import argparse
 
-import ctypes
-
-import matplotlib.pyplot as plt
-
-# from datasets import load_dataset, load_dataset_knn, get_dataset_options
 
 
 if __name__ == "__main__":
@@ -63,6 +48,7 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(1, 1, sharey=True, tight_layout=True)
     while offset < len(nodes_buckets):
         bucket_slice = nodes_buckets[offset:offset+max_child]
+        # -1 values represent empty slots on buckets
         bucket_slice = bucket_slice[np.where(bucket_slice) != -1]
         ax.scatter(points[bucket_slice,0], points[bucket_slice,1], s=5, alpha=0.8)
         offset+=max_child
