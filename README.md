@@ -6,6 +6,8 @@ This project presents a CUDA implementation of the Random Sample Forest KNN (RSF
 The K-Nearest Neighbor Graph is a problem that consists in: For each element of a set V, find the K most similar objects (neighbors) to each object that also is contained in V.
 The NN-Descent algorithm [[1]](#references) is an algorithm that computes an approximation of K-NNG using MapReduce primitives.
 
+In this project, we provide an implementation of RSFK algorithm in CUDA language with a python interface. RSFK uses a very similar strategy to [LarveVis](https://github.com/lferry007/LargeVis) [[3]](#references) algorithm, where randomized trees generate different partitions. These partitions are used to explore real neighbors for every point. Also, a neighborhood exploration method is used to improve the quality of the K-NNG approximation.
+
 
 ## Compiling and Installing
 ```bash
@@ -49,7 +51,7 @@ print(dist)
 
 ### Construction a partition with a Random Sample Tree
 The following code contains an example of how to build a partition of a set of points from a Random Sample Tree.
-Also, the file [`examples/cluster_with_forest.py`](https://github.com/BrunoMeyer/gpu-rpfk/blob/master/examples/cluster_with_forest.py) contains the code to create [figures from the result](#random-sample-forest-knn).
+Also, the file [``examples/cluster_with_forest.py``](https://github.com/BrunoMeyer/gpu-rpfk/blob/master/examples/cluster_with_forest.py) contains the code to create [figures from the result](#random-sample-forest-knn).
 
 ```python
 import numpy as np
@@ -97,7 +99,7 @@ The main difference between Random Projection Forests and RSFK lies in the fact 
 
 ### Nearest Neighbor Exploration
 Like [LarveVis](https://github.com/lferry007/LargeVis) [[3]](#references), we also present a post-processing technique that explore the neighbors of neighbors.
-This exploration can be executed many times and is controlled by the parameter `nn_exploring_factor`.
+This exploration can be executed many times and is controlled by the parameter ``nn_exploring_factor``.
 
 ## Similarity Search
 
