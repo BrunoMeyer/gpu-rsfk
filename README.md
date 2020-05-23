@@ -22,14 +22,14 @@ make python_arch75 && make install SETUP_FLAG="--user" # Compilation for a speci
 import numpy as np
 from gpu_rpfk.RPFK import RPFK
 points = np.random.random((1000000,100))
-K = 32
+K = 32 # number of neighbors
 rpfk = RPFK(random_state=0)
 indices, dist = rpfk.find_nearest_neighbors(points,
                                             K,
                                             verbose=1,
-                                            n_trees=50)
-print(indices)
-print(dist)
+                                            n_trees=50) # number of trees
+print(indices) # the neighborhood of each point
+print(dist) # the squared distance to each neighbor
 ```
 
 ```python
@@ -63,10 +63,10 @@ result = rpfk.cluster_by_sample_tree(points,
                                      max_tree_children=1024,
                                      verbose=1)
 total_leaves, max_child, nodes_buckets, bucket_sizes = result
-print(total_leaves)
-print(max_child)
-print(nodes_buckets)
-print(bucket_sizes)
+print(total_leaves) # total of buckets
+print(max_child) # maximum size of a bucket
+print(nodes_buckets) # the partition of points serialized in one vector
+print(bucket_sizes) # the size of each subset (bucket) on the partition
 ```
 
 ```python
