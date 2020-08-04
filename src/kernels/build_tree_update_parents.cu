@@ -4,7 +4,7 @@
 #include "../include/common.h"
 
 __global__
-void build_tree_update_parents(typepoints* tree,
+void build_tree_update_parents(RSFK_typepoints* tree,
                                int* tree_parents,
                                int* tree_children,
                                int* points_parent,
@@ -14,7 +14,7 @@ void build_tree_update_parents(typepoints* tree,
                                bool* is_leaf_new_depth,
                                int* child_count,
                                int* child_count_new_depth,
-                               typepoints* points,
+                               RSFK_typepoints* points,
                                int* actual_depth,
                                int* tree_count,
                                int* depth_level_count,
@@ -42,7 +42,7 @@ void build_tree_update_parents(typepoints* tree,
 }
 
 __global__
-void build_tree_post_update_parents(typepoints* tree,
+void build_tree_post_update_parents(RSFK_typepoints* tree,
                                     int* tree_parents_new_depth,
                                     int* tree_children,
                                     int* points_parent,
@@ -52,7 +52,7 @@ void build_tree_post_update_parents(typepoints* tree,
                                     bool* is_leaf_new_depth,
                                     int* child_count,
                                     int* child_count_new_depth,
-                                    typepoints* points,
+                                    RSFK_typepoints* points,
                                     int* actual_depth,
                                     int* tree_count,
                                     int* depth_level_count,

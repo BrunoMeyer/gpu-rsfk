@@ -8,8 +8,8 @@ __device__
 inline
 int check_hyperplane_side(int node_idx,
                           int p,
-                          typepoints* tree,
-                          typepoints* points,
+                          RSFK_typepoints* tree,
+                          RSFK_typepoints* points,
                           int D,
                           int N,
                           int* count_new_nodes);
@@ -26,7 +26,7 @@ void build_tree_check_active_points(int* points_parent,
 
 
 __global__
-void build_tree_check_points_side(typepoints* tree,
+void build_tree_check_points_side(RSFK_typepoints* tree,
                                   int* tree_parents,
                                   int* tree_children,
                                   int* points_parent,
@@ -34,7 +34,7 @@ void build_tree_check_points_side(typepoints* tree,
                                   int* is_right_child,
                                   bool* is_leaf,
                                   int* child_count,
-                                  typepoints* points,
+                                  RSFK_typepoints* points,
                                   int* actual_depth,
                                   int* tree_count,
                                   int* depth_level_count,

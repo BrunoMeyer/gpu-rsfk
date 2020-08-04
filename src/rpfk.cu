@@ -40,7 +40,7 @@ class Cron
 };
 
 
-TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
+TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<RSFK_typepoints> &device_points,
                                               int N, int D, int VERBOSE,
                                               std::string run_name="out.png")
 {
@@ -54,10 +54,10 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
     // These vectors are allocated dynamically during the tree construction
     
     // Tree nodes hyperplanes values (equations of size D+1)
-    thrust::device_vector<typepoints>** device_tree = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
+    thrust::device_vector<RSFK_typepoints>** device_tree = (thrust::device_vector<RSFK_typepoints>**) malloc(sizeof(thrust::device_vector<RSFK_typepoints>*)*MAX_DEPTH);
     
     // Random Projection Forest
-    // thrust::device_vector<typepoints>** device_random_directions = (thrust::device_vector<typepoints>**) malloc(sizeof(thrust::device_vector<typepoints>*)*MAX_DEPTH);
+    // thrust::device_vector<RSFK_typepoints>** device_random_directions = (thrust::device_vector<RSFK_typepoints>**) malloc(sizeof(thrust::device_vector<RSFK_typepoints>*)*MAX_DEPTH);
     
     // Id of the parent (from the last level) of each node at current level
     thrust::device_vector<int>** device_tree_parents = (thrust::device_vector<int>**) malloc(sizeof(thrust::device_vector<int>*)*MAX_DEPTH);
@@ -83,9 +83,9 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
 
     // Allocates the vectors for the first level of the tree
     int MAX_NODES = 1;
-    device_tree[0] = new thrust::device_vector<typepoints>((D+1)*MAX_NODES);
+    device_tree[0] = new thrust::device_vector<RSFK_typepoints>((D+1)*MAX_NODES);
     // Random Projection Forest
-    // device_random_directions[0] = new thrust::device_vector<typepoints>(2*D*MAX_NODES);
+    // device_random_directions[0] = new thrust::device_vector<RSFK_typepoints>(2*D*MAX_NODES);
     device_tree_parents[0] = new thrust::device_vector<int>(MAX_NODES,-1);
     device_tree_children[0] = new thrust::device_vector<int>(2*MAX_NODES,-1);
     device_is_leaf[0] = new thrust::device_vector<bool>(MAX_NODES, false);
@@ -112,8 +112,8 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
     thrust::device_vector<int> device_sample_candidate_points(2*N, -1);
 
     // Random Projection Forest
-    // thrust::device_vector<typepoints> device_min_random_proj_values(N, FLT_MAX);
-    // thrust::device_vector<typepoints> device_max_random_proj_values(N, FLT_MIN);
+    // thrust::device_vector<RSFK_typepoints> device_min_random_proj_values(N, FLT_MAX);
+    // thrust::device_vector<RSFK_typepoints> device_max_random_proj_values(N, FLT_MIN);
 
     // The id of each point inside of each subvector of device_sample_candidate_points
     thrust::device_vector<int> device_points_id_on_sample(N, -1);
@@ -273,8 +273,8 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
             device_tree[depth-1]->clear();
             device_tree[depth-1]->shrink_to_fit();
             
-            device_tree[depth] = new thrust::device_vector<typepoints>(((D+1)*count_new_nodes));
-            // device_random_directions[depth] = new thrust::device_vector<typepoints>((2*D*count_new_nodes));
+            device_tree[depth] = new thrust::device_vector<RSFK_typepoints>(((D+1)*count_new_nodes));
+            // device_random_directions[depth] = new thrust::device_vector<RSFK_typepoints>((2*D*count_new_nodes));
             device_tree_parents[depth] = new thrust::device_vector<int>(count_new_nodes,-1);
             device_tree_children[depth] = new thrust::device_vector<int>(2*count_new_nodes,-1);
             device_is_leaf[depth] = new thrust::device_vector<bool>(count_new_nodes, true);
@@ -601,9 +601,9 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
     return tinfo;
 }
 
-void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
+void RPFK::update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
                                           thrust::device_vector<int> &device_knn_indices,
-                                          thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                          thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
                                           int K, int N, int D, int VERBOSE, TreeInfo tinfo,
                                           std::string run_name="out.png")
 {
@@ -663,9 +663,9 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
 {
     Cron forest_total_cron;
     forest_total_cron.start();
-    thrust::device_vector<typepoints> device_points(points, points+N*D);
+    thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
-    thrust::device_vector<typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
+    thrust::device_vector<RSFK_typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
     
 
     TreeInfo tinfo;
@@ -749,7 +749,7 @@ TreeInfo RPFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
 {
     Cron cluster_forest_cron;
     cluster_forest_cron.start();
-    thrust::device_vector<typepoints> device_points(points, points+N*D);
+    thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
     
     TreeInfo tinfo;
     tinfo = create_bucket_from_sample_tree(device_points,
@@ -796,13 +796,13 @@ int main(int argc,char* argv[])
     int VERBOSE = atoi(argv[4]);
     int DS = atoi(argv[5]);
 
-    typepoints* points = (typepoints*) malloc(sizeof(typepoints)*N*D);
+    RSFK_typepoints* points = (RSFK_typepoints*) malloc(sizeof(RSFK_typepoints)*N*D);
     int K = 32;
 
     int* knn_indices = (int*) malloc(sizeof(int)*N*K);
     std::fill_n(knn_indices, N*K, -1);
 
-    typepoints* knn_sqr_distances = (typepoints*) malloc(sizeof(typepoints)*N*K);
+    RSFK_typepoints* knn_sqr_distances = (RSFK_typepoints*) malloc(sizeof(RSFK_typepoints)*N*K);
     std::fill_n(knn_sqr_distances, N*K, FLT_MAX);
 
 

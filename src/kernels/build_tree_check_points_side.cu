@@ -7,12 +7,12 @@
 
 __device__
 inline
-typepoints check_hyperplane_side(int node_idx, int p, typepoints* tree,
-                                           typepoints* points, int D, int N,
+RSFK_typepoints check_hyperplane_side(int node_idx, int p, RSFK_typepoints* tree,
+                                           RSFK_typepoints* points, int D, int N,
                                            int* count_new_nodes,
                                            int tidw)
 {
-    typepoints s = 0.0f;
+    RSFK_typepoints s = 0.0f;
     for(int i=tidw; i < D; i+=32){
         s+=tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*points[get_point_idx(p,i,N,D)];
     }
@@ -47,7 +47,7 @@ void build_tree_check_active_points(int* points_parent,
 }
 
 __global__
-void build_tree_check_points_side(typepoints* tree,
+void build_tree_check_points_side(RSFK_typepoints* tree,
                                   int* tree_parents,
                                   int* tree_children,
                                   int* points_parent,
@@ -55,7 +55,7 @@ void build_tree_check_points_side(typepoints* tree,
                                   int* is_right_child,
                                   bool* is_leaf,
                                   int* child_count,
-                                  typepoints* points,
+                                  RSFK_typepoints* points,
                                   int* actual_depth,
                                   int* tree_count,
                                   int* depth_level_count,
@@ -73,7 +73,7 @@ void build_tree_check_points_side(typepoints* tree,
     int i, j, p, tmp_p;
     int csi;
 
-    typepoints product, tmp_product; 
+    RSFK_typepoints product, tmp_product; 
 
     int tidw = threadIdx.x % 32; // my id on warp
 

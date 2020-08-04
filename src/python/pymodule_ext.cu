@@ -17,9 +17,9 @@ extern "C" {
                            int VERBOSE,
                            int RANDOM_STATE,
                            int nn_exploring_factor,
-                           typepoints* points,
+                           RSFK_typepoints* points,
                            int* knn_indices,
-                           typepoints* knn_sqr_distances);
+                           RSFK_typepoints* knn_sqr_distances);
 
     void pymodule_cluster_by_sample_tree(int N,
                                          int D,
@@ -28,7 +28,7 @@ extern "C" {
                                          int MAX_DEPTH,
                                          int VERBOSE,
                                          int RANDOM_STATE,
-                                         typepoints* points,
+                                         RSFK_typepoints* points,
                                          int** nodes_buckets,
                                          int** bucket_sizes,
                                          int* total_leaves,
@@ -45,9 +45,9 @@ void pymodule_rpfk_knn(int n_trees,
                        int VERBOSE,
                        int RANDOM_STATE,
                        int nn_exploring_factor,
-                       typepoints* points,
+                       RSFK_typepoints* points,
                        int* knn_indices,
-                       typepoints* knn_sqr_distances)
+                       RSFK_typepoints* knn_sqr_distances)
 {
     std::string run_name="run";
     RPFK rpfk_knn(points, knn_indices, knn_sqr_distances,
@@ -64,7 +64,7 @@ void pymodule_cluster_by_sample_tree(int N,
                                      int MAX_DEPTH,
                                      int VERBOSE,
                                      int RANDOM_STATE,
-                                     typepoints* points,
+                                     RSFK_typepoints* points,
                                      int** nodes_buckets,
                                      int** bucket_sizes,
                                      int* total_leaves,

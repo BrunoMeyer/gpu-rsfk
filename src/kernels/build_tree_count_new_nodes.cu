@@ -4,7 +4,7 @@
 #include "../include/common.h"
 
 __global__
-void build_tree_count_new_nodes(typepoints* tree,
+void build_tree_count_new_nodes(RSFK_typepoints* tree,
                                 int* tree_parents,
                                 int* tree_children,
                                 int* points_parent,
@@ -12,7 +12,7 @@ void build_tree_count_new_nodes(typepoints* tree,
                                 bool* is_leaf,
                                 int* count_points_on_leafs,
                                 int* child_count,
-                                typepoints* points,
+                                RSFK_typepoints* points,
                                 int* actual_depth,
                                 int* tree_count,
                                 int* depth_level_count,

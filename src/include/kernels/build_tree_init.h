@@ -5,13 +5,13 @@
 #include "../../kernels/create_node.cu"
 
 __global__
-void build_tree_init(typepoints* tree,
+void build_tree_init(RSFK_typepoints* tree,
                      int* tree_parents,
                      int* tree_children,
                      int* points_parent,
                      int* child_count,
                      bool* is_leaf,
-                     typepoints* points,
+                     RSFK_typepoints* points,
                      int* actual_depth,
                      int* tree_count,
                      int* depth_level_count,

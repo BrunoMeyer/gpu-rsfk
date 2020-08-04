@@ -87,7 +87,7 @@ public:
     
     // Data points. It will be stored as POINTS x DIMENSION or
     // DIMENSION x POINTS considering the defined POINTS_STRUCTURE
-    typepoints* points; 
+    RSFK_typepoints* points; 
     
     // Indices of the estimated k-nearest neighbors for each point
     // and squared distances between
@@ -96,7 +96,7 @@ public:
     // have -1 value and distances FLT_MAX (or DBL_MAX)
     // The indices ARE NOT sorted by the relative distances
     int* knn_indices;
-    typepoints* knn_sqr_distances;
+    RSFK_typepoints* knn_sqr_distances;
     
     // Maximum and Minimum number of points that will be present in each leaf node (bucket)
     // This affect the local KNN step after the construction of each tree
@@ -124,9 +124,9 @@ public:
     // will not be executed
     int nn_exploring_factor;
     
-    RPFK(typepoints* points,
+    RPFK(RSFK_typepoints* points,
          int* knn_indices,
-         typepoints* knn_sqr_distances,
+         RSFK_typepoints* knn_sqr_distances,
          int MIN_TREE_CHILD,
          int MAX_TREE_CHILD,
          int MAX_DEPTH,
@@ -149,13 +149,13 @@ public:
     // The device_knn_indices parameter can be previously initialized with
     // valid indices or -1 values. If it has valid indices, also will be necessary
     // to add the precomputed squared distances (device_knn_sqr_distances) 
-    TreeInfo create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
+    TreeInfo create_bucket_from_sample_tree(thrust::device_vector<RSFK_typepoints> &device_points,
                                             int N, int D, int VERBOSE,
                                             std::string run_name);
 
-    void update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
+    void update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
                                         thrust::device_vector<int> &device_knn_indices,
-                                        thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                        thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
                                         int K, int N, int D, int VERBOSE, TreeInfo tinfo,
                                         std::string run_name);
     

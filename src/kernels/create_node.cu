@@ -5,14 +5,14 @@
 
 __device__
 inline
-void create_root(typepoints* tree,
+void create_root(RSFK_typepoints* tree,
                  int* tree_parents,
                  int* tree_children,
                  int* tree_count,
                  int p1,
                  int p2,
                  int* count_new_nodes,
-                 typepoints* points,
+                 RSFK_typepoints* points,
                  int D, int N)
 {
     // Average point
@@ -37,14 +37,14 @@ __device__
 inline
 void create_node(int parent,
                  int is_right_child,
-                 typepoints* tree,
+                 RSFK_typepoints* tree,
                  int* tree_parents,
                  int* tree_children,
                  int* tree_count,
                  int* count_new_nodes,
                  int p1,
                  int p2,
-                 typepoints* points,
+                 RSFK_typepoints* points,
                  int D, int N)
 {
     // Average point
@@ -56,7 +56,7 @@ void create_node(int parent,
     tree_children[2*parent+is_right_child] = node_idx;
     int i;
 
-    typepoints s = 0.0f;
+    RSFK_typepoints s = 0.0f;
     for(i=0; i < D; ++i){
         tree[get_tree_idx(node_idx,i,*count_new_nodes,D)] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
         s+= tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 

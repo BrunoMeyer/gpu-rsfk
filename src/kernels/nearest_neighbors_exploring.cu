@@ -5,26 +5,26 @@
 
 
 __global__
-void nearest_neighbors_exploring(typepoints* points,
+void nearest_neighbors_exploring(RSFK_typepoints* points,
                                  int* old_knn_indices,
                                  int* knn_indices,
-                                 typepoints* knn_sqr_dist,
+                                 RSFK_typepoints* knn_sqr_dist,
                                  int N, int D, int K)
 {
     
     int p, tmp_p, tmp_candidate, max_id_point, p_neigh, p_neigh_neigh;
     int i,j,k;
     int knn_id;
-    typepoints max_dist_val;
+    RSFK_typepoints max_dist_val;
 
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     int lane = threadIdx.x % 32; // my id on warp
     
     #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
-    __shared__ typepoints candidate_dist_val[1024];
+    __shared__ RSFK_typepoints candidate_dist_val[1024];
     int init_warp_on_block = threadIdx.x-lane;
     #else
-    typepoints candidate_dist_val, tmp_candidate_dist_val;
+    RSFK_typepoints candidate_dist_val, tmp_candidate_dist_val;
     #endif
 
 
