@@ -49,7 +49,7 @@ if __name__ == "__main__":
     while offset < len(nodes_buckets):
         bucket_slice = nodes_buckets[offset:offset+max_child]
         # -1 values represent empty slots on buckets
-        bucket_slice = bucket_slice[np.where(bucket_slice) != -1]
+        bucket_slice = bucket_slice[np.where(bucket_slice != -1)]
         ax.scatter(points[bucket_slice,0], points[bucket_slice,1], s=5, alpha=0.8)
         offset+=max_child
     

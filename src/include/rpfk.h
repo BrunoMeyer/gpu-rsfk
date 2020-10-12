@@ -3,6 +3,8 @@
 
 #include "common.h"
 
+#include "nvgraph.h"
+
 // Thrust includes
 #include <thrust/host_vector.h>
 #include <thrust/device_vector.h>
@@ -95,8 +97,8 @@ public:
     // with valid indices and distances, otherwise it must assume that indices
     // have -1 value and distances FLT_MAX (or DBL_MAX)
     // The indices ARE NOT sorted by the relative distances
-    int* knn_indices;
-    typepoints* knn_sqr_distances;
+    int* knn_indices = nullptr;
+    typepoints* knn_sqr_distances = nullptr;
     
     // Maximum and Minimum number of points that will be present in each leaf node (bucket)
     // This affect the local KNN step after the construction of each tree
@@ -171,6 +173,17 @@ public:
                                     int** nodes_buckets,
                                     int** bucket_sizes,
                                     std::string run_name);
+
+    int create_cluster_with_hbgf(int* result, int n_trees,
+                                 int N, int D, int VERBOSE,
+                                 int K, int n_eig_vects,
+                                 std::string run_name);
+
+    int spectral_clustering_with_knngraph(int* result, int num_neighbors,
+                                          int N, int D, int VERBOSE,
+                                          int K, int n_eig_vects,
+                                          bool free_knn_indices,
+                                          std::string run_name);  
 };
 
 #endif
