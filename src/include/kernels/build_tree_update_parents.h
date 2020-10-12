@@ -38,7 +38,7 @@ void build_tree_post_update_parents(typepoints* tree,
                                     int* tree_count,
                                     int* depth_level_count,
                                     int* count_new_nodes,
-                                    #if COMPILE_TYPE == DEBUG
+                                    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
                                     int* count_undo_leaf,
                                     #endif
                                     int N, int D,

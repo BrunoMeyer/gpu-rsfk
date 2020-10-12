@@ -40,9 +40,10 @@ class Cron
 };
 
 
-TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
-                                              int N, int D, int VERBOSE,
-                                              std::string run_name="out.png")
+TreeInfo RPFK::create_bucket_from_sample_tree(
+    thrust::device_vector<typepoints> &device_points,
+    int N, int D, int VERBOSE,
+    std::string run_name="out.png")
 {
     Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
@@ -148,7 +149,7 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
 
 
     // DEBUG Variables
-    #if COMPILE_TYPE == DEBUG
+    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
         thrust::device_vector<int> device_count_undo_leaf(1, 0);
     #endif
 
@@ -375,7 +376,7 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
                                                     thrust::raw_pointer_cast(device_tree_count.data()),
                                                     thrust::raw_pointer_cast(device_depth_level_count.data()),
                                                     thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                                    #if COMPILE_TYPE == DEBUG
+                                                    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
                                                         thrust::raw_pointer_cast(device_count_undo_leaf.data()),
                                                     #endif
                                                     N, D, MIN_TREE_CHILD, MAX_TREE_CHILD);
@@ -450,7 +451,7 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
     
     thrust::copy(device_tree_count.begin(), device_tree_count.begin()+1, &MAX_NODES);
     
-    #if COMPILE_TYPE == DEBUG
+    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
         int count_undo_leaf;
         thrust::copy(device_count_undo_leaf.begin(), device_count_undo_leaf.begin()+1, &count_undo_leaf);
         cudaDeviceSynchronize();
@@ -601,11 +602,766 @@ TreeInfo RPFK::create_bucket_from_sample_tree(thrust::device_vector<typepoints> 
     return tinfo;
 }
 
-void RPFK::update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
-                                          thrust::device_vector<int> &device_knn_indices,
-                                          thrust::device_vector<typepoints> &device_knn_sqr_distances,
-                                          int K, int N, int D, int VERBOSE, TreeInfo tinfo,
-                                          std::string run_name="out.png")
+
+__global__
+void create_point_to_anchor(int* point_to_anchor,
+                            int* points_buckets,
+                            int* bucket_sizes,
+                            int total_buckets,
+                            int max_bucket_size)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int p, i;
+    // Some threads try to process the padding (-1) values
+    // TODO: Optmize and ensure a coalesced access pattern 
+    for(i = tid; i < total_buckets*max_bucket_size; i+=blockDim.x*gridDim.x){
+        __syncthreads();
+        p = points_buckets[i];
+        if(p == -1) continue;
+        point_to_anchor[p] = i/max_bucket_size;
+    }
+}
+
+__global__
+void symmetric_knn_graph_edge_count(int* knn_indices,
+                                    int* node_edge_count,
+                                    int N,
+                                    int num_neighbors)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int p, pn;
+    bool is_symetric;
+    for(p = tid; p < N; p+=blockDim.x*gridDim.x){
+        for(int i=0; i < num_neighbors; ++i){
+            pn = knn_indices[p*num_neighbors + i];
+            atomicAdd(&node_edge_count[p], 1);
+            is_symetric = false;
+            for(int j = 0; j < num_neighbors; ++j){
+                is_symetric |= knn_indices[pn*num_neighbors + j] == p;
+            }
+
+            // Force the bidirecional edge if it doesnt exists
+            if(!is_symetric) atomicAdd(&node_edge_count[pn], 1);
+        }
+    }
+}
+
+
+// TODO: Implement cumulative sum
+__global__
+void symmetric_knn_graph_offset(int* node_edge_count,
+                                int* nodes_offset,
+                                int N)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int p, pn;
+    int sum = 0;
+    if(threadIdx.x == 0){
+        for(p = 0; p < N; ++p){
+            nodes_offset[p] = sum;
+            sum+= node_edge_count[p];
+        }
+    }
+}
+
+__global__
+void symmetric_knn_graph_add_edges(int* knn_indices,
+                                   int* knn_sym_indices,
+                                   int* node_edge_count,
+                                   int* nodes_offset,
+                                   int N,
+                                   int num_neighbors)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int p, pn, edge_idx;
+    bool is_symetric;
+    for(p = tid; p < N; p+=blockDim.x*gridDim.x){
+        for(int i=0; i < num_neighbors; ++i){
+            pn = knn_indices[p*num_neighbors + i];
+            edge_idx = atomicAdd(&node_edge_count[p], 1);
+            knn_sym_indices[nodes_offset[p]+edge_idx] = pn;
+
+            is_symetric = false;
+            for(int j = 0; j < num_neighbors; ++j){
+                is_symetric |= knn_indices[pn*num_neighbors + j] == p;
+            }
+            // Force the bidirecional edge if it doesnt exists
+            if(!is_symetric){
+                edge_idx = atomicAdd(&node_edge_count[pn], 1);
+                knn_sym_indices[nodes_offset[pn]+edge_idx] = p;
+            }
+        }
+    }
+}
+
+
+
+struct FunctionalSqrt {
+    __host__ __device__ float operator()(const float &x) const {
+        return pow(x, 0.5);
+    }
+};
+
+int RPFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
+                                            int N, int D, int VERBOSE,
+                                            int K, int n_eig_vects,
+                                            bool free_knn_indices=true,
+                                            std::string run_name="tree")
+{
+    
+    if(knn_indices == nullptr){
+        printf("%s:%d: Error: spectral_clustering_with_knngraph called"
+               " without a valid k-nn graph\n");
+        return 1;
+    }
+
+    int devUsed = 0;
+    cudaSetDevice(devUsed);
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, devUsed);
+    const int NT = deviceProp.maxThreadsPerBlock;
+    const int NB = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/deviceProp.maxThreadsPerBlock);
+    
+
+    thrust::device_vector<int> device_knn_indices(
+        knn_indices, knn_indices+N*num_neighbors);
+    
+    thrust::device_vector<int> device_node_edge_count(N,0);
+    thrust::device_vector<int> device_node_edge_count_prefixsum(N);
+
+    // TODO: Ignore redundant edges
+    symmetric_knn_graph_edge_count<<<NB,NT>>>(
+        thrust::raw_pointer_cast(device_knn_indices.data()),
+        thrust::raw_pointer_cast(device_node_edge_count.data()),
+        N,
+        num_neighbors);
+    cudaDeviceSynchronize();
+    CudaTest((char *)"symmetric_knn_graph_edge_count Kernel failed!");
+
+    thrust::exclusive_scan(thrust::device,
+                           device_node_edge_count.begin(),
+                           device_node_edge_count.end(),
+                           device_node_edge_count_prefixsum.begin());
+
+    int n_edges = thrust::reduce(device_node_edge_count.begin(),
+                                 device_node_edge_count.end(), 
+                                 0, thrust::plus<int>());
+    thrust::fill(device_node_edge_count.begin(),
+                 device_node_edge_count.end(),
+                 0);
+    
+    thrust::device_vector<int> device_knn_sym_indices(n_edges);
+    
+    symmetric_knn_graph_add_edges<<<NB,NT>>>(
+        thrust::raw_pointer_cast(device_knn_indices.data()),
+        thrust::raw_pointer_cast(device_knn_sym_indices.data()),
+        thrust::raw_pointer_cast(device_node_edge_count.data()),
+        thrust::raw_pointer_cast(device_node_edge_count_prefixsum.data()),
+        N,
+        num_neighbors);
+    cudaDeviceSynchronize();
+    CudaTest((char *)"symmetric_knn_graph_add_edges Kernel failed!");
+
+    if(free_knn_indices){
+        free(knn_indices);
+        // free(knn_sqr_distances);
+        knn_indices = nullptr;
+        // knn_sqr_distances = nullptr;
+    }
+    int* knn_indices_sym = new int[n_edges];
+    int* source_offsets = new int[N];
+    thrust::copy(device_knn_sym_indices.begin(),
+                 device_knn_sym_indices.end(),
+                 knn_indices_sym);
+    thrust::copy(device_node_edge_count_prefixsum.begin(),
+                 device_node_edge_count_prefixsum.end(),
+                 source_offsets);
+
+    if(free_knn_indices){
+        knn_indices = knn_indices_sym;
+    }
+
+    
+
+    nvgraphStatus_t status;
+
+    Cron cluster_forest_cron;
+    cluster_forest_cron.start();
+
+    // n_edges = N*num_neighbors;
+    int n_vertices = N;
+    if(VERBOSE >= 1){
+        printf("Creating graph with %d vertices and %d edges\n",
+               n_vertices, n_edges);
+    }
+
+    nvgraphCSRTopology32I_st nvgraph_top;
+    nvgraph_top.nvertices = n_vertices;
+    nvgraph_top.nedges = n_edges;
+    
+
+    // CREATE GRAPH OFFSET indexes
+
+    // Assumes that the knn_indices are precomputed
+    /*
+    nvgraph_top.source_offsets = new int[n_vertices];
+    for(int i=0; i < N; ++i){
+        // each data point contains an edge to a cluster for each tree
+        nvgraph_top.source_offsets[i] = i*num_neighbors;
+    }
+    // nvgraph_top.destination_indices = knn_indices;
+    */
+    nvgraph_top.source_offsets = source_offsets;
+    nvgraph_top.destination_indices = knn_indices_sym;
+
+    // TODO: Use squared distances as edge value?
+    float* edgevals = new float[n_edges];
+    // float* edgevals = knn_sqr_distances;
+    
+    std::fill_n(edgevals, n_edges, 1.0f);
+
+    
+    // thrust::transform(knn_sqr_distances, knn_sqr_distances+n_edges,
+    //                   edgevals, FunctionalSqrt());
+
+
+    // float norm_val = thrust::reduce(
+    //     edgevals,
+    //     edgevals+n_edges,
+    //     FLT_MIN, thrust::maximum<float>());
+    
+    // thrust::transform(edgevals, edgevals+n_edges,
+    //                   thrust::make_constant_iterator(norm_val),
+    //                   edgevals,
+    //                   thrust::minus<float>());
+    
+    // norm_val = thrust::reduce(
+    //     edgevals,
+    //     edgevals+n_edges,
+    //     FLT_MAX, thrust::minimum<float>());
+
+    // std::cout << norm_val << std::endl; 
+    // thrust::transform(edgevals,
+    //                   edgevals+n_edges,
+    //                   thrust::constant_iterator<float>(norm_val),
+    //                   edgevals,
+    //                   thrust::divides<float>());
+
+    // thrust::transform(edgevals, edgevals+n_edges,
+    //                   thrust::make_constant_iterator(1.0),
+    //                   edgevals,
+    //                   thrust::plus<float>());
+    // thrust::transform(edgevals,
+    //                   edgevals+n_edges,
+    //                   thrust::constant_iterator<float>(2.0),
+    //                   edgevals,
+    //                   thrust::divides<float>());
+
+    // if(VERBOSE >= 2){
+    //     norm_val = thrust::reduce(
+    //         edgevals,
+    //         edgevals+n_edges,
+    //         FLT_MAX, thrust::minimum<float>());
+    //     printf("Minimum edge value: %f\n", norm_val);
+    //     norm_val = thrust::reduce(
+    //         edgevals,
+    //         edgevals+n_edges,
+    //         FLT_MIN, thrust::maximum<float>());
+    //     printf("Maximum edge value: %f\n", norm_val);
+    // }
+
+
+
+    // PREPARES THE LAUNCH OF THE nvgraphSpectralClustering KERNEL
+    nvgraphHandle_t nvgraph_handle;
+    nvgraphGraphDescr_t descrG;
+    cudaDataType_t edge_dimT = CUDA_R_32F;
+
+    status = nvgraphCreate(&nvgraph_handle);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphCreate fail!\n",
+                __FILE__, __LINE__);
+    }
+    status = nvgraphCreateGraphDescr(nvgraph_handle, &descrG);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphCreateGraphDescr fail!\n",
+                __FILE__, __LINE__);
+    }
+    status = nvgraphSetGraphStructure(nvgraph_handle,
+                                      descrG,
+                                      (void*)&nvgraph_top,
+                                      NVGRAPH_CSR_32);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphSetGraphStructure fail!\n",
+                __FILE__, __LINE__);
+    }
+    status = nvgraphAllocateEdgeData(nvgraph_handle, descrG, 1, &edge_dimT);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphAllocateEdgeData fail!\n",
+                __FILE__, __LINE__);
+    }
+
+    status = nvgraphSetEdgeData(nvgraph_handle, descrG, (void*)edgevals, 0);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphSetEdgeData fail!\n",
+                __FILE__, __LINE__);
+    }
+
+    SpectralClusteringParameter specParam;
+    
+    specParam.n_clusters = K;
+    specParam.n_eig_vects = n_eig_vects;
+    /*
+    NVGRAPH_MODULARITY_MAXIMIZATION : maximize modularity with Lanczos solver.
+    NVGRAPH_BALANCED_CUT_LANCZOS : minimize balanced cut with Lanczos solver.
+    NVGRAPH_BALANCED_CUT_LOBPCG: minimize balanced cut with LOPCG solver. 
+    */
+    specParam.algorithm = NVGRAPH_MODULARITY_MAXIMIZATION; 
+    specParam.evs_tolerance = 0.0f; // default value
+    specParam.evs_max_iter = 0; // default value 
+    // specParam.evs_tolerance = 0.01f; // default value
+    // specParam.evs_max_iter = 10000; // default value 
+
+    specParam.kmean_tolerance = 0.0f; // default value
+    specParam.kmean_max_iter = 0; // default value 
+    // specParam.kmean_tolerance = 0.0001f; // default value
+    // specParam.kmean_max_iter = 3000; // default value 
+
+
+    int weight_index = 0;
+    float* result_eigvals;
+    float* result_eigvecs;
+
+    int* result_clustering = new int[nvgraph_top.nvertices];
+    int attempts = 0;
+    do{
+        if(attempts > 0){
+            delete [] result_eigvals;
+            delete [] result_eigvecs;
+        }
+        result_eigvals  = new float[n_eig_vects];
+        result_eigvecs  = new float[n_eig_vects*nvgraph_top.nvertices];
+        
+        if(VERBOSE >= 2){
+            printf("Running nvgraphSpectralClustering with %d clusters"
+                " and %d eigenvectors\n",
+                specParam.n_clusters, specParam.n_eig_vects);
+        }
+        status = nvgraphSpectralClustering(nvgraph_handle,
+                                        descrG,
+                                        weight_index, // const size_t weight_index
+                                        &specParam,
+                                        result_clustering,
+                                        result_eigvals,
+                                        result_eigvecs);
+        attempts++;
+        specParam.n_clusters++;
+        specParam.n_eig_vects++;
+
+        if(status == NVGRAPH_STATUS_NOT_CONVERGED){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_NOT_CONVERGED!\n",
+                __FILE__, __LINE__);
+        }
+        if(status == NVGRAPH_STATUS_INVALID_VALUE){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_INVALID_VALUE!\n",
+                __FILE__, __LINE__);
+        }
+        if(status == NVGRAPH_STATUS_TYPE_NOT_SUPPORTED){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_TYPE_NOT_SUPPORTED!\n",
+                __FILE__, __LINE__);
+        }
+        if(status == NVGRAPH_STATUS_GRAPH_TYPE_NOT_SUPPORTED){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_GRAPH_TYPE_NOT_SUPPORTED!\n",
+                __FILE__, __LINE__);
+        }
+
+    } while(status != NVGRAPH_STATUS_SUCCESS && attempts < 10);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphSpectralClustering fail after %d attempts!"
+               " (status %d)\n",
+                __FILE__, __LINE__, attempts, status);
+    }
+
+    if(VERBOSE >= 2){
+        printf("Eigenvalues: [");
+        for(int i=0; i < specParam.n_eig_vects; ++i){
+            printf("%f", result_eigvals[i]);
+            if(i+1 < specParam.n_eig_vects) printf(", ");
+        }
+        printf("]\n");
+    }
+
+    cluster_forest_cron.stop();
+    if(VERBOSE >= 1){
+        printf("Creating cluster with forest takes %lf seconds\n",
+               cluster_forest_cron.t_total/1000);
+    }
+    
+
+    thrust::copy(result_clustering,
+                 result_clustering + N, // Ignore cluster nodes
+                 result);
+    cudaDeviceSynchronize();
+    delete [] source_offsets;
+    delete [] edgevals;
+    delete [] result_clustering;
+    delete [] result_eigvals;
+    delete [] result_eigvecs;
+
+    if(!free_knn_indices){
+        delete [] knn_indices_sym;
+    }
+    return 0;
+}
+
+
+int RPFK::create_cluster_with_hbgf(int* result, int n_trees,
+                                   int N, int D, int VERBOSE,
+                                   int K, int n_eig_vects,
+                                   std::string run_name="tree")
+{
+    int devUsed = 0;
+    cudaSetDevice(devUsed);
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, devUsed);
+    const int NT = deviceProp.maxThreadsPerBlock;
+    const int NB = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/deviceProp.maxThreadsPerBlock);
+    
+    nvgraphStatus_t status;
+
+    Cron cluster_forest_cron;
+    cluster_forest_cron.start();
+    thrust::device_vector<typepoints> device_points(points, points+N*D);
+    
+    // TreeInfo* tinfo_list = (TreeInfo*)malloc(sizeof(TreeInfo)*n_trees);
+    TreeInfo* tinfo_list = new TreeInfo[n_trees];
+
+
+    // total_clusters
+    // allocate structures to spectral clustering
+    // for each tree
+    //   create_point_to_anchor
+    //   for each point add edges to it cluster in graph
+    //   for each cluster add edge to its points (undirected graph)
+    // cluster with spectral cluster and return consensus
+
+
+    int n_clusters = 0;
+    int max_bucket_size = 0;
+    int max_bucket_array_size = 0;
+    for(int i=0; i < n_trees; ++i){
+        TreeInfo tinfo = create_bucket_from_sample_tree(device_points,
+                                                        N, D, VERBOSE-1,
+                                                        run_name+".png");
+        tinfo_list[i] = tinfo;
+        n_clusters += tinfo.total_leaves;
+        max_bucket_size = max(max_bucket_size, tinfo.max_child);
+        max_bucket_array_size = max(max_bucket_array_size,
+                                    tinfo.total_leaves*tinfo.max_child);
+        RANDOM_SEED++;
+    }
+    device_points.clear();
+    device_points.shrink_to_fit();
+
+    int n_edges = 2*N*n_trees;
+    int n_vertices = N+n_clusters;
+    if(VERBOSE >= 1){
+        printf("Creating graph with %d vertices and %d edges\n",
+               n_vertices, n_edges);
+    }
+
+
+    nvgraphCSRTopology32I_st nvgraph_top;
+    nvgraph_top.nvertices = n_vertices;
+    nvgraph_top.nedges = n_edges;
+    // nvgraph_top.source_offsets = (int*) malloc(sizeof(int)*n_vertices);
+    nvgraph_top.source_offsets = new int[n_vertices];
+    // nvgraph_top.destination_indices = (int*) malloc(sizeof(int)*n_edges);
+    nvgraph_top.destination_indices = new int[n_edges];
+
+
+    // CREATE GRAPH TOPOLOGY OFFSET OF DATA POINTS NODES 
+    for(int i=0; i < N; ++i){
+        // each data point contains an edge to a cluster for each tree
+        nvgraph_top.source_offsets[i] = i*n_trees;
+    }
+
+    // CREATE GRAPH TOPOLOGY OFFSET AND EDGES OF CLUSTER NODES
+
+    // Cluster nodes in graph are placed after the nodes of data points
+    int offset_sum = N*n_trees;
+    int offset_cluster = 0;
+    int* host_bucket_sizes = new int[max_bucket_size];
+    int* host_bucket_array = new int[max_bucket_array_size];
+    thrust::device_vector<int> d_nodes_buckets;
+    thrust::device_vector<int> d_bucket_sizes;
+    
+    if(VERBOSE >= 2){
+        std::cout << "Creating graph topology: offset and edges of clusters";
+        std::cout << std::endl;
+    }
+    for(int i=0; i < n_trees; ++i){
+        int total_leaves = tinfo_list[i].total_leaves;
+        int max_child = tinfo_list[i].max_child;
+
+        d_bucket_sizes = tinfo_list[i].device_bucket_sizes;
+        d_nodes_buckets = tinfo_list[i].device_nodes_buckets;
+
+        // Copy the cluster of a tree from GPU to host memory
+        thrust::copy(d_bucket_sizes.begin(),
+                     d_bucket_sizes.begin() + total_leaves,
+                     host_bucket_sizes);
+        thrust::copy(d_nodes_buckets.begin(),
+                     d_nodes_buckets.begin() + total_leaves*max_child,
+                     host_bucket_array);
+        cudaDeviceSynchronize();
+
+        // For each cluster of the tree
+        for(int j=0; j < total_leaves; ++j){
+            // Set the offset of cluster node in graph structure
+            // following its size
+            nvgraph_top.source_offsets[N+offset_cluster] = offset_sum;
+
+            for(int k=0; k < host_bucket_sizes[j]; ++k){
+                int point_id_on_bucket = max_child*j + k;
+                // Data point Node id
+                int graph_npid = host_bucket_array[point_id_on_bucket];
+
+                // Each edge between a cluster and the related points
+                // are placed sequentially in the destination_indices array
+                nvgraph_top.destination_indices[offset_sum] = graph_npid;
+                offset_sum++;
+            }
+            offset_cluster++;
+        }
+    }
+    
+    delete [] host_bucket_sizes;
+    delete [] host_bucket_array;
+    
+
+
+    // CREATE DATA POINTS NODES EDGES IN THE GRAPH
+    if(VERBOSE >= 2){
+        std::cout << "Creating graph topology: offset and edges of data points";
+        std::cout << std::endl;
+    }
+
+    thrust::device_vector<int> device_tree_cluster(N);
+    int* host_tree_cluster = new int[N];
+
+    offset_cluster = 0;
+    for(int i=0; i < n_trees; ++i){
+        int total_leaves = tinfo_list[i].total_leaves;
+        int max_child = tinfo_list[i].max_child;
+
+        d_bucket_sizes = tinfo_list[i].device_bucket_sizes;
+        d_nodes_buckets = tinfo_list[i].device_nodes_buckets;
+
+        // Get the cluster id for each point
+        create_point_to_anchor<<<NB,NT>>>(
+            thrust::raw_pointer_cast(device_tree_cluster.data()),
+            thrust::raw_pointer_cast(d_nodes_buckets.data()),
+            thrust::raw_pointer_cast(d_bucket_sizes.data()),
+            total_leaves,
+            max_child);
+        cudaDeviceSynchronize();
+        // Transfer the data to host memory
+        thrust::copy(device_tree_cluster.begin(),
+                     device_tree_cluster.begin() + N,
+                     host_tree_cluster);
+        cudaDeviceSynchronize();
+
+        for(int j=0; j < N; ++j){
+            // Data point -> Cluster edge position
+            int graph_npid = j*n_trees + i;
+            // Cluster node id
+            int graph_ncid = N+offset_cluster+host_tree_cluster[j];
+
+            nvgraph_top.destination_indices[graph_npid] = graph_ncid;
+
+        }
+
+        offset_cluster+= total_leaves;
+    }
+    delete [] host_tree_cluster;
+    device_tree_cluster.clear();
+    device_tree_cluster.shrink_to_fit();
+    // PREPARES THE LAUNCH OF THE nvgraphSpectralClustering KERNEL
+    nvgraphHandle_t nvgraph_handle;
+    nvgraphGraphDescr_t descrG;
+    cudaDataType_t edge_dimT = CUDA_R_32F;
+
+    status = nvgraphCreate(&nvgraph_handle);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphCreate fail!\n",
+                __FILE__, __LINE__);
+    }
+    status = nvgraphCreateGraphDescr(nvgraph_handle, &descrG);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphCreateGraphDescr fail!\n",
+                __FILE__, __LINE__);
+    }
+    status = nvgraphSetGraphStructure(nvgraph_handle,
+                                      descrG,
+                                      (void*)&nvgraph_top,
+                                      NVGRAPH_CSR_32);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphSetGraphStructure fail!\n",
+                __FILE__, __LINE__);
+    }
+    status = nvgraphAllocateEdgeData(nvgraph_handle, descrG, 1, &edge_dimT);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphAllocateEdgeData fail!\n",
+                __FILE__, __LINE__);
+    }
+
+    float* edgevals = new float[nvgraph_top.nedges];
+    std::fill_n(edgevals, nvgraph_top.nedges, 1.0f);
+
+    status = nvgraphSetEdgeData(nvgraph_handle, descrG, (void*)edgevals, 0);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphSetEdgeData fail!\n",
+                __FILE__, __LINE__);
+    }
+
+    SpectralClusteringParameter specParam;
+    
+    specParam.n_clusters = K;
+    // specParam.n_clusters = tinfo_list[0].total_leaves;
+    specParam.n_eig_vects = n_eig_vects;
+    /*
+    NVGRAPH_MODULARITY_MAXIMIZATION : maximize modularity with Lanczos solver.
+    NVGRAPH_BALANCED_CUT_LANCZOS : minimize balanced cut with Lanczos solver.
+    NVGRAPH_BALANCED_CUT_LOBPCG: minimize balanced cut with LOPCG solver. 
+    */
+    specParam.algorithm = NVGRAPH_BALANCED_CUT_LOBPCG; 
+    specParam.evs_tolerance = 0.0f; // default value
+    specParam.evs_max_iter = 0; // default value 
+    specParam.kmean_tolerance = 0.0f; // default value
+    specParam.kmean_max_iter = 0; // default value 
+    // specParam.evs_tolerance = 0.00001f; // default value
+    // specParam.evs_max_iter = 10000; // default value 
+    // specParam.kmean_tolerance = 0.0001f; // default value
+    // specParam.kmean_max_iter = 1000; // default value 
+
+
+    int weight_index = 0;
+    // int* result_clustering = (int*) malloc(sizeof(int)*nvgraph_top.nedges);
+    // float* result_eigvals = (float*) malloc(sizeof(float)*n_eig_vects);
+    // float* result_eigvecs = (float*) malloc(sizeof(float)*n_eig_vects*nvgraph_top.nedges);
+    int* result_clustering = new int[nvgraph_top.nvertices];
+    float* result_eigvals  = new float[n_eig_vects];
+    float* result_eigvecs  = new float[n_eig_vects*nvgraph_top.nvertices];
+
+    if(VERBOSE >= 2){
+        printf("Running nvgraphSpectralClustering with %d clusters"
+               " and %d eigenvectors\n", K, n_eig_vects);
+    }
+
+    
+    status = nvgraphSpectralClustering(nvgraph_handle,
+                                       descrG,
+                                       weight_index, // const size_t weight_index
+                                       &specParam,
+                                       result_clustering,
+                                       result_eigvals,
+                                       result_eigvecs);
+    cudaDeviceSynchronize();
+    if(status != NVGRAPH_STATUS_SUCCESS){
+        printf("%s:%d :\t nvgraphSpectralClustering fail! (status %d)\n",
+                __FILE__, __LINE__, status);
+        
+        if(status == NVGRAPH_STATUS_NOT_CONVERGED){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_NOT_CONVERGED!\n",
+                __FILE__, __LINE__);
+        }
+        if(status == NVGRAPH_STATUS_INVALID_VALUE){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_INVALID_VALUE!\n",
+                __FILE__, __LINE__);
+        }
+        if(status == NVGRAPH_STATUS_TYPE_NOT_SUPPORTED){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_TYPE_NOT_SUPPORTED!\n",
+                __FILE__, __LINE__);
+        }
+        if(status == NVGRAPH_STATUS_GRAPH_TYPE_NOT_SUPPORTED){
+            printf("%s:%d :\t nvgraphSpectralClustering error:"
+                   " NVGRAPH_STATUS_GRAPH_TYPE_NOT_SUPPORTED!\n",
+                __FILE__, __LINE__);
+        }
+    }
+
+    if(VERBOSE >= 2){
+        printf("Eigenvalues: [");
+        for(int i=0; i < n_eig_vects; ++i){
+            printf("%f", result_eigvals[i]);
+            if(i+1 < n_eig_vects) printf(", ");
+        }
+        printf("]\n");
+    }
+
+    cluster_forest_cron.stop();
+    if(VERBOSE >= 1){
+        printf("Creating cluster with forest takes %lf seconds\n",
+               cluster_forest_cron.t_total/1000);
+    }
+
+    for(int i=0; i < n_trees; i++){
+        tinfo_list[i].free();
+    }
+    
+    // int total_leaves = tinfo.total_leaves;
+    // int max_child = tinfo.max_child;
+    // thrust::device_vector<int> device_nodes_buckets = tinfo.device_nodes_buckets;
+    // thrust::device_vector<int> device_bucket_sizes = tinfo.device_bucket_sizes;
+
+    // *nodes_buckets = (int*)malloc(sizeof(int)*total_leaves*max_child);
+    // *bucket_sizes  = (int*)malloc(sizeof(int)*total_leaves);
+    // thrust::copy(device_nodes_buckets.begin(),
+    //              device_nodes_buckets.begin() + total_leaves*max_child,
+    //              *nodes_buckets);
+    // thrust::copy(device_bucket_sizes.begin(),
+    //              device_bucket_sizes.begin()  + total_leaves,
+    //              *bucket_sizes);
+    // cudaDeviceSynchronize();
+    // tinfo.free();
+
+    thrust::copy(result_clustering,
+                 result_clustering + N, // Ignore cluster nodes
+                 result);
+    cudaDeviceSynchronize();
+    delete [] edgevals;
+    delete [] result_clustering;
+    delete [] result_eigvals;
+    delete [] result_eigvecs;
+
+    return 0;
+}
+
+void RPFK::update_knn_indice_with_buckets(
+    thrust::device_vector<typepoints> &device_points,
+    thrust::device_vector<int> &device_knn_indices,
+    thrust::device_vector<typepoints> &device_knn_sqr_distances,
+    int K, int N, int D, int VERBOSE, TreeInfo tinfo,
+    std::string run_name="out.png")
 {
     int total_leaves = tinfo.total_leaves;
     int max_child = tinfo.max_child;
@@ -692,7 +1448,8 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     
     Cron cron_nearest_neighbors_exploring;
     cron_nearest_neighbors_exploring.start();
-
+    
+    // TODO: Check if -1 default index will affect nearest neighbor exploration 
     if(nn_exploring_factor > 0){
         thrust::device_vector<int> device_old_knn_indices(knn_indices, knn_indices+N*K);
         // TODO: Automatically specify another id of GPU device rather than 0
@@ -758,7 +1515,8 @@ TreeInfo RPFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
 
     cluster_forest_cron.stop();
     if(VERBOSE >= 1){
-        printf("Creating cluster with forest takes %lf seconds\n", cluster_forest_cron.t_total/1000);
+        printf("Creating cluster with one tree takes %lf seconds\n",
+               cluster_forest_cron.t_total/1000);
     }
 
     int total_leaves = tinfo.total_leaves;
@@ -768,8 +1526,12 @@ TreeInfo RPFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
 
     *nodes_buckets = (int*)malloc(sizeof(int)*total_leaves*max_child);
     *bucket_sizes  = (int*)malloc(sizeof(int)*total_leaves);
-    thrust::copy(device_nodes_buckets.begin(), device_nodes_buckets.begin() + total_leaves*max_child, *nodes_buckets);
-    thrust::copy(device_bucket_sizes.begin(),  device_bucket_sizes.begin()  + total_leaves,           *bucket_sizes);
+    thrust::copy(device_nodes_buckets.begin(),
+                 device_nodes_buckets.begin() + total_leaves*max_child,
+                 *nodes_buckets);
+    thrust::copy(device_bucket_sizes.begin(),
+                 device_bucket_sizes.begin()  + total_leaves,
+                 *bucket_sizes);
     cudaDeviceSynchronize();
     tinfo.free();
 
