@@ -25,8 +25,8 @@
 
 
 
-#include "third_party/matplotlibcpp.h"
-namespace plt = matplotlibcpp;
+// #include "third_party/matplotlibcpp.h"
+// namespace plt = matplotlibcpp;
 
 #include <iostream> 
 #include <stdio.h>
@@ -861,34 +861,34 @@ void RPFK::add_random_projection_tree(thrust::device_vector<typepoints> &device_
         device_count_points_on_leaves[depth]->shrink_to_fit();
     }
     
-    if(VERBOSE >= 3){
+    // if(VERBOSE >= 3){
 
-        set<int> s; 
+    //     set<int> s; 
     
-        for(int b=0; b < total_leaves; ++b){
-            int count_cluster;
+    //     for(int b=0; b < total_leaves; ++b){
+    //         int count_cluster;
         
-            count_cluster = bucket_sizes[b];
-            if(count_cluster == 0) continue;
+    //         count_cluster = bucket_sizes[b];
+    //         if(count_cluster == 0) continue;
 
-            std::vector<typepoints> X_axis(count_cluster);
-            std::vector<typepoints> Y_axis(count_cluster);
+    //         std::vector<typepoints> X_axis(count_cluster);
+    //         std::vector<typepoints> Y_axis(count_cluster);
 
-            for(int i=0; i < count_cluster; ++i){
-                int p = nodes_buckets[b*max_child+i];
-                X_axis[i] = points[get_point_idx(p,0,N,D)];
-                Y_axis[i] = points[get_point_idx(p,1,N,D)];
-            }
-            plt::scatter<typepoints,typepoints>(X_axis, Y_axis,1.0,{
-                {"alpha", "0.8"}
-            });
+    //         for(int i=0; i < count_cluster; ++i){
+    //             int p = nodes_buckets[b*max_child+i];
+    //             X_axis[i] = points[get_point_idx(p,0,N,D)];
+    //             Y_axis[i] = points[get_point_idx(p,1,N,D)];
+    //         }
+    //         plt::scatter<typepoints,typepoints>(X_axis, Y_axis,1.0,{
+    //             {"alpha", "0.8"}
+    //         });
 
-        }
-        // plt::show();
-        std::cerr << run_name << std::endl;
+    //     }
+    //     // plt::show();
+    //     std::cerr << run_name << std::endl;
 
-        plt::save(run_name);
-    }
+    //     plt::save(run_name);
+    // }
 
     end_tree_cron.stop();
     if(VERBOSE >= 1){
