@@ -7,7 +7,7 @@ This project presents a CUDA implementation of the Random Sample Forest KNN (RSF
 Please cite the corresponding paper if it was useful for your research:
 
 ```
-@article{meyer2019gpursfk,
+@article{meyer2021gpursfk,
 author = {B. H. {Meyer} and A. T. R. {Pozo} and W. M. N. {Zola}},
 title = {{Improving Barnes-Hut t-SNE algorithm in modern GPU architectures with Random Forest KNN and Simulated Wide-Warp}},
 year = "in press 2021",
