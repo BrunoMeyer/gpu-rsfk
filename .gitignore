@@ -1,6 +1,6 @@
 *.out
 *.png
 *.so
-rpfk
+rsfk
 __pycache__/
 .vscode/

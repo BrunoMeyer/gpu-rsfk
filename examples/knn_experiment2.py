@@ -1,4 +1,4 @@
-from gpu_rpfk.RPFK import RPFK
+from gpu_rsfk.RSFK import RSFK
 from tsnecuda import TSNE
 
 import time
@@ -90,13 +90,13 @@ if __name__ == "__main__":
                         type=str, default="exp2")
     parser.add_argument("-p", "--path", help="Experiment path used to create json log",
                         type=str, default=".")
-    parser.add_argument("-v", "--rpfk_verbose", help="RPFK verbose level ",
+    parser.add_argument("-v", "--rsfk_verbose", help="RSFK verbose level ",
                         type=int, default=1)
     parser.add_argument("-k", "--n_neighbors", help="Number of neighbors (K) used in KNN",
                         type=int, default=32)
-    parser.add_argument("--mntc", help="Max Tree Chlidren parameter in RPFK",
+    parser.add_argument("--mntc", help="Max Tree Chlidren parameter in RSFK",
                         type=int, default=-1)
-    parser.add_argument("--mxtc", help="Max Tree Chlidren parameter in RPFK",
+    parser.add_argument("--mxtc", help="Max Tree Chlidren parameter in RSFK",
                         type=int, default=-1)
     parser.add_argument("-d", "--dataset", help="Dataset name",
                         type=str, default="MNIST_SKLEARN",
@@ -133,7 +133,7 @@ if __name__ == "__main__":
                         help="Doesnt change log file")
 
 
-    parser.add_argument('--test_rpfk', dest='test_rpfk', action='store_true', default=False,
+    parser.add_argument('--test_rsfk', dest='test_rsfk', action='store_true', default=False,
                         help="Test Random Projection Forest KNN")
     parser.add_argument('--test_ivfflat', dest='test_ivfflat', action='store_true', default=False,
                         help="Test FAISS-IVFFLAT")
@@ -149,7 +149,7 @@ if __name__ == "__main__":
 
     exp_name = args.name
     exp_path = args.path
-    rpfk_verbose = args.rpfk_verbose
+    rsfk_verbose = args.rsfk_verbose
     sanity_check = args.sanity_check
 
     # embsize = args.embsize
@@ -187,7 +187,7 @@ if __name__ == "__main__":
     dataset_name = DATA_SET
     
 
-    TEST_RPFK = args.test_rpfk
+    TEST_RSFK = args.test_rsfk
     TEST_ANNOY = False
     TEST_IVFFLAT = False
     TEST_IVFFLAT10 = args.test_ivfflat
@@ -196,7 +196,7 @@ if __name__ == "__main__":
     TEST_HNSWFLAT = False
     TEST_FLATL2 = args.test_flatl2
 
-    # TEST_RPFK = True
+    # TEST_RSFK = True
     # TEST_ANNOY = True
     # TEST_IVFFLAT = True
     # TEST_IVFFLAT10 = True
@@ -287,7 +287,7 @@ if __name__ == "__main__":
     fig, ax = plt.subplots(figsize=(16, 8))
     
     log_obj = {}
-    if TEST_RPFK:
+    if TEST_RSFK:
         # for nnef in [0]:
         # for nnef in [1]:
         # for nnef in [1,2]:
@@ -296,14 +296,14 @@ if __name__ == "__main__":
         # for nnef in [3]:
             if nnef > 0:
                 if max_tree_children == -1:
-                    knn_method_name = "RPFK (NN exploring factor = {})".format(nnef)
+                    knn_method_name = "RSFK (NN exploring factor = {})".format(nnef)
                 else:
-                    knn_method_name = "RPFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
+                    knn_method_name = "RSFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
             else:
                 if max_tree_children == -1:
-                    knn_method_name = "RPFK"
+                    knn_method_name = "RSFK"
                 else:
-                    knn_method_name = "RPFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
+                    knn_method_name = "RSFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
 
             print("Testing knn method: {}".format(knn_method_name))
             parameter_name = "n_trees"
@@ -315,8 +315,8 @@ if __name__ == "__main__":
 
             for n_trees in parameter_list:
                 init_t = time.time()
-                rpfk = RPFK(random_state=0)
-                indices, dist = rpfk.find_nearest_neighbors(dataX[new_indices],
+                rsfk = RSFK(random_state=0)
+                indices, dist = rsfk.find_nearest_neighbors(dataX[new_indices],
                                                             K,
                                                             min_tree_children=min_tree_children,
                                                             max_tree_children=max_tree_children,
@@ -330,15 +330,15 @@ if __name__ == "__main__":
                                                             # verbose=0)
                                                             # verbose=1)
                                                             # verbose=2)
-                                                            verbose=rpfk_verbose)
+                                                            verbose=rsfk_verbose)
                 # t = time.time() - init_t
-                t = rpfk._last_search_time # Ignore data initialization time
+                t = rsfk._last_search_time # Ignore data initialization time
 
                 nne_rate = quality_function(real_indices,indices, real_sqd_dist, dist, max_k=K)
                 
                 time_list.append(t)
-                print("RPFK Time: {}".format(t), flush=True)
-                print("RPFK NNP: {}".format(nne_rate), flush=True)
+                print("RSFK Time: {}".format(t), flush=True)
+                print("RSFK NNP: {}".format(nne_rate), flush=True)
 
                 p = tsne.fit_transform(dataX, pre_knn=(indices, dist))
                 tsne_nne = get_nne_rate_tsne(dataX, p, max_k=K, pre_knn=(real_sqd_dist, real_indices))

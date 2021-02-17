@@ -139,7 +139,6 @@ class KnnResult(object):
             for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
                 # legend_name = str(knn_method_name)+" ({})".format(parameter_name)
                 legend_name = str(knn_method_name)
-                legend_name = legend_name.replace("RPFK", "RSFK")
                 data = self.data[dataset_name][str(K)][knn_method_name][parameter_name]
                 if not quality_name in data:
                     continue

@@ -65,9 +65,9 @@ def random_motion(points, random_motion_force):
         # and the force specified by user 
         points[:,d]=points[:,d] + random_motion_force*np.random.uniform(-range_uniform,range_uniform,N)
 
-class RPFK(object):
+class RSFK(object):
     def __init__(self, random_state=0):
-        """Initialization method for barnes hut RPFK class.
+        """Initialization method for barnes hut RSFK class.
 
         Parameters
         ----------
@@ -77,13 +77,13 @@ class RPFK(object):
         """
         self.random_state = int(random_state)
         
-        self._path = pkg_resources.resource_filename('gpu_rpfk','') # Load from current location
-        self._lib = np.ctypeslib.load_library('librpfk', self._path) # Load the ctypes library
-        # self._lib = np.ctypeslib.load_library('librpfk', ".") # Load the ctypes library
+        self._path = pkg_resources.resource_filename('gpu_rsfk','') # Load from current location
+        self._lib = np.ctypeslib.load_library('librsfk', self._path) # Load the ctypes library
+        # self._lib = np.ctypeslib.load_library('librsfk', ".") # Load the ctypes library
         
         # Hook the RSFK KNN methods
-        self._lib.pymodule_rpfk_knn.restype = None
-        self._lib.pymodule_rpfk_knn.argtypes = [ 
+        self._lib.pymodule_rsfk_knn.restype = None
+        self._lib.pymodule_rsfk_knn.argtypes = [ 
             ctypes.c_int, # number of trees
             ctypes.c_int, # number of nearest neighbors
             ctypes.c_int, # total of points
@@ -277,7 +277,7 @@ class RPFK(object):
 
         t_init = time.time()
         
-        self._lib.pymodule_rpfk_knn(
+        self._lib.pymodule_rsfk_knn(
                 ctypes.c_int(n_trees), # number of trees
                 ctypes.c_int(K), # number of nearest neighbors
                 ctypes.c_int(N), # total of points
@@ -293,7 +293,7 @@ class RPFK(object):
                 knn_squared_dist)
 
         if ensure_valid_indices and min_tree_children < K+1:
-            self._lib.pymodule_rpfk_knn(
+            self._lib.pymodule_rsfk_knn(
                     ctypes.c_int(1), # number of trees
                     ctypes.c_int(K), # number of nearest neighbors
                     ctypes.c_int(N), # total of points
@@ -616,7 +616,7 @@ def test1():
     test_D = 200
     test_K = 30
     dataX = np.random.random((test_N, test_D))
-    rptk = RPFK(random_state=0)
+    rptk = RSFK(random_state=0)
     indices, dist = rptk.find_nearest_neighbors(dataX,
                                                 test_K,
                                                 max_tree_children=128,
@@ -637,21 +637,21 @@ def test1():
 def test2():
     n_points = 2**12
     n_dim = 99
-    rpfk_verbose = 2
+    rsfk_verbose = 2
     points = np.random.random((n_points,n_dim))
     min_tree_children = int(n_points/30)
     max_tree_children = 3*min_tree_children
     print("Number of points {}".format(n_points))
     print("Number of dimensions {}".format(n_dim))
 
-    rpfk = RPFK(random_state=0)
+    rsfk = RSFK(random_state=0)
 
-    result = rpfk.cluster_by_sample_tree(points,
+    result = rsfk.cluster_by_sample_tree(points,
                                          min_tree_children=min_tree_children,
                                          max_tree_children=max_tree_children,
                                          max_tree_depth=5000,
                                          random_motion_force=0.1,
-                                         verbose=rpfk_verbose,
+                                         verbose=rsfk_verbose,
                                          add_bit_random_motion=False)
 
     total_leaves, max_child, nodes_buckets, bucket_sizes = result
@@ -730,7 +730,7 @@ def test3():
     num_nearest_neighbors = 64
     min_tree_children = num_nearest_neighbors+1
     max_tree_children = 3*min_tree_children
-    rpfk_verbose = 2
+    rsfk_verbose = 2
     for dataset, n_clusters in datasets:
         points, _ = dataset
         # min_tree_children = int(n_points/(n_clusters*12))
@@ -739,15 +739,15 @@ def test3():
         print("Number of points {}".format(n_points))
         print("Number of dimensions {}".format(n_dim))
 
-        rpfk = RPFK(random_state=0)
+        rsfk = RSFK(random_state=0)
 
-        result = rpfk.create_cluster_with_hbgf(points, n_clusters,
+        result = rsfk.create_cluster_with_hbgf(points, n_clusters,
                                                n_trees=20, n_eig_vects=1,
                                                min_tree_children=min_tree_children,
                                                max_tree_children=max_tree_children,
                                                max_tree_depth=5000,
                                                random_motion_force=0.0,
-                                               verbose=rpfk_verbose,
+                                               verbose=rsfk_verbose,
                                                add_bit_random_motion=False)
 
         import matplotlib.pyplot as plt
@@ -809,16 +809,16 @@ def test4():
     # max_tree_children = 3*min_tree_children
     min_tree_children = num_nearest_neighbors+1
     max_tree_children = 3*min_tree_children
-    rpfk_verbose = 2
+    rsfk_verbose = 2
     for dataset, n_clusters in datasets:
         points, _ = dataset
 
         print("Number of points {}".format(n_points))
         print("Number of dimensions {}".format(n_dim))
 
-        rpfk = RPFK(random_state=0)
+        rsfk = RSFK(random_state=0)
 
-        result = rpfk.spectral_clustering_with_knngraph(
+        result = rsfk.spectral_clustering_with_knngraph(
             points, n_clusters,
             num_nearest_neighbors=num_nearest_neighbors,
             n_trees=10, n_eig_vects=n_clusters,
@@ -827,7 +827,7 @@ def test4():
             max_tree_children=max_tree_children,
             max_tree_depth=5000,
             random_motion_force=0.01,
-            verbose=rpfk_verbose,
+            verbose=rsfk_verbose,
             add_bit_random_motion=True)
 
         import matplotlib.pyplot as plt
@@ -888,11 +888,11 @@ def test5():
     num_nearest_neighbors = 8
     min_tree_children = num_nearest_neighbors+1
     max_tree_children = 3*min_tree_children
-    rpfk_verbose = 2
+    rsfk_verbose = 2
     for dataset, n_clusters in datasets:
         points, _ = dataset
 
-        rptk = RPFK(random_state=0)
+        rptk = RSFK(random_state=0)
         indices, dist = rptk.find_nearest_neighbors(points,
                                                     num_nearest_neighbors,
                                                     min_tree_children=min_tree_children,

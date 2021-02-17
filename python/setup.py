@@ -9,7 +9,7 @@ def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
 
 setup(
-    name = "gpu-rpfk",
+    name = "gpu-rsfk",
     version = "0.0.0",
     author = "Bruno Meyer",
     author_email = "buba.meyer_@hotmail.com",
@@ -17,8 +17,8 @@ setup(
     # license = "BSD",
     # keywords = "example documentation tutorial",
     # url = "http://packages.python.org/an_example_pypi_project",
-    packages=['gpu_rpfk'],
-    package_data={'gpu_rpfk': ['librpfk.so']},
+    packages=['gpu_rsfk'],
+    package_data={'gpu_rsfk': ['librsfk.so']},
     install_requires=[
         'numpy >= 1.14.1',
     ],

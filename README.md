@@ -36,11 +36,11 @@ make python_arch75 && make install SETUP_FLAG="--user" # Compilation for a speci
 ### Constructions K-Nearest Neighbor Graph
 ```python
 import numpy as np
-from gpu_rpfk.RPFK import RPFK
+from gpu_rsfk.RSFK import RSFK
 points = np.random.random((1000000,100))
 K = 32 # number of neighbors
-rpfk = RPFK(random_state=0)
-indices, dist = rpfk.find_nearest_neighbors(points,
+rsfk = RSFK(random_state=0)
+indices, dist = rsfk.find_nearest_neighbors(points,
                                             K,
                                             verbose=1,
                                             n_trees=50) # number of trees
@@ -67,14 +67,14 @@ print(dist) # the squared distance to each neighbor
 
 ### Construction a partition with a Random Sample Tree
 The following code contains an example of how to build a partition of a set of points from a Random Sample Tree.
-Also, the file [``examples/cluster_with_forest.py``](https://github.com/BrunoMeyer/gpu-rpfk/blob/master/examples/cluster_with_forest.py) contains the code to create [figures from the result](#random-sample-forest-knn).
+Also, the file [``examples/cluster_with_forest.py``](https://github.com/BrunoMeyer/gpu-rsfk/blob/master/examples/cluster_with_forest.py) contains the code to create [figures from the result](#random-sample-forest-knn).
 
 ```python
 import numpy as np
-from gpu_rpfk.RPFK import RPFK
+from gpu_rsfk.RSFK import RSFK
 points = np.random.random((10000,2))
-rpfk = RPFK(random_state=0)
-result = rpfk.cluster_by_sample_tree(points,
+rsfk = RSFK(random_state=0)
+result = rsfk.cluster_by_sample_tree(points,
                                      min_tree_children=256,
                                      max_tree_children=1024,
                                      verbose=1)

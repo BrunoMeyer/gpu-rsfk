@@ -32,10 +32,10 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __RPFK__CU
-#define __RPFK__CU
+#ifndef __RSFK__CU
+#define __RSFK__CU
 
-#include "include/rpfk.h"
+#include "include/rsfk.h"
 
 static void CudaTest(char* msg)
 {
@@ -74,7 +74,7 @@ class Cron
 };
 
 
-TreeInfo RPFK::create_bucket_from_sample_tree(
+TreeInfo RSFK::create_bucket_from_sample_tree(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
     std::string run_name="out.png")
@@ -736,7 +736,7 @@ struct FunctionalSqrt {
     }
 };
 
-int RPFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
+int RSFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
                                             int N, int D, int VERBOSE,
                                             int K, int n_eig_vects,
                                             bool free_knn_indices=true,
@@ -1059,7 +1059,7 @@ int RPFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
 }
 
 
-int RPFK::create_cluster_with_hbgf(int* result, int n_trees,
+int RSFK::create_cluster_with_hbgf(int* result, int n_trees,
                                    int N, int D, int VERBOSE,
                                    int K, int n_eig_vects,
                                    std::string run_name="tree")
@@ -1390,7 +1390,7 @@ int RPFK::create_cluster_with_hbgf(int* result, int n_trees,
     return 0;
 }
 
-void RPFK::update_knn_indice_with_buckets(
+void RSFK::update_knn_indice_with_buckets(
     thrust::device_vector<RSFK_typepoints> &device_points,
     thrust::device_vector<int> &device_knn_indices,
     thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
@@ -1447,7 +1447,7 @@ void RPFK::update_knn_indice_with_buckets(
 }
 
 
-void RPFK::knn_gpu_rpfk_forest(int n_trees,
+void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
                                std::string run_name="tree")
 {
@@ -1475,7 +1475,7 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
 
     forest_total_cron.stop();
     if(VERBOSE >= 1){
-        printf("Creating RPFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
+        printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
 
     
@@ -1533,7 +1533,7 @@ void RPFK::knn_gpu_rpfk_forest(int n_trees,
     device_knn_sqr_distances.shrink_to_fit();    
 }
 
-TreeInfo RPFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
+TreeInfo RSFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
                                       int** nodes_buckets,
                                       int** bucket_sizes,
                                       std::string run_name="tree_cluster")
@@ -1633,9 +1633,9 @@ int main(int argc,char* argv[])
     }
 
     int nn_exploring_factor = 0;
-    RPFK rpfk_knn(points, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
+    RSFK rsfk_knn(points, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
                   RANDOM_SEED, nn_exploring_factor);
-    rpfk_knn.knn_gpu_rpfk_forest(5, K, N, D, VERBOSE, "tree");
+    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
 
     return 0;
 }

@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Convert RPFK execution into a histogram with leaves count size")
+    parser = argparse.ArgumentParser(description="Convert RSFK execution into a histogram with leaves count size")
     parser.add_argument("-f", "--file", type=str, help="Log file path", required=True)
     parser.add_argument("-b", "--total_bins", type=str, help="Number of bins in histogram",
                         required=False, default="auto")

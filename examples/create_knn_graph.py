@@ -1,4 +1,4 @@
-from gpu_rpfk.RPFK import RPFK
+from gpu_rsfk.RSFK import RSFK
 try:
     FAISS_LIB_INST = True
     import faiss
@@ -15,7 +15,7 @@ if __name__ == "__main__":
                         type=int, default=1000000)
     parser.add_argument("-d", "--n_dim", help="Number of points",
                         type=int, default=100)
-    parser.add_argument("-v", "--rpfk_verbose", help="RPFK verbose level",
+    parser.add_argument("-v", "--rsfk_verbose", help="RSFK verbose level",
                         type=int, default=1)
     parser.add_argument("-k", "--num_neigh", help="Number of Neighbors",
                         type=int, default=32)
@@ -25,7 +25,7 @@ if __name__ == "__main__":
 
     n_points = args.n_points
     n_dim = args.n_dim
-    rpfk_verbose = args.rpfk_verbose
+    rsfk_verbose = args.rsfk_verbose
     K = args.num_neigh
 
     points = np.random.random((n_points,n_dim))
@@ -39,8 +39,8 @@ if __name__ == "__main__":
     print("Number of dimensions {}".format(n_dim))
 
     print("Creating approximated K-NNG with RSFK")
-    rpfk = RPFK(random_state=0)
-    indices, dist = rpfk.find_nearest_neighbors(points,
+    rsfk = RSFK(random_state=0)
+    indices, dist = rsfk.find_nearest_neighbors(points,
                                                 K,
                                                 n_trees=n_trees)
     print(indices)

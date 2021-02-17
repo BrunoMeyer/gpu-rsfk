@@ -32,8 +32,8 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __RPFK__H
-#define __RPFK__H
+#ifndef __RSFK__H
+#define __RSFK__H
 
 #include "common.h"
 
@@ -117,7 +117,7 @@ public:
 };
 
 // Class used to construct Random Projection forest and execute KNN
-class RPFK
+class RSFK
 {
 public:
     
@@ -127,7 +127,7 @@ public:
     
     // Indices of the estimated k-nearest neighbors for each point
     // and squared distances between
-    // It can be previously initialized before the execution of RPFK
+    // It can be previously initialized before the execution of RSFK
     // with valid indices and distances, otherwise it must assume that indices
     // have -1 value and distances FLT_MAX (or DBL_MAX)
     // The indices ARE NOT sorted by the relative distances
@@ -160,7 +160,7 @@ public:
     // will not be executed
     int nn_exploring_factor;
     
-    RPFK(RSFK_typepoints* points,
+    RSFK(RSFK_typepoints* points,
          int* knn_indices,
          RSFK_typepoints* knn_sqr_distances,
          int MIN_TREE_CHILD,
@@ -197,7 +197,7 @@ public:
     
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary
-    void knn_gpu_rpfk_forest(int n_trees,
+    void knn_gpu_rsfk_forest(int n_trees,
                              int K, int N, int D, int VERBOSE,
                              std::string run_name);
 
