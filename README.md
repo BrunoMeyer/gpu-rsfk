@@ -2,6 +2,22 @@
 
 This project presents a CUDA implementation of the Random Sample Forest KNN (RSFK) algorithm.
 
+# Citation
+
+Please cite the corresponding paper if it was useful for your research:
+
+```
+@article{meyer2021gpursfk,
+author = {B. H. {Meyer} and A. T. R. {Pozo} and W. M. N. {Zola}},
+title = {{Improving Barnes-Hut t-SNE algorithm in modern GPU architectures with Random Forest KNN and Simulated Wide-Warp}},
+year = "in press 2021",
+publisher = {Association for Computing Machinery},
+address = {New York, NY, USA},
+journal = {ACM Journal on Emerging Technologies in Computing Systems (JETC)},
+doi = {10.1145/JETC.2021.3447779}
+}
+```
+
 ## K-NNG
 The K-Nearest Neighbor Graph is a problem that consists in: For each element of a set V, find the K most similar objects (neighbors) to each object that also is contained in V.
 The NN-Descent algorithm [[1]](#references) is an algorithm that computes an approximation of K-NNG using MapReduce primitives.

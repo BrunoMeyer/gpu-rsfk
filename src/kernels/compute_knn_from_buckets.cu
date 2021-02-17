@@ -1,3 +1,37 @@
+/*
+This file is part of the GPU-RSFK Project (https://github.com/BrunoMeyer/gpu-rsfk).
+
+BSD 3-Clause License
+
+Copyright (c) 2021, Bruno Henrique Meyer, Wagner M. Nunan Zola
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 #ifndef __COMPUTE_KNN_FROM_BUCKETS__CU
 #define __COMPUTE_KNN_FROM_BUCKETS__CU
 
@@ -5,10 +39,11 @@
 
 __device__
 inline
-float euclidean_distance_sqr(int p1, int p2, typepoints* points, int D, int N)
+float euclidean_distance_sqr(int p1, int p2, RSFK_typepoints* points,
+                             int D, int N)
 {
-    typepoints ret = 0.0f;
-    typepoints diff;
+    RSFK_typepoints ret = 0.0f;
+    RSFK_typepoints diff;
 
     for(int i=0; i < D; ++i){
         diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
@@ -21,11 +56,12 @@ float euclidean_distance_sqr(int p1, int p2, typepoints* points, int D, int N)
 
 __device__
 inline
-float euclidean_distance_sqr_small_block(int p1, int p2, typepoints* local_points,
-                                         typepoints* points, int D, int N)
+float euclidean_distance_sqr_small_block(int p1, int p2,
+                                         RSFK_typepoints* local_points,
+                                         RSFK_typepoints* points, int D, int N)
 {
-    typepoints ret = 0.0f;
-    typepoints diff;
+    RSFK_typepoints ret = 0.0f;
+    RSFK_typepoints diff;
 
     for(int i=0; i < D; ++i){
         diff = local_points[get_point_idx(p1,i,32,D)] - points[get_point_idx(p2,i,N,D)];
@@ -38,10 +74,10 @@ float euclidean_distance_sqr_small_block(int p1, int p2, typepoints* local_point
 
 __device__
 inline
-void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points, int D,
-                                             int N, int lane, typepoints* diff_sqd)
+void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, RSFK_typepoints* points, int D,
+                                             int N, int lane, RSFK_typepoints* diff_sqd)
 {
-    typepoints diff;
+    RSFK_typepoints diff;
 
     for(int i=lane; i < D; i+=32){
         diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
@@ -50,15 +86,15 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
 }
 
 
-#if EUCLIDEAN_DISTANCE_VERSION==EDV_ATOMIC_OK
+#if RSFK_EUCLIDEAN_DISTANCE_VERSION==RSFK_EDV_ATOMIC_OK
 
    __device__
    inline
-   void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
-                                         int N, int lane, typepoints* diff_sqd)
+   void euclidean_distance_sqr_coalesced(int p1, int p2, RSFK_typepoints* points, int D,
+                                         int N, int lane, RSFK_typepoints* diff_sqd)
    {
-       typepoints diff;
-       typepoints s = 0.0f;
+       RSFK_typepoints diff;
+       RSFK_typepoints s = 0.0f;
        for(int i=lane; i < D; i+=32){
            diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
            s+=diff*diff;
@@ -67,18 +103,18 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
        atomicAdd(diff_sqd,s);
    }
 
-#elif EUCLIDEAN_DISTANCE_VERSION==EDV_ATOMIC_CSE  // common subexpression elimination
+#elif RSFK_EUCLIDEAN_DISTANCE_VERSION==RSFK_EDV_ATOMIC_CSE  // common subexpression elimination
 
    __device__
    inline
-   void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
-                                         int N, int lane, typepoints* diff_sqd)
+   void euclidean_distance_sqr_coalesced(int p1, int p2, RSFK_typepoints* points, int D,
+                                         int N, int lane, RSFK_typepoints* diff_sqd)
    {
-       register typepoints diff;
-       register typepoints s = 0.0f;
+       register RSFK_typepoints diff;
+       register RSFK_typepoints s = 0.0f;
        // #define get_point_idx(point,dimension,N,D) (point*D+dimension)
-       register typepoints* _p1 = &points[p1*D];
-       register typepoints* _p2 = &points[p2*D];
+       register RSFK_typepoints* _p1 = &points[p1*D];
+       register RSFK_typepoints* _p2 = &points[p2*D];
        for(register int i=lane; i < D; i+=32){
            diff = _p1[i] - _p2[i];
            s+=diff*diff;
@@ -87,15 +123,15 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
        atomicAdd(diff_sqd,s);
    }
 
-#elif EUCLIDEAN_DISTANCE_VERSION==EDV_NOATOMIC
+#elif RSFK_EUCLIDEAN_DISTANCE_VERSION==RSFK_EDV_NOATOMIC
 
    __device__
    inline
-   void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
-                                         int N, int lane, typepoints* diff_sqd)
+   void euclidean_distance_sqr_coalesced(int p1, int p2, RSFK_typepoints* points, int D,
+                                         int N, int lane, RSFK_typepoints* diff_sqd)
    {
-       typepoints diff;
-       typepoints s = 0.0f;
+       RSFK_typepoints diff;
+       RSFK_typepoints s = 0.0f;
        for(int i=lane; i < D; i+=32){
            diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
            s+=diff*diff;
@@ -113,15 +149,16 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
            *diff_sqd = s;
    }
 
-#elif EUCLIDEAN_DISTANCE_VERSION==EDV_NOATOMIC_NOSHM
+#elif RSFK_EUCLIDEAN_DISTANCE_VERSION==RSFK_EDV_NOATOMIC_NOSHM
 
    __device__                // NOTE: value returned in register (NO SHM)
    inline                    // function return type CHANGED
-   typepoints euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
-                                         int N, int lane)
+   RSFK_typepoints euclidean_distance_sqr_coalesced(int p1, int p2,
+                                                    RSFK_typepoints* points,
+                                                    int D, int N, int lane)
    {
-       typepoints diff;
-       typepoints s = 0.0f;
+       RSFK_typepoints diff;
+       RSFK_typepoints s = 0.0f;
        
        for(int i=lane; i < D; i+=32){
            diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
@@ -140,15 +177,15 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
        return s;
    }
 
-#elif EUCLIDEAN_DISTANCE_VERSION==EDV_WARP_REDUCE_XOR
+#elif RSFK_EUCLIDEAN_DISTANCE_VERSION==RSFK_EDV_WARP_REDUCE_XOR
 
    __device__
    inline
-   void euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
-                                         int N, int lane, typepoints* diff_sqd)
+   void euclidean_distance_sqr_coalesced(int p1, int p2, RSFK_typepoints* points, int D,
+                                         int N, int lane, RSFK_typepoints* diff_sqd)
    {
-       typepoints diff;
-       typepoints s = 0.0f;
+       RSFK_typepoints diff;
+       RSFK_typepoints s = 0.0f;
        for(int i=lane; i < D; i+=32){
            diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
            s+=diff*diff;
@@ -165,15 +202,15 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
            *diff_sqd = s;
    }
 
-#elif EUCLIDEAN_DISTANCE_VERSION==EDV_WARP_REDUCE_XOR_NOSHM
+#elif RSFK_EUCLIDEAN_DISTANCE_VERSION==RSFK_EDV_WARP_REDUCE_XOR_NOSHM
 
    __device__                // NOTE: value returned in register (NO SHM)
    inline                    // function return type CHANGED
-   typepoints euclidean_distance_sqr_coalesced(int p1, int p2, typepoints* points, int D,
+   RSFK_typepoints euclidean_distance_sqr_coalesced(int p1, int p2, RSFK_typepoints* points, int D,
                                          int N, int lane)
    {
-       typepoints diff;
-       typepoints s = 0.0f;
+       RSFK_typepoints diff;
+       RSFK_typepoints s = 0.0f;
        
        for(int i=lane; i < D; i+=32){
             diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
@@ -194,31 +231,32 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, typepoints* points,
 
 // Assign a bucket (leaf in the tree) to each warp and a point to each thread (persistent kernel)
 __global__
-void compute_knn_from_buckets_perwarp_coalesced(int* points_parent,
-                              int* points_depth,
-                              int* accumulated_nodes_count,
-                              typepoints* points,
-                              int* node_idx_to_leaf_idx,
-                              int* nodes_bucket,
-                              int* bucket_size,
-                              int* knn_indices,
-                              typepoints* knn_sqr_dist,
-                              int N, int D, int max_bucket_size, int K,
-                              int MAX_TREE_CHILD, int total_buckets)
+void compute_knn_from_buckets_perwarp_coalesced(
+    int* points_parent,
+    int* points_depth,
+    int* accumulated_nodes_count,
+    RSFK_typepoints* points,
+    int* node_idx_to_leaf_idx,
+    int* nodes_bucket,
+    int* bucket_size,
+    int* knn_indices,
+    RSFK_typepoints* knn_sqr_dist,
+    int N, int D, int max_bucket_size, int K,
+    int MAX_TREE_CHILD, int total_buckets)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
     int parent_id, current_bucket_size, max_id_point, candidate_point;
-    typepoints max_dist_val;
+    RSFK_typepoints max_dist_val;
     
     int knn_id;
     int lane = threadIdx.x % 32; // my id on warp
     
 
-    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
-    __shared__ typepoints candidate_dist_val[1024];
+    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+    __shared__ RSFK_typepoints candidate_dist_val[1024];
     int init_warp_on_block = (threadIdx.x/32)*32;
     #else
-    typepoints candidate_dist_val, tmp_dist_val;
+    RSFK_typepoints candidate_dist_val, tmp_dist_val;
     #endif
 
     int bid, p, _p, i, j;
@@ -262,7 +300,7 @@ void compute_knn_from_buckets_perwarp_coalesced(int* points_parent,
                     // the next iteration and wait the threads from same warp to goes on
                 }
 
-                #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                 candidate_dist_val[threadIdx.x] = 0.0f;
                 #endif
 
@@ -271,7 +309,7 @@ void compute_knn_from_buckets_perwarp_coalesced(int* points_parent,
                     tmp_candidate = __shfl_sync(0xffffffff, candidate_point, j);
                     if(tmp_candidate == -1) continue;
                     tmp_p = __shfl_sync(0xffffffff, p, j);
-                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                     euclidean_distance_sqr_coalesced(tmp_candidate, tmp_p, points, D, N,
                                                     lane,
                                                     &candidate_dist_val[init_warp_on_block+j]);
@@ -284,13 +322,13 @@ void compute_knn_from_buckets_perwarp_coalesced(int* points_parent,
 
                 // If the candidate is closer than the pre-computed furthest point,
                 // switch them
-                #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                 if(candidate_dist_val[threadIdx.x] < max_dist_val){
                 #else
                 if(candidate_dist_val < max_dist_val){
                 #endif
                     knn_indices[max_id_point] = candidate_point;
-                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                     knn_sqr_dist[max_id_point] = candidate_dist_val[threadIdx.x];
                     #else
                     knn_sqr_dist[max_id_point] = candidate_dist_val;
@@ -320,12 +358,12 @@ __global__
 void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
                               int* points_depth,
                               int* accumulated_nodes_count,
-                              typepoints* points,
+                              RSFK_typepoints* points,
                               int* node_idx_to_leaf_idx,
                               int* nodes_bucket,
                               int* bucket_size,
                               int* knn_indices,
-                              typepoints* knn_sqr_dist,
+                              RSFK_typepoints* knn_sqr_dist,
                               int N, int D, int max_bucket_size, int K,
                               int MAX_TREE_CHILD, int total_buckets)
 {
@@ -335,16 +373,16 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
     int wid = threadIdx.x / 32; // my id on warp
     int lane = threadIdx.x % 32; // my id on warp
     
-    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
-    __shared__ typepoints candidate_dist_val[32];
+    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+    __shared__ RSFK_typepoints candidate_dist_val[32];
     #else
-    typepoints candidate_dist_val;
+    RSFK_typepoints candidate_dist_val;
     #endif
 
     int bid, p1, p2, real_p1, real_p2, _p, i, j;
     
     __shared__ int sm_leaf_bucket[300];
-    __shared__ typepoints max_dist_val[300];
+    __shared__ RSFK_typepoints max_dist_val[300];
     __shared__ int max_position[300];
 
     int done_p1, done_p2;
@@ -379,12 +417,12 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
         real_p1 = sm_leaf_bucket[p1];
         real_p2 = sm_leaf_bucket[p2];
 
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         candidate_dist_val[wid] = 0.0f;
         #endif
 
         __syncwarp();
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         euclidean_distance_sqr_coalesced(real_p1,
                                          real_p2,
                                          points, D, N,
@@ -398,7 +436,7 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
         __syncwarp();
         
         if(lane == 0){
-            #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+            #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
             done_p1 = candidate_dist_val[wid] >= max_dist_val[p1];
             done_p2 = candidate_dist_val[wid] >= max_dist_val[p2];
             #else
@@ -416,13 +454,13 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
                     done_p1 = 1;
                     // If the candidate is closer than the pre-computed furthest point,
                     // switch them
-                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                     if(candidate_dist_val[wid] < max_dist_val[p1]){
                     #else
                     if(candidate_dist_val < max_dist_val[p1]){
                     #endif
                         knn_indices[max_position[p1]] = real_p2;
-                        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val[wid];
                         #else
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val;
@@ -447,13 +485,13 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
                     done_p2 = 1;
                     // If the candidate is closer than the pre-computed furthest point,
                     // switch them
-                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                     if(candidate_dist_val[wid] < max_dist_val[p2]){
                     #else
                     if(candidate_dist_val < max_dist_val[p2]){
                     #endif
                         knn_indices[max_position[p2]] = real_p1;
-                        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p2]] = candidate_dist_val[wid];
                         #else
                         knn_sqr_dist[max_position[p2]] = candidate_dist_val;
@@ -485,11 +523,11 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric(int* points_parent,
 // The optimization consists use and communicate idle threads during lock system
 __global__
 void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
-                              typepoints* points,
+                              RSFK_typepoints* points,
                               int* nodes_bucket,
                               int* bucket_size,
                               int* knn_indices,
-                              typepoints* knn_sqr_dist,
+                              RSFK_typepoints* knn_sqr_dist,
                               int N, int D, int max_bucket_size, int K,
                               int MAX_TREE_CHILD, int total_buckets)
 {
@@ -500,20 +538,20 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
     int lane = threadIdx.x % 32; // my id on warp
     
 
-    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
-    __shared__ typepoints candidate_dist_val[32];
+    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+    __shared__ RSFK_typepoints candidate_dist_val[32];
     #else
-    typepoints candidate_dist_val;
+    RSFK_typepoints candidate_dist_val;
     #endif
 
     int bid, p1, p2, real_p1, real_p2, _p, i, j;
     
     __shared__ int sm_leaf_bucket[1024];
-    __shared__ typepoints max_dist_val[1024];
+    __shared__ RSFK_typepoints max_dist_val[1024];
     __shared__ int max_position[1024];
     
     int local_max_position, tmp_max_position;
-    typepoints local_max_dist, tmp_max_dist;
+    RSFK_typepoints local_max_dist, tmp_max_dist;
 
     int done_p1, done_p2;
     __shared__ int lock_point[1024];
@@ -552,14 +590,14 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
         // __syncwarp();
 
 
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         candidate_dist_val[wid] = 0.0f;
         #endif
 
         // __syncwarp();
         // __syncthreads();
         // __syncwarp();
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         euclidean_distance_sqr_coalesced(real_p1,
                                         real_p2,
                                         points, D, N,
@@ -572,7 +610,7 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
                                                             points, D, N, lane);
         #endif
         
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         done_p1 = candidate_dist_val[wid] >= max_dist_val[p1];
         done_p2 = candidate_dist_val[wid] >= max_dist_val[p2];
         #else
@@ -606,14 +644,14 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
                 done_p1 = 1;
                 // If the candidate is closer than the pre-computed furthest point,
                 // switch them
-                #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                 if(candidate_dist_val[wid] < max_dist_val[p1]){
                 #else
                 if(candidate_dist_val < max_dist_val[p1]){
                 #endif
                     if(lane == 0){
                         knn_indices[max_position[p1]] = real_p2;
-                        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val[wid];
                         #else
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val;
@@ -679,14 +717,14 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
                 done_p2 = 1;
                 // If the candidate is closer than the pre-computed furthest point,
                 // switch them
-                #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                 if(candidate_dist_val[wid] < max_dist_val[p2]){
                 #else
                 if(candidate_dist_val < max_dist_val[p2]){
                 #endif
                     if(lane == 0){
                         knn_indices[max_position[p2]] = real_p1;
-                        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p2]] = candidate_dist_val[wid];
                         #else
                         knn_sqr_dist[max_position[p2]] = candidate_dist_val;
@@ -755,12 +793,12 @@ __global__
 void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
                               int* points_depth,
                               int* accumulated_nodes_count,
-                              typepoints* points,
+                              RSFK_typepoints* points,
                               int* node_idx_to_leaf_idx,
                               int* nodes_bucket,
                               int* bucket_size,
                               int* knn_indices,
-                              typepoints* knn_sqr_dist,
+                              RSFK_typepoints* knn_sqr_dist,
                               int N, int D, int max_bucket_size, int K,
                               int MAX_TREE_CHILD, int total_buckets)
 {
@@ -770,18 +808,18 @@ void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
     int wid = threadIdx.x / 32; // my id on warp
     int lane = threadIdx.x % 32; // my id on warp
     
-    // extern __shared__ typepoints local_candidate_dist_val[];
+    // extern __shared__ RSFK_typepoints local_candidate_dist_val[];
 
-    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
-    __shared__ typepoints candidate_dist_val[32];
+    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+    __shared__ RSFK_typepoints candidate_dist_val[32];
     #else
-    typepoints candidate_dist_val;
+    RSFK_typepoints candidate_dist_val;
     #endif
 
     int bid, p1, p2, real_p1, real_p2, _p, i, j;
     
     __shared__ int sm_leaf_bucket[300];
-    __shared__ typepoints max_dist_val[300];
+    __shared__ RSFK_typepoints max_dist_val[300];
     __shared__ int max_position[300];
 
     int done_p1, done_p2;
@@ -819,14 +857,14 @@ void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
         // __syncwarp();
 
 
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         candidate_dist_val[wid] = 0.0f;
         #endif
 
         // __syncwarp();
         // __syncthreads();
         __syncwarp();
-        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
         euclidean_distance_sqr_coalesced(real_p1,
                                          real_p2,
                                          points, D, N,
@@ -840,7 +878,7 @@ void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
         __syncwarp();
         
         if(lane == 0){
-            #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+            #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
             done_p1 = candidate_dist_val[wid] >= max_dist_val[p1];
             done_p2 = candidate_dist_val[wid] >= max_dist_val[p2];
             #else
@@ -859,7 +897,7 @@ void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
                     done_p1 = 1;
                     // If the candidate is closer than the pre-computed furthest point,
                     // switch them
-                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                     if(candidate_dist_val[wid] < max_dist_val[p1]){
                     #else
                     if(candidate_dist_val < max_dist_val[p1]){
@@ -867,7 +905,7 @@ void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
                         // if(real_p1 == 500) printf("%d %d %d %f %f %d\n",max_position[p1], max_position[p1]/K, max_position[p1] %K, max_dist_val[p1], candidate_dist_val[wid], real_p2);
 
                         knn_indices[max_position[p1]] = real_p2;
-                        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val[wid];
                         #else
                         knn_sqr_dist[max_position[p1]] = candidate_dist_val;
@@ -894,13 +932,13 @@ void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
                     done_p2 = 1;
                     // If the candidate is closer than the pre-computed furthest point,
                     // switch them
-                    #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                     if(candidate_dist_val[wid] < max_dist_val[p2]){
                     #else
                     if(candidate_dist_val < max_dist_val[p2]){
                     #endif
                         knn_indices[max_position[p2]] = real_p1;
-                        #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
+                        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
                         knn_sqr_dist[max_position[p2]] = candidate_dist_val[wid];
                         #else
                         knn_sqr_dist[max_position[p2]] = candidate_dist_val;

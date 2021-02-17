@@ -1,6 +1,3 @@
-/*
-This file is part of the GPU-RSFK Project (https://github.com/BrunoMeyer/gpu-rsfk).
-
 BSD 3-Clause License
 
 Copyright (c) 2021, Bruno Henrique Meyer, Wagner M. Nunan Zola
@@ -30,29 +27,3 @@ SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
 CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
-
-#ifndef __BUILD_TREE_INIT__H
-#define __BUILD_TREE_INIT__H
-
-#include "../../kernels/build_tree_init.cu"
-#include "../../kernels/create_node.cu"
-
-__global__
-void build_tree_init(RSFK_typepoints* tree,
-                     int* tree_parents,
-                     int* tree_children,
-                     int* points_parent,
-                     int* child_count,
-                     bool* is_leaf,
-                     RSFK_typepoints* points,
-                     int* actual_depth,
-                     int* tree_count,
-                     int* depth_level_count,
-                     int* accumulated_nodes_count,
-                     int* accumulated_child_count,
-                     int* device_count_points_on_leafs,
-                     int* count_new_nodes,
-                     int N, int D, int RANDOM_SEED);
-
-#endif

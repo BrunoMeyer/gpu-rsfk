@@ -12,6 +12,12 @@ main_arch30: src/rpfk.cu
 python_arch30: src/python/pymodule_ext.cu
 	nvcc -O3 -gencode=arch=compute_30,code=sm_30 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rpfk/librpfk.so --shared src/python/pymodule_ext.cu
 
+main_arch50: src/rpfk.cu
+	nvcc -O3 -gencode=arch=compute_50,code=sm_50 -std=c++11 src/rpfk.cu -o rpfk
+
+python_arch50: src/python/pymodule_ext.cu
+	nvcc -O3 -gencode=arch=compute_50,code=sm_50 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rpfk/librpfk.so --shared src/python/pymodule_ext.cu
+
 main_arch61: src/rpfk.cu
 	nvcc -O3 -gencode=arch=compute_61,code=sm_61 -std=c++11 src/rpfk.cu -o rpfk
 

@@ -1,3 +1,37 @@
+/*
+This file is part of the GPU-RSFK Project (https://github.com/BrunoMeyer/gpu-rsfk).
+
+BSD 3-Clause License
+
+Copyright (c) 2021, Bruno Henrique Meyer, Wagner M. Nunan Zola
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
 #ifndef __RPFK__H
 #define __RPFK__H
 
@@ -89,7 +123,7 @@ public:
     
     // Data points. It will be stored as POINTS x DIMENSION or
     // DIMENSION x POINTS considering the defined POINTS_STRUCTURE
-    typepoints* points; 
+    RSFK_typepoints* points; 
     
     // Indices of the estimated k-nearest neighbors for each point
     // and squared distances between
@@ -97,8 +131,8 @@ public:
     // with valid indices and distances, otherwise it must assume that indices
     // have -1 value and distances FLT_MAX (or DBL_MAX)
     // The indices ARE NOT sorted by the relative distances
-    int* knn_indices = nullptr;
-    typepoints* knn_sqr_distances = nullptr;
+    int* knn_indices;
+    RSFK_typepoints* knn_sqr_distances;
     
     // Maximum and Minimum number of points that will be present in each leaf node (bucket)
     // This affect the local KNN step after the construction of each tree
@@ -126,9 +160,9 @@ public:
     // will not be executed
     int nn_exploring_factor;
     
-    RPFK(typepoints* points,
+    RPFK(RSFK_typepoints* points,
          int* knn_indices,
-         typepoints* knn_sqr_distances,
+         RSFK_typepoints* knn_sqr_distances,
          int MIN_TREE_CHILD,
          int MAX_TREE_CHILD,
          int MAX_DEPTH,
@@ -151,13 +185,13 @@ public:
     // The device_knn_indices parameter can be previously initialized with
     // valid indices or -1 values. If it has valid indices, also will be necessary
     // to add the precomputed squared distances (device_knn_sqr_distances) 
-    TreeInfo create_bucket_from_sample_tree(thrust::device_vector<typepoints> &device_points,
+    TreeInfo create_bucket_from_sample_tree(thrust::device_vector<RSFK_typepoints> &device_points,
                                             int N, int D, int VERBOSE,
                                             std::string run_name);
 
-    void update_knn_indice_with_buckets(thrust::device_vector<typepoints> &device_points,
+    void update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
                                         thrust::device_vector<int> &device_knn_indices,
-                                        thrust::device_vector<typepoints> &device_knn_sqr_distances,
+                                        thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
                                         int K, int N, int D, int VERBOSE, TreeInfo tinfo,
                                         std::string run_name);
     
