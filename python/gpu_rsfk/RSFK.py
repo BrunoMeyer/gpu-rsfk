@@ -246,8 +246,8 @@ class RSFK(object):
         if min_tree_children < 0:
             raise Exception('min_tree_children = {} \t => min_tree_children must be at least 1'.format(min_tree_children))
         if max_tree_children == -1:
-            max_tree_children = 3*min_tree_children
-        if max_tree_children < 3*min_tree_children:
+            max_tree_children = 2*min_tree_children
+        if max_tree_children < 2*min_tree_children:
             raise Exception('min_tree_children = {}, max_tree_children = {} \t => max_tree_children must be at least 2*min_tree_children'.format(min_tree_children, max_tree_children))
         
         if n_trees == -1:

@@ -91,7 +91,7 @@ void build_tree_post_update_parents(RSFK_typepoints* tree,
                                     int* tree_count,
                                     int* depth_level_count,
                                     int* count_new_nodes,
-                                    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
+                                    #if RSFK_COMPILE_TYPE == RSFK_DEBUG
                                     int* count_undo_leaf,
                                     #endif
                                     int N, int D,
@@ -123,7 +123,7 @@ void build_tree_post_update_parents(RSFK_typepoints* tree,
             // This may lead to many overwriting in the same memory pointer, but
             // it will not affect the result
             if(new_count > MAX_TREE_CHILD){
-                #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
+                #if RSFK_COMPILE_TYPE == RSFK_DEBUG
                 if(new_count-1 == MAX_TREE_CHILD) atomicAdd(count_undo_leaf,1);
                 #endif
                 is_leaf_new_depth[points_parent[p]] = false;

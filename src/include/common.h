@@ -43,18 +43,18 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Columns 
 #define RSFK_D_N 1
 
-#define RSFK_POINTS_STRUCTURE N_D
-#define RSFK_TREE_STRUCTURE N_D
+#define RSFK_POINTS_STRUCTURE RSFK_N_D
+#define RSFK_TREE_STRUCTURE RSFK_N_D
 
-#if   RSFK_POINTS_STRUCTURE == D_N
+#if   RSFK_POINTS_STRUCTURE == RSFK_D_N
     #define get_point_idx(point,dimension,N,D) (dimension*N+point)
-#elif RSFK_POINTS_STRUCTURE == N_D
+#elif RSFK_POINTS_STRUCTURE == RSFK_N_D
     #define get_point_idx(point,dimension,N,D) (point*D+dimension)
 #endif
 
-#if   RSFK_TREE_STRUCTURE == D_N
+#if   RSFK_TREE_STRUCTURE == RSFK_D_N
     #define get_tree_idx(nidx,dimension,N,D) (dimension*N+nidx)
-#elif RSFK_TREE_STRUCTURE == N_D
+#elif RSFK_TREE_STRUCTURE == RSFK_N_D
     #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+1)+dimension)
 #endif
 
@@ -72,6 +72,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define RSFK_RELEASE 0
 #define RSFK_DEBUG 1
-#define RSFK_COMPILE_TYPE RELEASE
+#define RSFK_COMPILE_TYPE RSFK_RELEASE
 
 #endif

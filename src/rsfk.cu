@@ -83,6 +83,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
          organize_sample_candidate_cron, dynamic_memory_allocation_cron;
     
+
     init_tree_cron.start();
     
     // They are pointers to each vector that represent a level of the tree
@@ -183,7 +184,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
 
 
     // DEBUG Variables
-    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
+    #if RSFK_COMPILE_TYPE == RSFK_DEBUG
         thrust::device_vector<int> device_count_undo_leaf(1, 0);
     #endif
 
@@ -410,7 +411,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
                                                     thrust::raw_pointer_cast(device_tree_count.data()),
                                                     thrust::raw_pointer_cast(device_depth_level_count.data()),
                                                     thrust::raw_pointer_cast(device_count_new_nodes.data()),
-                                                    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
+                                                    #if RSFK_COMPILE_TYPE == RSFK_DEBUG
                                                         thrust::raw_pointer_cast(device_count_undo_leaf.data()),
                                                     #endif
                                                     N, D, MIN_TREE_CHILD, MAX_TREE_CHILD);
@@ -485,7 +486,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
     
     thrust::copy(device_tree_count.begin(), device_tree_count.begin()+1, &MAX_NODES);
     
-    #if COMPILE_TYPE == COMPILE_TYPE_DEBUG
+    #if RSFK_COMPILE_TYPE == RSFK_DEBUG
         int count_undo_leaf;
         thrust::copy(device_count_undo_leaf.begin(), device_count_undo_leaf.begin()+1, &count_undo_leaf);
         cudaDeviceSynchronize();
