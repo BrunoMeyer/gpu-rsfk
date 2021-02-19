@@ -65,6 +65,38 @@ def random_motion(points, random_motion_force):
         # and the force specified by user 
         points[:,d]=points[:,d] + random_motion_force*np.random.uniform(-range_uniform,range_uniform,N)
 
+class ForestLog(object):
+
+    def __init__(self, data):
+        attr_names = [
+            "Tree Depth",
+            "Max Leaf Size",
+            "Min Leaf Size",
+            "Total Leaves",
+            "Tree Initialization Time",
+            "Total Tree Building Time",
+            "Check Active Points Time",
+            "Check Points Side Time",
+            "Count New Nodes Time",
+            "Dynamic Memory Allocation Time",
+            "Preprocessing Split Points Time",
+            "Create Nodes Time",
+            "Update Nodes Time",
+            "Bucket Creation Time",
+            "End Tree Time",
+            "KNN Time",
+        ]
+        int_attrs = ["Tree Depth", "Max Leaf Size",
+                     "Min Leaf Size", "Total Leaves"]
+
+        self.data = {}
+        n_trees = int((len(data)-2)/16)
+        for i, attr in enumerate(attr_names):
+            values = data[i*n_trees:(i+1)*n_trees]
+            if attr in int_attrs:
+                values = [int(round(v)) for v in values]
+            self.data[attr] = values
+
 class RSFK(object):
     def __init__(self, random_state=0):
         """Initialization method for barnes hut RSFK class.
@@ -97,6 +129,7 @@ class RSFK(object):
             np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
             np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
             np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
+            np.ctypeslib.ndpointer(np.float32, ndim=1, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # log_forest
             # TODO: run name - Char pointer?
             ]
 
@@ -277,6 +310,7 @@ class RSFK(object):
 
         t_init = time.time()
         
+        log_forest = np.require(np.zeros(n_trees*16+2), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         self._lib.pymodule_rsfk_knn(
                 ctypes.c_int(n_trees), # number of trees
                 ctypes.c_int(K), # number of nearest neighbors
@@ -290,7 +324,10 @@ class RSFK(object):
                 ctypes.c_int(nn_exploring_factor), # random state/seed
                 points,
                 knn_indices,
-                knn_squared_dist)
+                knn_squared_dist,
+                log_forest)
+
+        self.log_forest = ForestLog(log_forest)
 
         if ensure_valid_indices and min_tree_children < K+1:
             self._lib.pymodule_rsfk_knn(

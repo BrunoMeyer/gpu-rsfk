@@ -89,31 +89,152 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 class TreeInfo{
 public:
-     int total_leaves;
-     int max_child;
+    int total_leaves;
+    int max_child;
 
-     thrust::device_vector<int> device_nodes_buckets;
-     thrust::device_vector<int> device_bucket_sizes;
-     
-     TreeInfo(){}
+    thrust::device_vector<int> device_nodes_buckets;
+    thrust::device_vector<int> device_bucket_sizes;
+    
+    TreeInfo(){}
 
-     TreeInfo(int total_leaves,
-              int max_child,
-              thrust::device_vector<int> &_device_nodes_buckets,
-              thrust::device_vector<int> &_device_bucket_sizes):
-              total_leaves(total_leaves),
-              max_child(max_child)
-     {
-          device_nodes_buckets = _device_nodes_buckets;
-          device_bucket_sizes = _device_bucket_sizes;
-     }
+    TreeInfo(int total_leaves,
+             int max_child,
+             thrust::device_vector<int> &_device_nodes_buckets,
+             thrust::device_vector<int> &_device_bucket_sizes):
+             total_leaves(total_leaves),
+             max_child(max_child)
+    {
+        device_nodes_buckets = _device_nodes_buckets;
+        device_bucket_sizes = _device_bucket_sizes;
+    }
 
-     void free(){
-          device_nodes_buckets.clear();
-          device_nodes_buckets.shrink_to_fit();
-          device_bucket_sizes.clear();
-          device_bucket_sizes.shrink_to_fit();
-     }
+    void free(){
+        device_nodes_buckets.clear();
+        device_nodes_buckets.shrink_to_fit();
+        device_bucket_sizes.clear();
+        device_bucket_sizes.shrink_to_fit();
+    }
+};
+
+
+class ForestLog{
+public:
+    int n_trees;
+    int count_tree;
+
+
+    int* max_depth_list;
+    int* max_child_count_list;
+    int* min_child_count_list;
+    int* total_leaves_list;
+    float* init_tree_cron_list;
+    float* total_tree_build_cron_list;
+    float* check_active_points_cron_list;
+    float* check_points_side_cron_list;
+    float* tree_count_cron_list;
+    float* dynamic_memory_allocation_cron_list;
+    float* organize_sample_candidate_cron_list;
+    float* create_nodes_cron_list;
+    float* update_parents_cron_list;
+    float* cron_classify_points_list;
+    float* end_tree_cron_list;
+    float* cron_knn_list;
+
+    float nn_exploration_cron;
+    float rsfk_total_cron;
+
+    ForestLog(){}
+
+    ForestLog(int n_trees):
+              n_trees(n_trees)
+    {
+        count_tree = 0;
+        
+        max_depth_list = (int*)malloc(sizeof(int)*n_trees);
+        max_child_count_list = (int*)malloc(sizeof(int)*n_trees);
+        min_child_count_list = (int*)malloc(sizeof(int)*n_trees);
+        total_leaves_list = (int*)malloc(sizeof(int)*n_trees);
+        init_tree_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        total_tree_build_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        check_active_points_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        check_points_side_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        tree_count_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        dynamic_memory_allocation_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        organize_sample_candidate_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        create_nodes_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        update_parents_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        cron_classify_points_list = (float*)malloc(sizeof(float)*n_trees);
+        end_tree_cron_list = (float*)malloc(sizeof(float)*n_trees);
+        cron_knn_list = (float*)malloc(sizeof(float)*n_trees);
+    }
+
+    void free(){
+        std::free(max_depth_list);
+        std::free(max_child_count_list);
+        std::free(min_child_count_list);
+        std::free(total_leaves_list);
+        std::free(init_tree_cron_list);
+        std::free(total_tree_build_cron_list);
+        std::free(check_active_points_cron_list);
+        std::free(check_points_side_cron_list);
+        std::free(tree_count_cron_list);
+        std::free(dynamic_memory_allocation_cron_list);
+        std::free(organize_sample_candidate_cron_list);
+        std::free(create_nodes_cron_list);
+        std::free(update_parents_cron_list);
+        std::free(cron_classify_points_list);
+        std::free(end_tree_cron_list);
+        std::free(cron_knn_list);
+    }
+
+    void update_cron_knn_list(float time)
+    {
+        cron_knn_list[count_tree-1] = time;
+    }
+
+    void update_cron_knn_list(float time, bool update_counter)
+    {
+        cron_knn_list[count_tree-1] = time;
+        if(update_counter) ++count_tree;
+    }
+
+    void update_log(
+        int max_depth,
+        int max_child_count,
+        int min_child_count,
+        int total_leaves,
+        float init_tree_cron,
+        float total_tree_build_cron,
+        float check_active_points_cron,
+        float check_points_side_cron,
+        float tree_count_cron,
+        float dynamic_memory_allocation_cron,
+        float organize_sample_candidate_cron,
+        float create_nodes_cron,
+        float update_parents_cron,
+        float cron_classify_points,
+        float end_tree_cron)
+    {
+        max_depth_list[count_tree] = max_depth;
+        max_child_count_list[count_tree] = max_child_count;
+        min_child_count_list[count_tree] = min_child_count;
+        total_leaves_list[count_tree] = total_leaves;
+        init_tree_cron_list[count_tree] = init_tree_cron;
+        total_tree_build_cron_list[count_tree] = total_tree_build_cron;
+        check_active_points_cron_list[count_tree] = check_active_points_cron;
+        check_points_side_cron_list[count_tree] = check_points_side_cron;
+        tree_count_cron_list[count_tree] = tree_count_cron;
+        dynamic_memory_allocation_cron_list[count_tree] = dynamic_memory_allocation_cron;
+        organize_sample_candidate_cron_list[count_tree] = organize_sample_candidate_cron;
+        create_nodes_cron_list[count_tree] = create_nodes_cron;
+        update_parents_cron_list[count_tree] = update_parents_cron;
+        cron_classify_points_list[count_tree] = cron_classify_points;
+        end_tree_cron_list[count_tree] = end_tree_cron;
+
+        count_tree++;
+    }
+
+
 };
 
 // Class used to construct Random Projection forest and execute KNN
@@ -159,6 +280,8 @@ public:
     // nn_exploring_factor. When nn_exploring_factor=0 the Nearest Neighbor Exploring
     // will not be executed
     int nn_exploring_factor;
+
+    float* log_forest_output;
     
     RSFK(RSFK_typepoints* points,
          int* knn_indices,
@@ -167,7 +290,8 @@ public:
          int MAX_TREE_CHILD,
          int MAX_DEPTH,
          int RANDOM_SEED,
-         int nn_exploring_factor):
+         int nn_exploring_factor,
+         float* log_forest_output):
          points(points),
          knn_indices(knn_indices),
          knn_sqr_distances(knn_sqr_distances),
@@ -175,7 +299,8 @@ public:
          MAX_TREE_CHILD(MAX_TREE_CHILD),
          MAX_DEPTH(MAX_DEPTH),
          RANDOM_SEED(RANDOM_SEED),
-         nn_exploring_factor(nn_exploring_factor){}
+         nn_exploring_factor(nn_exploring_factor),
+         log_forest_output(log_forest_output){}
     
 
     // Create a random projection tree and update the indices by considering
@@ -187,12 +312,14 @@ public:
     // to add the precomputed squared distances (device_knn_sqr_distances) 
     TreeInfo create_bucket_from_sample_tree(thrust::device_vector<RSFK_typepoints> &device_points,
                                             int N, int D, int VERBOSE,
+                                            ForestLog& forest_log,
                                             std::string run_name);
 
     void update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
                                         thrust::device_vector<int> &device_knn_indices,
                                         thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
                                         int K, int N, int D, int VERBOSE, TreeInfo tinfo,
+                                        ForestLog& forest_log,
                                         std::string run_name);
     
     // Run n_tree times the add_random_projection_tree procedure and the nearest
@@ -217,7 +344,7 @@ public:
                                           int N, int D, int VERBOSE,
                                           int K, int n_eig_vects,
                                           bool free_knn_indices,
-                                          std::string run_name);  
+                                          std::string run_name);
 };
 
 #endif

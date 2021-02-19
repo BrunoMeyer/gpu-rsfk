@@ -77,6 +77,7 @@ class Cron
 TreeInfo RSFK::create_bucket_from_sample_tree(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
+    ForestLog& forest_log,
     std::string run_name="out.png")
 {
     Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
@@ -630,10 +631,28 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
         printf("Bucket creation Kernel takes %lf seconds\n", cron_classify_points.t_total/1000);
         printf("End tree takes %lf seconds\n", end_tree_cron.t_total/1000);
     }
+    
+    forest_log.update_log(
+        reached_max_depth,
+        max_child,
+        min_child,
+        total_leaves,
+        (float)init_tree_cron.t_total/1000,
+        (float)total_tree_build_cron.t_total/1000,
+        (float)check_active_points_cron.t_total/1000,
+        (float)check_points_side_cron.t_total/1000,
+        (float)tree_count_cron.t_total/1000,
+        (float)dynamic_memory_allocation_cron.t_total/1000,
+        (float)organize_sample_candidate_cron.t_total/1000,
+        (float)create_nodes_cron.t_total/1000,
+        (float)update_parents_cron.t_total/1000,
+        (float)cron_classify_points.t_total/1000,
+        (float)end_tree_cron.t_total/1000
+    );
 
     TreeInfo tinfo = TreeInfo(total_leaves, max_child,
                               device_nodes_buckets, device_bucket_sizes);
-
+    
     return tinfo;
 }
 
@@ -1080,7 +1099,7 @@ int RSFK::create_cluster_with_hbgf(int* result, int n_trees,
     
     // TreeInfo* tinfo_list = (TreeInfo*)malloc(sizeof(TreeInfo)*n_trees);
     TreeInfo* tinfo_list = new TreeInfo[n_trees];
-
+    ForestLog forest_log = ForestLog(n_trees);
 
     // total_clusters
     // allocate structures to spectral clustering
@@ -1097,6 +1116,7 @@ int RSFK::create_cluster_with_hbgf(int* result, int n_trees,
     for(int i=0; i < n_trees; ++i){
         TreeInfo tinfo = create_bucket_from_sample_tree(device_points,
                                                         N, D, VERBOSE-1,
+                                                        forest_log,
                                                         run_name+".png");
         tinfo_list[i] = tinfo;
         n_clusters += tinfo.total_leaves;
@@ -1396,6 +1416,7 @@ void RSFK::update_knn_indice_with_buckets(
     thrust::device_vector<int> &device_knn_indices,
     thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
     int K, int N, int D, int VERBOSE, TreeInfo tinfo,
+    ForestLog& forest_log,
     std::string run_name="out.png")
 {
     int total_leaves = tinfo.total_leaves;
@@ -1445,6 +1466,8 @@ void RSFK::update_knn_indice_with_buckets(
     if(VERBOSE >= 1){
         printf("KNN computation Kernel takes %lf seconds\n", cron_knn.t_total/1000);
     }
+
+    forest_log.update_cron_knn_list((float)cron_knn.t_total/1000);
 }
 
 
@@ -1460,15 +1483,18 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     
 
     TreeInfo tinfo;
+    ForestLog forest_log = ForestLog(n_trees);
     for(int i=0; i < n_trees; ++i){
         tinfo = create_bucket_from_sample_tree(device_points,
                                                N, D, VERBOSE-1,
+                                               forest_log,
                                                run_name+"_"+std::to_string(i)+".png");
 
         update_knn_indice_with_buckets(device_points,
                                        device_knn_indices,
                                        device_knn_sqr_distances,
                                        K, N, D, VERBOSE-1, tinfo,
+                                       forest_log,
                                        run_name+"_"+std::to_string(i)+".png");
 
         RANDOM_SEED++;
@@ -1479,7 +1505,6 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
 
-    
     
     Cron cron_nearest_neighbors_exploring;
     cron_nearest_neighbors_exploring.start();
@@ -1522,16 +1547,48 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         printf("Nearest Neighbors Exploring computation Kernel takes %lf seconds\n", cron_nearest_neighbors_exploring.t_total/1000);
     }
 
+    forest_log.rsfk_total_cron = forest_total_cron.t_total/1000;
+    forest_log.nn_exploration_cron = cron_nearest_neighbors_exploring.t_total/1000;
+
     thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
     thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
     cudaDeviceSynchronize();
 
+    float tmp_log;
+    for(int i=0; i < 16; ++i){
+        for(int j=0; j < n_trees; ++j){
+            switch(i){
+                case(0): tmp_log = forest_log.max_depth_list[j]; break;
+                case(1): tmp_log = forest_log.max_child_count_list[j]; break;
+                case(2): tmp_log = forest_log.min_child_count_list[j]; break;
+                case(3): tmp_log = forest_log.total_leaves_list[j]; break;
+                case(4): tmp_log = forest_log.init_tree_cron_list[j]; break;
+                case(5): tmp_log = forest_log.total_tree_build_cron_list[j]; break;
+                case(6): tmp_log = forest_log.check_active_points_cron_list[j]; break;
+                case(7): tmp_log = forest_log.check_points_side_cron_list[j]; break;
+                case(8): tmp_log = forest_log.tree_count_cron_list[j]; break;
+                case(9): tmp_log = forest_log.dynamic_memory_allocation_cron_list[j]; break;
+                case(10): tmp_log = forest_log.organize_sample_candidate_cron_list[j]; break;
+                case(11): tmp_log = forest_log.create_nodes_cron_list[j]; break;
+                case(12): tmp_log = forest_log.update_parents_cron_list[j]; break;
+                case(13): tmp_log = forest_log.cron_classify_points_list[j]; break;
+                case(14): tmp_log = forest_log.end_tree_cron_list[j]; break;
+                case(15): tmp_log = forest_log.cron_knn_list[j]; break;
+            }
+            log_forest_output[i*n_trees+j] = tmp_log;
+        }
+    }
+    log_forest_output[16*n_trees] = forest_log.rsfk_total_cron;
+    log_forest_output[16*n_trees + 1] = forest_log.nn_exploration_cron;
+    
     device_points.clear();
     device_points.shrink_to_fit();
     device_knn_indices.clear();
     device_knn_indices.shrink_to_fit();
     device_knn_sqr_distances.clear();
-    device_knn_sqr_distances.shrink_to_fit();    
+    device_knn_sqr_distances.shrink_to_fit();
+    
+    forest_log.free();
 }
 
 TreeInfo RSFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
@@ -1544,8 +1601,10 @@ TreeInfo RSFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
     thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
     
     TreeInfo tinfo;
+    ForestLog forest_log = ForestLog(1);
     tinfo = create_bucket_from_sample_tree(device_points,
                                            N, D, VERBOSE-1,
+                                           forest_log,
                                            run_name+".png");
 
     cluster_forest_cron.stop();
@@ -1634,8 +1693,10 @@ int main(int argc,char* argv[])
     }
 
     int nn_exploring_factor = 0;
+    float* forest_log_output = (float*)malloc(sizeof(float)*5*16+2);
+
     RSFK rsfk_knn(points, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
-                  RANDOM_SEED, nn_exploring_factor);
+                  RANDOM_SEED, nn_exploring_factor, forest_log_output);
     rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
 
     return 0;
