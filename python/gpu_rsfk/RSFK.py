@@ -84,7 +84,7 @@ class ForestLog(object):
             "Update Nodes Time",
             "Bucket Creation Time",
             "End Tree Time",
-            "KNN Time",
+            "KNN Sets Updates",
         ]
         int_attrs = ["Tree Depth", "Max Leaf Size",
                      "Min Leaf Size", "Total Leaves"]
@@ -329,6 +329,7 @@ class RSFK(object):
 
         self.log_forest = ForestLog(log_forest)
 
+        log_forest = np.require(np.zeros(n_trees*16+2), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         if ensure_valid_indices and min_tree_children < K+1:
             self._lib.pymodule_rsfk_knn(
                     ctypes.c_int(1), # number of trees
@@ -343,7 +344,8 @@ class RSFK(object):
                     ctypes.c_int(nn_exploring_factor), # random state/seed
                     points,
                     knn_indices,
-                    knn_squared_dist)
+                    knn_squared_dist,
+                    log_forest)
         
         self._last_search_time = time.time() - t_init
         return knn_indices, knn_squared_dist
