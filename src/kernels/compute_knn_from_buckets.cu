@@ -990,7 +990,7 @@ void compute_knn_from_buckets_predist_nolock(
     
 
     RSFK_typepoints candidate_dist_val;
-    // __shared__ RSFK_typepoints candidate_dist_val_sm[1024];
+    __shared__ RSFK_typepoints candidate_dist_val_sm[1024];
 
     int bid, p1, p2, real_p1, real_p2, i, j, k;
     
@@ -1007,12 +1007,14 @@ void compute_knn_from_buckets_predist_nolock(
     bid=blockIdx.x;
     __syncthreads();
     cbs = bucket_size[bid];
-    for(i=threadIdx.x; i < cbs; i+=blockDim.x){ //TODO: Parallel per warp
+    // for(i=threadIdx.x; i < cbs; i+=blockDim.x){ //TODO: Parallel per warp
+    for(i=wid; i < cbs; i+=blockDim.x/32){
         p1 = nodes_bucket[bid*max_bucket_size + i];
         sm_leaf_bucket[i] = p1;
 
         knn_id = p1*K;
-
+        
+        /*
         max_position[i] = knn_id;
         max_dist_val[i] = knn_sqr_dist[knn_id];
         // Finds the index of the furthest point from the current result of knn_indices
@@ -1022,6 +1024,52 @@ void compute_knn_from_buckets_predist_nolock(
                 max_position[i] = knn_id+j; // The initial point is not necessarily in the bucket
                 max_dist_val[i] = knn_sqr_dist[knn_id+j];
             }
+        }
+        */
+
+        local_max_position = -1;
+        local_max_dist = -1.0f;
+        for(j=lane; j < K; j+=32){
+            if(knn_sqr_dist[knn_id+j] > local_max_dist){
+                local_max_position = knn_id+j;
+                local_max_dist = knn_sqr_dist[knn_id+j];
+            }
+        }
+        
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  16); // assuming warpSize=32
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  16); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  8); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  8); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  4); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  4); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  2); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  2); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist, 1); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position, 1); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+
+        if(lane == 0){
+            max_dist_val[i] = local_max_dist;
+            max_position[i] = local_max_position;
         }
 
     }
@@ -1064,13 +1112,30 @@ void compute_knn_from_buckets_predist_nolock(
 
     // TODO: The first lines could be done in parallel without lock
     //       (verifying the non-colision and the available number of workers)
+
     for(p1=1; p1 < cbs; ++p1){ // TODO Invert order
         // printf("%d %d\n", lane, i);
+        real_p1 = sm_leaf_bucket[p1];
         __syncthreads();
+
+        /*
+        for(int p2=threadIdx.x; p2 < p1; p2+=blockDim.x){
+            candidate_dist_val_sm[p2] = 0.0f;
+        }
+        __syncthreads();
+
+        for(int i=threadIdx.x; i < p1*D; i+=blockDim.x){
+            p2 = i%p1;
+            j = i/p1;
+            real_p2 = sm_leaf_bucket[p2];
+            candidate_dist_val = points[get_point_idx(real_p1,j,N,D)] - points[get_point_idx(real_p2,j,N,D)];
+            atomicAdd(&candidate_dist_val_sm[p2], candidate_dist_val*candidate_dist_val);
+        }
+        */
+        // /*
         for(p2=wid; p2 < p1; p2+=blockDim.x/32){
             // k = (cbs*(cbs-1)/2) - (cbs-p1)*((cbs-p1)-1)/2 + p2 - p1 - 1;
 
-            real_p1 = sm_leaf_bucket[p1];
             real_p2 = sm_leaf_bucket[p2];
 
             #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
@@ -1092,8 +1157,16 @@ void compute_knn_from_buckets_predist_nolock(
                                                                 real_p2,
                                                                 points, D, N, lane);
             #endif
-            
-            
+            candidate_dist_val_sm[p2] = candidate_dist_val;
+        }
+        // */
+
+        __syncthreads();
+        for(p2=wid; p2 < p1; p2+=blockDim.x/32){
+            candidate_dist_val = candidate_dist_val_sm[p2];
+
+            real_p2 = sm_leaf_bucket[p2];
+
             done_p1 = candidate_dist_val >= max_dist_val[p1];
             done_p2 = candidate_dist_val >= max_dist_val[p2];
             for(k=0; k < K && (!done_p1 || !done_p2); ++k){
@@ -1227,11 +1300,11 @@ void compute_knn_from_buckets_predist_nolock(
     }
 }
 
-
 // This kernel is a optmization of compute_knn_from_buckets_perblock_coalesced_symmetric kernel
 // The optimization consists use and communicate idle threads during lock system
-__global__
-void compute_knn_from_buckets_pertile(
+__global__ void
+// __launch_bounds__(512, 2)
+compute_knn_from_buckets_pertile(
                               RSFK_typepoints* points,
                               int* nodes_bucket,
                               int* bucket_size,
@@ -1264,12 +1337,13 @@ void compute_knn_from_buckets_pertile(
     __syncthreads();
     cbs = bucket_size[bid];
 
-    for(i=threadIdx.x; i < cbs; i+=blockDim.x){ //TODO: Parallel per warp
+    for(i=wid; i < cbs; i+=blockDim.x/32){
         p1 = nodes_bucket[bid*max_bucket_size + i];
         sm_leaf_bucket[i] = p1;
 
         knn_id = p1*K;
-
+        
+        /*
         max_position[i] = knn_id;
         max_dist_val[i] = knn_sqr_dist[knn_id];
         // Finds the index of the furthest point from the current result of knn_indices
@@ -1280,26 +1354,72 @@ void compute_knn_from_buckets_pertile(
                 max_dist_val[i] = knn_sqr_dist[knn_id+j];
             }
         }
+        */
+
+        local_max_position = -1;
+        local_max_dist = -1.0f;
+        for(j=lane; j < K; j+=32){
+            if(knn_sqr_dist[knn_id+j] > local_max_dist){
+                local_max_position = knn_id+j;
+                local_max_dist = knn_sqr_dist[knn_id+j];
+            }
+        }
+        
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  16); // assuming warpSize=32
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  16); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  8); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  8); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  4); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  4); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  2); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  2); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist, 1); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position, 1); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+
+        if(lane == 0){
+            max_dist_val[i] = local_max_dist;
+            max_position[i] = local_max_position;
+        }
 
     }
     __syncthreads();
 
     int padding_tile_x, padding_tile_y, limit_tile_x, limit_tile_y;
-    // int tile_width = RSFK_WarpSize;
-    // int tile_height = RSFK_WarpSize;
+    // int tile_width = RSFK_TILE_SIZE;
+    // int tile_height = RSFK_TILE_SIZE;
     padding_tile_x = 0;
     padding_tile_y = 0;
     
     
     int total_tile_workers = blockDim.x/RSFK_WarpSize;
     
-    __shared__ RSFK_typepoints candidate_dist_val_sm[RSFK_WarpSize*RSFK_WarpSize];
+    __shared__ RSFK_typepoints candidate_dist_val_sm[RSFK_TILE_SIZE*RSFK_TILE_SIZE];
     RSFK_typepoints candidate_dist_val;
     
     int tile_x_count = 0;
     int tile_y_count = 0;
    
-    limit_tile_y = RSFK_WarpSize;
+    limit_tile_y = RSFK_TILE_SIZE;
 
     int candidates_on_tile;
     int k;
@@ -1315,26 +1435,26 @@ void compute_knn_from_buckets_pertile(
         limit_tile_x = 0;
         while(limit_tile_x < cbs){
             __syncthreads();
-            limit_tile_x = min(RSFK_WarpSize*(tile_x_count+1), cbs);
-            limit_tile_y = min(RSFK_WarpSize*(tile_y_count+1), cbs);
+            limit_tile_x = min(RSFK_TILE_SIZE*(tile_x_count+1), cbs);
+            limit_tile_y = min(RSFK_TILE_SIZE*(tile_y_count+1), cbs);
             // printf("%d %d\n", limit_tile_x, cbs);
             
             // if(lane == 0) printf("%d %d\n", tile_x_count, tile_y_count);
 
-            candidates_on_tile = RSFK_WarpSize*RSFK_WarpSize;
-            if(tile_x_count == tile_y_count) candidates_on_tile = (RSFK_WarpSize*RSFK_WarpSize - RSFK_WarpSize)/2;
+            candidates_on_tile = RSFK_TILE_SIZE*RSFK_TILE_SIZE;
+            if(tile_x_count == tile_y_count) candidates_on_tile = (RSFK_TILE_SIZE*RSFK_TILE_SIZE - RSFK_TILE_SIZE)/2;
 
             for(int i=wid; i < candidates_on_tile; i+=total_tile_workers){
                 if(tile_x_count == tile_y_count){
-                    p1 = RSFK_WarpSize - 2 - floor(sqrt((float)((-8*i + 4*RSFK_WarpSize*(RSFK_WarpSize-1)-7)))/2.0 - 0.5);
-                    p2 = i + p1 + 1 - RSFK_WarpSize*(RSFK_WarpSize-1)/2 + (RSFK_WarpSize-p1)*((RSFK_WarpSize-p1)-1)/2;
+                    p1 = RSFK_TILE_SIZE - 2 - floor(sqrt((float)((-8*i + 4*RSFK_TILE_SIZE*(RSFK_TILE_SIZE-1)-7)))/2.0 - 0.5);
+                    p2 = i + p1 + 1 - RSFK_TILE_SIZE*(RSFK_TILE_SIZE-1)/2 + (RSFK_TILE_SIZE-p1)*((RSFK_TILE_SIZE-p1)-1)/2;
                 }
                 else{
-                    p1 = i/RSFK_WarpSize;
-                    p2 = i % RSFK_WarpSize;
+                    p1 = i/RSFK_TILE_SIZE;
+                    p2 = i % RSFK_TILE_SIZE;
                 }
-                p1+=RSFK_WarpSize*tile_x_count;
-                p2+=RSFK_WarpSize*tile_y_count;
+                p1+=RSFK_TILE_SIZE*tile_x_count;
+                p2+=RSFK_TILE_SIZE*tile_y_count;
                 // printf("%d %d\n", p1,p2);
 
                 
@@ -1371,25 +1491,25 @@ void compute_knn_from_buckets_pertile(
 
             
             //TODO: Separate into 2 fors: Considering if tile_x == tile_y
-            for(p1=wid+RSFK_WarpSize*tile_x_count; p1 < limit_tile_x; p1+=total_tile_workers){
+            for(p1=wid+RSFK_TILE_SIZE*tile_x_count; p1 < limit_tile_x; p1+=total_tile_workers){
                 // __syncwarp();
-                for(p2=RSFK_WarpSize*tile_y_count; p2 < limit_tile_y; ++p2){
+                for(p2=RSFK_TILE_SIZE*tile_y_count; p2 < limit_tile_y; ++p2){
                     // printf("%d %d %d\n", p1,p2, cbs);
-                    _p1 = (p1-RSFK_WarpSize*tile_x_count);
-                    _p2 = (p2-RSFK_WarpSize*tile_y_count);
+                    _p1 = (p1-RSFK_TILE_SIZE*tile_x_count);
+                    _p2 = (p2-RSFK_TILE_SIZE*tile_y_count);
                     
                     if(tile_x_count == tile_y_count){
                         if(_p1 >= _p2) continue;
-                        k = (RSFK_WarpSize*(RSFK_WarpSize-1)/2) - (RSFK_WarpSize-_p1)*((RSFK_WarpSize-_p1)-1)/2 + _p2 - _p1 - 1;
+                        k = (RSFK_TILE_SIZE*(RSFK_TILE_SIZE-1)/2) - (RSFK_TILE_SIZE-_p1)*((RSFK_TILE_SIZE-_p1)-1)/2 + _p2 - _p1 - 1;
                         // if(lane == 0) printf("%d %d %d\n", k, tile_x_count, tile_y_count);
                         candidate_dist_val = candidate_dist_val_sm[k];
                     }
                     else{
-                        candidate_dist_val = candidate_dist_val_sm[_p1*RSFK_WarpSize+_p2];
-                        // if(lane == 0) printf("%d\n", (p1-RSFK_WarpSize*tile_x_count)*RSFK_WarpSize+(p2-RSFK_WarpSize*tile_x_count));
+                        candidate_dist_val = candidate_dist_val_sm[_p1*RSFK_TILE_SIZE+_p2];
+                        // if(lane == 0) printf("%d\n", (p1-RSFK_TILE_SIZE*tile_x_count)*RSFK_TILE_SIZE+(p2-RSFK_TILE_SIZE*tile_x_count));
                     }
-                    // p1+=RSFK_WarpSize*tile_x_count;
-                    // p2+=RSFK_WarpSize*tile_y_count;
+                    // p1+=RSFK_TILE_SIZE*tile_x_count;
+                    // p2+=RSFK_TILE_SIZE*tile_y_count;
                     if(p1 >= cbs || p2 >= cbs) continue;
 
                     // if(lane == 0) printf("%d %d %d %d\n", p1, p2, tile_x_count, tile_y_count);
@@ -1478,25 +1598,25 @@ void compute_knn_from_buckets_pertile(
             // printf("B %d %d %d %d\n", tile_x_count, tile_y_count, wid, threadIdx.x);
             __syncthreads();
 
-            for(p2=wid+RSFK_WarpSize*tile_y_count; p2 < limit_tile_y; p2+=total_tile_workers){
+            for(p2=wid+RSFK_TILE_SIZE*tile_y_count; p2 < limit_tile_y; p2+=total_tile_workers){
                 // __syncwarp();
-                for(p1=RSFK_WarpSize*tile_x_count; p1 < limit_tile_x; ++p1){
+                for(p1=RSFK_TILE_SIZE*tile_x_count; p1 < limit_tile_x; ++p1){
                     // printf("%d %d %d\n", p1,p2, cbs);
-                    _p1 = (p1-RSFK_WarpSize*tile_x_count);
-                    _p2 = (p2-RSFK_WarpSize*tile_y_count);
+                    _p1 = (p1-RSFK_TILE_SIZE*tile_x_count);
+                    _p2 = (p2-RSFK_TILE_SIZE*tile_y_count);
                     
                     if(tile_x_count == tile_y_count){
                         if(_p1 >= _p2) continue;
-                        k = (RSFK_WarpSize*(RSFK_WarpSize-1)/2) - (RSFK_WarpSize-_p1)*((RSFK_WarpSize-_p1)-1)/2 + _p2 - _p1 - 1;
+                        k = (RSFK_TILE_SIZE*(RSFK_TILE_SIZE-1)/2) - (RSFK_TILE_SIZE-_p1)*((RSFK_TILE_SIZE-_p1)-1)/2 + _p2 - _p1 - 1;
                         // if(lane == 0) printf("%d %d %d\n", k, tile_x_count, tile_y_count);
                         candidate_dist_val = candidate_dist_val_sm[k];
                     }
                     else{
-                        candidate_dist_val = candidate_dist_val_sm[_p1*RSFK_WarpSize+_p2];
-                        // if(lane == 0) printf("%d\n", (p1-RSFK_WarpSize*tile_x_count)*32+(p2-RSFK_WarpSize*tile_x_count));
+                        candidate_dist_val = candidate_dist_val_sm[_p1*RSFK_TILE_SIZE+_p2];
+                        // if(lane == 0) printf("%d\n", (p1-RSFK_TILE_SIZE*tile_x_count)*32+(p2-RSFK_TILE_SIZE*tile_x_count));
                     }
-                    // p1+=RSFK_WarpSize*tile_x_count;
-                    // p2+=RSFK_WarpSize*tile_y_count;
+                    // p1+=RSFK_TILE_SIZE*tile_x_count;
+                    // p2+=RSFK_TILE_SIZE*tile_y_count;
 
                     if(p1 >= cbs || p2 >= cbs) continue;
                     // if(lane == 0) printf("%d %d %d %d %d %d\n", p1, p2, real_p1, real_p2, tile_x_count, tile_y_count);
