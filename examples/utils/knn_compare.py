@@ -6,6 +6,8 @@ import warnings
 from cycler import cycler
 
 import matplotlib
+from PIL import ImageColor
+
 
 def get_projection_val(serie_x, serie_y, value):
     serie_sorted_x = serie_x[np.argsort(serie_x)]
@@ -157,7 +159,7 @@ class KnnResult(object):
     def plot(self, dataset_list, K, quality_name, dataX=None, dash_method=[],
              fig_name=None, ignore_outliers=True, baseline=None, method_list=None):
         
-        font = {
+        font_default = {
             # 'family' : 'normal',
             # 'weight' : 'bold',
             'size'   : 19
@@ -167,7 +169,7 @@ class KnnResult(object):
         matplotlib.rc('ytick', labelsize=22)
 
 
-        plt.rc('font', **font)
+        plt.rc('font', **font_default)
 
         assert (type(dataset_list) == str) or (type(dataset_list) == list)
         if type(dataset_list) is str:
@@ -183,9 +185,9 @@ class KnnResult(object):
         fig, ax = plt.subplots(figsize=(10, 6))
 
         if not baseline is None:
-            ax2 = ax.twinx()
             ivfflat_x = None
             ivfflat_y = None
+            # ax2 = ax.twinx()
             plt_colors_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
             
 
@@ -197,8 +199,10 @@ class KnnResult(object):
         max_y2 = 0
         non_baseline_count = 0
 
-        
-        for dataset_name in dataset_list:
+        dataset_legend_pos_rot = ['upper right', 'lower left']
+        for dataset_count, dataset_name in enumerate(dataset_list):
+            legend_namelist = []
+            legend_curveslist = []
             if method_list is None: 
                 method_list = list(self.data[dataset_name][str(K)].keys())
                 if "FLATL2" in method_list:
@@ -225,6 +229,7 @@ class KnnResult(object):
                     legend_name = legend_name.replace("ATSNE_MNIST", "MNIST")
                     legend_name = legend_name.replace("ATSNE_IMAGENET", "Imagenet")
                     legend_name = legend_name.replace("ATSNE_CIFAR", "CIFAR")
+                    legend_namelist.append(legend_name)
 
                     data = self.data[dataset_name][str(K)][knn_method_name][parameter_name]
                     if not quality_name in data:
@@ -237,12 +242,20 @@ class KnnResult(object):
                     if not dataX is None:
                         time_list = len(dataX)/time_list
                     
-                    idx = np.argsort(quality_list)
+                    if (not baseline is None) and (not ivfflat_x is None):
+                        tmp_idx = np.argsort(quality_list)
+                        idx = []
+                        for i in tmp_idx:
+                            idx.append(i)
+                            if quality_list[i] >= max(ivfflat_x):
+                                break
+                    else:
+                        idx = np.argsort(quality_list)
 
                     if knn_method_name in dash_method:
-                        ax.plot(quality_list[idx], time_list[idx], ":|", label=legend_name)
+                        legend_curveslist.append(ax.plot(quality_list[idx], time_list[idx], ":|", label=legend_name)[0])
                     else:
-                        ax.plot(quality_list[idx], time_list[idx], "-|", label=legend_name)
+                        legend_curveslist.append(ax.plot(quality_list[idx], time_list[idx], "-|", label=legend_name)[0])
 
                     min_x = min(min_x, min(quality_list[idx]))
                     min_y = min(min_y, min(time_list[idx]))
@@ -254,12 +267,17 @@ class KnnResult(object):
                         ivfflat_x = quality_list[idx]
                         ivfflat_y = time_list[idx]
             
+            # fig.legend()
+            first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 14})
+            # Add the legend manually to the current Axes.
+            plt.gca().add_artist(first_legend)
+            # ax = plt.gca().add_artist(first_legend)
             
 
             if (not baseline is None) and (not ivfflat_x is None):
-                ax2.set_prop_cycle(cycler('color', plt_colors_cycle[non_baseline_count+1:]))
+                # ax2.set_prop_cycle(cycler('color', plt_colors_cycle[non_baseline_count+1:]))
 
-
+                curve_count = 0
                 for knn_method_name in method_list:
                     for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
                         if knn_method_name =="IVFFLAT" or knn_method_name in dash_method:
@@ -299,11 +317,29 @@ class KnnResult(object):
                         # print(legend_name, ivfflat_x, quality_list[idx])
                         # print(proj)
                         # print(legend_name, proj, fill_time, fill_proj)
-                        ax2.plot(fill_quality, speedup, ":", label="Speedup " + legend_name)
+                        # ax2.plot(fill_quality, speedup, ":", label="Speedup " + legend_name)
+                        
+                        plt.rc('font', size=7)
+                        bbox_args = dict(boxstyle='square',
+                                         facecolor='white',
+                                        #  facecolor=str(plt_colors_cycle[non_baseline_count+curve_count+1]),
+                                         edgecolor=str(plt_colors_cycle[non_baseline_count+curve_count+1])
+                                         )
+                        
+                        plt_colors_cycle[non_baseline_count+1:]
+
+                        for i in idx:
+                            if quality_list[i] < max(ivfflat_x):
+                                ax.annotate("{:.2f}".format(speedup[i]), (quality_list[i], time_list[i]), bbox=bbox_args)
+                        
+
+                        plt.rc('font', **font_default)
 
                         min_y2 = min(min_y2, min(speedup))
 
                         max_y2 = max(max_y2, max(speedup))
+
+                        curve_count+=1
                         
                     # ax2.ticklabel_format(useOffset=False, style='plain')
                     # ax2.yaxis.get_major_formatter().set_scientific(False)
@@ -312,17 +348,17 @@ class KnnResult(object):
 
                 non_baseline_count+=len(method_list)
                 
-                ax2.set_ylabel('Speedup')
-                ax2.set_ylim(1)
-                major_ticks = np.arange(1, max_y2, 2)
-                minor_ticks = np.arange(1, max_y2, 1)
-                ax2.set_yticks(major_ticks)
-                ax2.set_yticks(minor_ticks, minor=True)
-                ax2.grid(which='minor', alpha=0.2)
-                ax2.grid(which='major', alpha=0.5)
+                # ax2.set_ylabel('Speedup')
+                # ax2.set_ylim(1)
+                # major_ticks = np.arange(1, max_y2, 2)
+                # minor_ticks = np.arange(1, max_y2, 1)
+                # ax2.set_yticks(major_ticks)
+                # ax2.set_yticks(minor_ticks, minor=True)
+                # ax2.grid(which='minor', alpha=0.2)
+                # ax2.grid(which='major', alpha=0.5)
 
         # ax.legend()
-        fig.legend(loc="upper right", bbox_to_anchor=(1,1), bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 14})
+        # fig.legend(loc="lower left", bbox_to_anchor=(0,0), bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 14})
         # fig.legend()
         # plt.legend()
 
