@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from gpu_rsfk.RSFK import RSFK
 
 import time
@@ -28,11 +30,16 @@ from datasets import load_dataset, load_dataset_knn, get_dataset_options
 
 from utils.knn_compare import get_nne_rate, create_recall_eps, KnnResult
 
+import pandas as pd
+from scipy import stats
+
+from sklearn.decomposition import PCA
+import pprint
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parameters used to init experiments")
     parser.add_argument("-n", "--name", help="Experiment name used to create json log",
-                        type=str, default="exp4")
+                        type=str, default="exp3")
     parser.add_argument("-p", "--path", help="Experiment path used to create json log",
                         type=str, default=".")
     parser.add_argument("-v", "--rsfk_verbose", help="RSFK verbose level ",
@@ -50,12 +57,13 @@ if __name__ == "__main__":
                         type=float, default=0.01)
     
     parser.add_argument('-e', '--nnexp_factor_list', type=int, nargs='+',
-                        default=[0],
+                        default=[0,1,2],
                         help='Nearest Neighbors Exploring factor list to test')
 
     parser.add_argument('-t','--n_trees_list', type=int, nargs='+',
                         default=[x for x in range(1,29,2)],
                         help='List of total of trees to test')
+    
     # parser.add_argument("-nn", "--numneigh", help="Number of nearest neighbors used in KNN",type=int,default=DEFAULT_NUM_NEIGHBORS)
     # parser.add_argument("-p", "--perplexity", help="Perplexity",type=float,default=DEFAULT_PERPLEXITY)
     # parser.add_argument("-ms", "--maxsamples", help="Max samples from dataset. Default is use all samples",
@@ -80,13 +88,6 @@ if __name__ == "__main__":
 
     parser.add_argument('--test_rsfk', dest='test_rsfk', action='store_true', default=False,
                         help="Test Random Projection Forest KNN")
-
-    # parser.add_argument('--test_rsfk', dest='test_rsfk', action='store_true', default=False,
-                        # help="Test Random Projection Forest KNN")
-
-    parser.add_argument('--test_annoy', dest='test_annoy', action='store_true', default=False,
-                        help="Test ANNOY")
-
     parser.add_argument('--test_ivfflat', dest='test_ivfflat', action='store_true', default=False,
                         help="Test FAISS-IVFFLAT")
     parser.add_argument('--test_flatl2', dest='test_flatl2', action='store_true', default=False,
@@ -150,7 +151,7 @@ if __name__ == "__main__":
     
 
     TEST_RSFK = args.test_rsfk
-    TEST_ANNOY = args.test_annoy
+    TEST_ANNOY = False
     TEST_IVFFLAT = False
     TEST_IVFFLAT10 = args.test_ivfflat
     TEST_IVFPQ = False
@@ -168,78 +169,131 @@ if __name__ == "__main__":
     # TEST_FLATL2 = True
 
     
-
-    dataX, dataY = load_dataset(DATA_SET)
-    print("dataX.shape: {}".format(dataX.shape))
-    print("K = {}".format(K))
-    new_indices = np.arange(len(dataX))
-    # np.random.shuffle(new_indices)
-
-    '''
-    neigh = NearestNeighbors(K, n_jobs=-1)
-    neigh.fit(dataX)
-    real_sqd_dist, real_indices = neigh.kneighbors(dataX)
-    '''
     
     # '''
 
-    if DATA_SET != "GOOGLE_NEWS300" or K <=32:
-        t = time.time()
-        real_sqd_dist, real_indices = load_dataset_knn(DATA_SET, max_k=K)
-    else:
-        def dist_mean(real_indices, indices, real_dist, dist,
-                     random_state=0, max_k=32, verbose=0):
-            return np.average(dist, weights=np.ones_like(dist)/len(dist))
-        quality_function = dist_mean
-        quality_name = "dist_mean"
+    forest_log_list = []
+
+
+    # ndim = 32
+    # npoints = 2**10
+
+    ndim = 512
+    npoints = 2**20
+
+    # npoints = 2**21
+    
+    quality_list = []
+    time_list = []
+
+    # df_index = ["ATSNE_MNIST", "ATSNE_IMAGENET", "GOOGLE_NEWS300"]
+    # export_csv_name = "knn_experiment3_var_datasets_pertile_1024_1.csv"
+    # export_csv_name = "knn_experiment3_var_datasets_pertile_512_2.csv"
+    # export_csv_name = "knn_experiment3_var_datasets_predistnolock.csv"
+    # export_csv_name = "knn_experiment3_var_datasets_dividek.csv"
+    # for dataset_name in df_index:
+
+    # df_index = [32,64,128,256,512]
+    # df_index = [128]
+    # df_index = [256]
+    # df_index = [512]
+    # df_index = [16]
+    # df_index = [16, 32]
+    # export_csv_name = "knn_experiment3_var_ndim.csv"
+    
+    # export_csv_name = "knn_experiment3_var_ndim_dividek.csv"
+    # export_csv_name = "knn_experiment3_var_ndim_pertile_1024_1.csv"
+    # export_csv_name = "knn_experiment3_var_ndim_pertile_512_2.csv"
+    # export_csv_name = "knn_experiment3_var_ndim_predistnolock.csv"
+
+    for ndim in df_index:
+    
+    # df_index = [2**17, 2**18, 2**19, 2**20, 2**21]
+    # export_csv_name = "knn_experiment3_var_npoints_dividek.csv"
+    # export_csv_name = "knn_experiment3_var_npoints_pertile_1024_1.csv"
+    # export_csv_name = "knn_experiment3_var_npoints_pertile_512_2.csv"
+    # export_csv_name = "knn_experiment3_var_npoints_predistnolock.csv"
+    # for npoints in df_index:
+    
+    # df_index = [16, 32, 64, 128, 256]
+    # export_csv_name = "knn_experiment3_var_k_dividek.csv"
+    # export_csv_name = "knn_experiment3_var_k_pertile_1024_1.csv"
+    # export_csv_name = "knn_experiment3_var_k_pertile_512_2.csv"
+    # export_csv_name = "knn_experiment3_var_k_predistnolock.csv"
+    # for K in df_index:
+    
+    # df_index = [(33,66), (33,128), (33,256), (32,64), (32,128), (32,256), (64,128), (64,256), (128,256)]
+    # df_index = [(32,96), (32,128), (32,256), (128,384), (32,512), (128,512), (32,1024), (128,1024), (256,1024)]
+    # export_csv_name = "knn_experiment3_var_leaves.csv"
+
+    # export_csv_name = "knn_experiment3_var_leaves_dividek.csv"
+    # export_csv_name = "knn_experiment3_var_leaves_pertile_1024_1.csv"
+    # export_csv_name = "knn_experiment3_var_leaves_pertile_512_2.csv"
+    # export_csv_name = "knn_experiment3_var_leaves_predistnolock.csv"
+    # for min_tree_children, max_tree_children in df_index:
+
+
+        # ndim = d
+        # npoints = npts
+
+        dataX, dataY = load_dataset(dataset_name, npoints=npoints, ndim=ndim)
+        print("dataX.shape: {}".format(dataX.shape))
+        print("K = {}".format(K))
+        new_indices = np.arange(len(dataX))
+        # np.random.shuffle(new_indices)
+
+        '''
+        neigh = NearestNeighbors(K, n_jobs=-1)
+        neigh.fit(dataX)
+        real_sqd_dist, real_indices = neigh.kneighbors(dataX)
+        '''
         
-        real_sqd_dist = np.zeros((len(dataX),K))
-        real_indices = np.zeros((len(dataX),K))
-    
-    real_indices = real_indices[new_indices,:K].astype(np.int)
-    real_sqd_dist = real_sqd_dist[new_indices,:K]
-    # '''
+        # '''
 
-
-    # knn_method_name = "RSFK-Atomic"
-    knn_method_name = "RSFK-Tiles (1024 threads per block)"
-    # knn_method_name = "RSFK-Tiles (512 threads per block)"
-    # knn_method_name = "RSFK-Diagonal"
-    # knn_method_name = "FAISS"
-    # knn_method_name = "ANNOY"
-    
-    if TEST_RSFK:
+        if dataset_name != "GOOGLE_NEWS300" or K <=32:
+            t = time.time()
+            real_sqd_dist, real_indices = load_dataset_knn(dataset_name, max_k=K, npoints=npoints, ndim=ndim)
+        else:
+            def dist_mean(real_indices, indices, real_dist, dist,
+                        random_state=0, max_k=32, verbose=0):
+                return np.average(dist, weights=np.ones_like(dist)/len(dist))
+            quality_function = dist_mean
+            quality_name = "dist_mean"
+            
+            real_sqd_dist = np.zeros((len(dataX),K))
+            real_indices = np.zeros((len(dataX),K))
+        
+        # real_indices = real_indices[new_indices,:K].astype(np.int)
+        # real_sqd_dist = real_sqd_dist[new_indices,:K]
         # for nnef in [0]:
         # for nnef in [1]:
         # for nnef in [1,2]:
         # for nnef in [0,1,2]:
         for nnef in nnexp_factor_list:
         # for nnef in [3]:
-            # if nnef > 0:
-                # if max_tree_children == -1:
-                #     knn_method_name = "RSFK (NN exploring factor = {})".format(nnef)
-                # else:
-                #     knn_method_name = "RSFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
-            # else:
-            #     if max_tree_children == -1:
-            #         knn_method_name = "RSFK"
-            #     else:
-            #         knn_method_name = "RSFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
-
             if nnef > 0:
-                knn_method_name = "RSFK (NNEF = {})".format(nnef)
-
+                if max_tree_children == -1:
+                    knn_method_name = "RSFK (NN exploring factor = {})".format(nnef)
+                else:
+                    knn_method_name = "RSFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
+            else:
+                if max_tree_children == -1:
+                    knn_method_name = "RSFK"
+                else:
+                    knn_method_name = "RSFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
 
             print("Testing knn method: {}".format(knn_method_name))
             parameter_name = "n_trees"
             parameter_list = n_trees_list
             # parameter_list = [10]
-            quality_list = []
-            time_list = []
+            
             for n_trees in parameter_list:
                 init_t = time.time()
                 rsfk = RSFK(random_state=0)
-                indices, dist = rsfk.find_nearest_neighbors(dataX[new_indices],
+
+                # dataX = PCA(n_components=32).fit_transform(dataX[new_indices])
+                dataX = dataX[new_indices]
+                indices, dist = rsfk.find_nearest_neighbors(dataX,
                                                             K,
                                                             min_tree_children=min_tree_children,
                                                             max_tree_children=max_tree_children,
@@ -258,21 +312,16 @@ if __name__ == "__main__":
                 t = rsfk._last_search_time # Ignore data initialization time
 
                 nne_rate = quality_function(real_indices,indices, real_sqd_dist, dist, max_k=K)
+                # nne_rate = 0
                 
                 time_list.append(t)
                 quality_list.append(nne_rate)
                 print("RSFK Time: {}".format(t), flush=True)
                 print("RSFK NNP: {}".format(nne_rate), flush=True)
                 print("")
-                # exit()
+
+                forest_log_list.append(rsfk.log_forest.data)
                 
-                # idx = np.arange(len(dataX)).reshape((-1,1))
-                # print(np.append(idx,indices,axis=1), np.sort(dist,axis=1))
-                # print(np.append(idx,real_indices,axis=1), np.sort(real_sqd_dist,axis=1))
-
-                # print(indices.shape, dist.shape)
-                # print(real_indices.shape, real_sqd_dist.shape)
-
                 # Sanity check
                 if sanity_check:
                     negative_indices = np.sum(indices==-1)
@@ -290,10 +339,64 @@ if __name__ == "__main__":
 
 
 
+    df_columns = []
+    
+    for attr_name in forest_log_list[0].keys():
+        df_columns.append(attr_name + " (sum)")
+        df_columns.append(attr_name + " (mean)")
+        df_columns.append(attr_name + " (std)")
+        df_columns.append(attr_name + " (sem)")
         
+    df_columns.append("Total Time")
+    df_columns.append("NNP")
+
+    df_data = np.zeros((len(df_index), len(df_columns)))
+
+    for i, attr_name in enumerate(forest_log_list[0].keys()):
+        samples = np.array([x[attr_name] for x in forest_log_list])
+        smpl_sum = np.sum(samples, axis=1)
+        smpl_mean = np.mean(samples, axis=1)
+        smpl_std = np.std(samples, axis=1)
+        smpl_sem = stats.sem(samples,axis=1)
+        
+        df_data[:,i*4] = smpl_sum
+        df_data[:,i*4+1] = smpl_mean
+        df_data[:,i*4+2] = smpl_std
+        df_data[:,i*4+3] = smpl_sem
+
+    df_data[:, -2] = np.array(time_list)
+    df_data[:, -1] = np.array(quality_list)
+    
+    np.set_printoptions(suppress=True)
+    print(list(zip(df_columns[60:], df_data[:, 60:].T)))
+    exit()
+    # pprint.pprint(df_data[:, df_columns=="Check Points Side Time (sum)"], width=1)
+
+    df = pd.DataFrame(df_data, columns=df_columns, index=df_index)
+    df.to_csv(export_csv_name, columns=df_columns, header=True)
+    exit()
 
 
-    # exit()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    
 
     if TEST_ANNOY:
         knn_method_name = "ANNOY"
@@ -310,7 +413,7 @@ if __name__ == "__main__":
             for i,v in enumerate(dataX):
                 t.add_item(i, v)
 
-            t.build(n_trees, n_jobs=-1) # 10 trees
+            t.build(n_trees) # 10 trees
             indices = []
             distances = [] 
 
@@ -354,6 +457,31 @@ if __name__ == "__main__":
             # u = AnnoyIndex(f, 'angular')
             # u.load('test.ann') # super fast, will just mmap the file
             # print(u.get_nns_by_item(0, 1000)) # will find the 1000 nearest neighbors
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -502,10 +630,5 @@ if __name__ == "__main__":
         knn_result_exp.save()
     
     if save_plot:
-        # knn_result_exp.plot([dataset_name], K, quality_name, dataX,
-        #                     dash_method=["FLATL2"], baseline="IVFFLAT",
-        #                     method_list=["IVFFLAT", "RSFK-Tiles"])
-
-        knn_result_exp.plot(["ATSNE_IMAGENET", "GOOGLE_NEWS300"], K, quality_name, dataX,
-                            dash_method=["FLATL2"], baseline="IVFFLAT",
-                            method_list=["IVFFLAT", "RSFK-Tiles, NNEF: 1", "RSFK-Tiles"])
+        knn_result_exp.plot(dataset_name, K, quality_name, dataX,
+                            dash_method=["FLATL2"])

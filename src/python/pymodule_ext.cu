@@ -69,7 +69,8 @@ extern "C" {
                                          int** bucket_sizes,
                                          int* total_leaves,
                                          int* max_child);
-
+    
+    /*
     void pymodule_create_cluster_with_hbgf(int n_trees,
                                            int K,
                                            int n_eig_vects,
@@ -97,6 +98,7 @@ extern "C" {
                                                     int RANDOM_STATE,
                                                     RSFK_typepoints* points,
                                                     int* result);
+    */
 }
 
 void pymodule_rsfk_knn(int n_trees,
@@ -155,7 +157,7 @@ void pymodule_cluster_by_sample_tree(int N,
     *max_child = tinfo.max_child;
 }
 
-
+/*
 void pymodule_create_cluster_with_hbgf(int n_trees,
                                        int K,
                                        int n_eig_vects,
@@ -227,3 +229,4 @@ void pymodule_spectral_clustering_with_knngraph(int n_trees,
     // delete [] knn_indices;
     delete [] knn_distances;
 }
+*/

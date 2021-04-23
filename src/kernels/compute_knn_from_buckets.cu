@@ -228,6 +228,29 @@ void euclidean_distance_sqr_coalesced_atomic(int p1, int p2, RSFK_typepoints* po
 
 #endif
 
+/*
+__device__                // NOTE: value returned in register (NO SHM)
+inline                    // function return type CHANGED
+RSFK_typepoints euclidean_distance_sqr_coalesced_diag(int p1, int p2, RSFK_typepoints* points, int D, int N, int lane)
+{
+    RSFK_typepoints diff;
+    RSFK_typepoints s = 0.0f;
+    
+    for(int i=lane; i < D; i+=32){
+        diff = points[get_point_idx(p1,i,N,D)] - points[get_point_idx(p2,i,N,D)];
+        s+=diff*diff;
+    }
+    //atomicAdd(diff_sqd,s);
+    s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32
+    // all lanes have the value, just return it
+    return s;
+}
+*/
+
 
 // Assign a bucket (leaf in the tree) to each warp and a point to each thread (persistent kernel)
 __global__
@@ -993,7 +1016,8 @@ void compute_knn_from_buckets_predist_nolock(
     __shared__ RSFK_typepoints candidate_dist_val_sm[1024];
 
     int bid, p1, p2, real_p1, real_p2, i, j, k;
-    
+    int _p1, _p2;
+
     __shared__ int sm_leaf_bucket[1024];
     __shared__ RSFK_typepoints max_dist_val[1024];
     __shared__ int max_position[1024];
@@ -1074,48 +1098,29 @@ void compute_knn_from_buckets_predist_nolock(
 
     }
     __syncthreads();
-    /*
-    // int work_per_warp = ((cbs*cbs - cbs)/2)/(blockDim.x/32) + (((cbs*cbs - cbs)/2) % (blockDim.x/32) != 0);
-    // for(_p = wid*work_per_warp; _p < (wid+1)*work_per_warp; _p++){
-    for(_p = wid; _p < (cbs*cbs - cbs)/2; _p+=blockDim.x/32){
-        p1 = cbs - 2 - floor(sqrt((float)((-8*_p + 4*cbs*(cbs-1)-7)))/2.0 - 0.5);
-        p2 = _p + p1 + 1 - cbs*(cbs-1)/2 + (cbs-p1)*((cbs-p1)-1)/2;
-        real_p1 = sm_leaf_bucket[p1];
-        real_p2 = sm_leaf_bucket[p2];
-        // __syncwarp();
-
-
-        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
-        candidate_dist_val[wid] = 0.0f;
-        #endif
-
-        // __syncwarp();
-        // __syncthreads();
-        // __syncwarp();
-        #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
-        euclidean_distance_sqr_coalesced(real_p1,
-                                        real_p2,
-                                        points, D, N,
-                                        lane,
-                                        &candidate_dist_val[wid]);
-        __syncwarp();
-        #else
-        candidate_dist_val = euclidean_distance_sqr_coalesced(real_p1,
-                                                            real_p2,
-                                                            points, D, N, lane);
-        #endif
-
-        candidate_dist_val_sm[_p] = candidate_dist_val;
-    }
-    __syncthreads();
-    */
-
+    
     // TODO: The first lines could be done in parallel without lock
     //       (verifying the non-colision and the available number of workers)
 
-    for(p1=1; p1 < cbs; ++p1){ // TODO Invert order
+    // for(p1=1; p1 < cbs; ++p1){ // TODO Invert order
+    
+    /*
+    RSFK_typepoints cache_points[64];
+    // real_p2 = sm_leaf_bucket[p2];
+    
+    for(i = 0; i < 8 && wid+(blockDim.x/32)*i < cbs; ++i){
+        real_p1 = sm_leaf_bucket[wid+(blockDim.x/32)*i];
+        k = 0;
+        for(j=lane; j < D; j+=32){
+            cache_points[k+i*(D/32)] = points[get_point_idx(real_p1,j,N,D)];
+            k++;
+        }
+    }
+    */
+
+    for(_p1=0; _p1 < cbs; ++_p1){ // TODO Invert order
         // printf("%d %d\n", lane, i);
-        real_p1 = sm_leaf_bucket[p1];
+        // real_p1 = sm_leaf_bucket[p1];
         __syncthreads();
 
         /*
@@ -1133,49 +1138,92 @@ void compute_knn_from_buckets_predist_nolock(
         }
         */
         // /*
-        for(p2=wid; p2 < p1; p2+=blockDim.x/32){
+        // for(p2=wid; p2 < p1; p2+=blockDim.x/32){
+        for(_p2=wid+1; _p2 < cbs-_p1; _p2+=blockDim.x/32){
             // k = (cbs*(cbs-1)/2) - (cbs-p1)*((cbs-p1)-1)/2 + p2 - p1 - 1;
-
+            p1 = _p2 -1;
+            p2 = _p2 + _p1;
+            
+            real_p1 = sm_leaf_bucket[p1];
             real_p2 = sm_leaf_bucket[p2];
 
             #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
             candidate_dist_val[wid] = 0.0f;
             #endif
 
+            RSFK_typepoints diff;
+            candidate_dist_val = 0.0f;
+
+            /*
+            if(((_p2-1)/32) < 8){
+                j = 0;
+                for(i=lane; i < D; i+=32){
+                    diff = cache_points[((_p2-1)/32)*(D/32)+(i/32)] - points[get_point_idx(real_p2,i,N,D)];
+                    candidate_dist_val+=diff*diff;
+                }
+            }
+            else{
+                for(i=lane; i < D; i+=32){
+                    diff = points[get_point_idx(real_p1,i,N,D)] - points[get_point_idx(real_p2,i,N,D)];
+                    candidate_dist_val+=diff*diff;
+                }
+            }
+            */
+
+            for(i=lane; i < D; i+=32){
+                diff = points[get_point_idx(real_p1,i,N,D)] - points[get_point_idx(real_p2,i,N,D)];
+                candidate_dist_val+=diff*diff;
+            }
+
+            //atomicAdd(diff_sqd,s);
+            candidate_dist_val += __shfl_xor_sync( 0xffffffff, candidate_dist_val,  1); // assuming warpSize=32
+            candidate_dist_val += __shfl_xor_sync( 0xffffffff, candidate_dist_val,  2); // assuming warpSize=32
+            candidate_dist_val += __shfl_xor_sync( 0xffffffff, candidate_dist_val,  4); // assuming warpSize=32
+            candidate_dist_val += __shfl_xor_sync( 0xffffffff, candidate_dist_val,  8); // assuming warpSize=32
+            candidate_dist_val += __shfl_xor_sync( 0xffffffff, candidate_dist_val, 16); // assuming warpSize=32
+
             // __syncwarp();
             // __syncthreads();
             // __syncwarp();
-            #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
-            euclidean_distance_sqr_coalesced(real_p1,
-                                            real_p2,
-                                            points, D, N,
-                                            lane,
-                                            &candidate_dist_val[wid]);
-            __syncwarp();
-            #else
-            candidate_dist_val = euclidean_distance_sqr_coalesced(real_p1,
-                                                                real_p2,
-                                                                points, D, N, lane);
-            #endif
-            candidate_dist_val_sm[p2] = candidate_dist_val;
+            // candidate_dist_val = euclidean_distance_sqr_coalesced(real_p1,
+            //                                                     real_p2,
+            //                                                     points, D, N, lane);
+            candidate_dist_val_sm[p1] = candidate_dist_val;
         }
-        // */
+        // // */
 
         __syncthreads();
-        for(p2=wid; p2 < p1; p2+=blockDim.x/32){
-            candidate_dist_val = candidate_dist_val_sm[p2];
+        // for(p2=wid; p2 < p1; p2+=blockDim.x/32){
+        
+        for(_p2=wid+1; _p2 < cbs-_p1; _p2+=blockDim.x/32){
+            // __syncthreads();
+            p1 = _p2 -1;
+            p2 = _p2 + _p1;
+            
+            candidate_dist_val = candidate_dist_val_sm[p1];
 
+            real_p1 = sm_leaf_bucket[p1];
             real_p2 = sm_leaf_bucket[p2];
 
+            // done_p1 = candidate_dist_val >= max_dist_val[p1];
+            // done_p2 = candidate_dist_val >= max_dist_val[p2];
+            // for(k=0; k < K && (!done_p1 || !done_p2); ++k){
+            //     done_p1 |= real_p2 == knn_indices[real_p1*K+k];
+            //     done_p2 |= real_p1 == knn_indices[real_p2*K+k];
+            // }
+
             done_p1 = candidate_dist_val >= max_dist_val[p1];
-            done_p2 = candidate_dist_val >= max_dist_val[p2];
-            for(k=0; k < K && (!done_p1 || !done_p2); ++k){
+            for(k=lane; k < K && !done_p1; k+=RSFK_WarpSize){
                 done_p1 |= real_p2 == knn_indices[real_p1*K+k];
-                done_p2 |= real_p1 == knn_indices[real_p2*K+k];
             }
-
-            // if(lane == 0) printf("%d %d %d %d %f %f %f\n", p1, p2, done_p1, done_p2, max_dist_val[p1], max_dist_val[p2], candidate_dist_val);
-
+            
+            done_p1 += __shfl_xor_sync( 0xffffffff, done_p1,  1); // assuming warpSize=32
+            done_p1 += __shfl_xor_sync( 0xffffffff, done_p1,  2); // assuming warpSize=32
+            done_p1 += __shfl_xor_sync( 0xffffffff, done_p1,  4); // assuming warpSize=32
+            done_p1 += __shfl_xor_sync( 0xffffffff, done_p1,  8); // assuming warpSize=32
+            done_p1 += __shfl_xor_sync( 0xffffffff, done_p1, 16); // assuming warpSize=32
+            __syncwarp();
+            
             if(!done_p1){
                 if(lane == 0){
                     knn_indices[max_position[p1]] = real_p2;
@@ -1235,8 +1283,37 @@ void compute_knn_from_buckets_predist_nolock(
                     max_position[p1] = local_max_position;
                 }
             }
+        }
+        __syncthreads();
 
-           
+        for(_p2=wid+1; _p2 < cbs-_p1; _p2+=blockDim.x/32){
+
+            p1 = _p2 -1;
+            p2 = _p2 + _p1;
+            
+            candidate_dist_val = candidate_dist_val_sm[p1];
+
+            real_p1 = sm_leaf_bucket[p1];
+            real_p2 = sm_leaf_bucket[p2];
+            // __syncthreads();
+            
+            done_p2 = candidate_dist_val >= max_dist_val[p2];
+            for(k=lane; k < K && !done_p2; k+=RSFK_WarpSize){
+                done_p2 |= real_p1 == knn_indices[real_p2*K+k];
+            }
+            done_p2 += __shfl_xor_sync( 0xffffffff, done_p2,  1); // assuming warpSize=32
+            done_p2 += __shfl_xor_sync( 0xffffffff, done_p2,  2); // assuming warpSize=32
+            done_p2 += __shfl_xor_sync( 0xffffffff, done_p2,  4); // assuming warpSize=32
+            done_p2 += __shfl_xor_sync( 0xffffffff, done_p2,  8); // assuming warpSize=32
+            done_p2 += __shfl_xor_sync( 0xffffffff, done_p2, 16); // assuming warpSize=32
+            // all lanes have the value, just return it
+            // __syncwarp();
+
+            // if(lane == 0) printf("%d %d %d %d %f %f %f\n", p1, p2, done_p1, done_p2, max_dist_val[p1], max_dist_val[p2], candidate_dist_val);
+
+            // TODO: implement syncthreads
+            // __syncthreads();
+            
             if(!done_p2){
                 if(lane == 0){
                     knn_indices[max_position[p2]] = real_p1;
@@ -1303,6 +1380,7 @@ void compute_knn_from_buckets_predist_nolock(
 // This kernel is a optmization of compute_knn_from_buckets_perblock_coalesced_symmetric kernel
 // The optimization consists use and communicate idle threads during lock system
 __global__ void
+__launch_bounds__(1024, 1)
 // __launch_bounds__(512, 2)
 compute_knn_from_buckets_pertile(
                               RSFK_typepoints* points,

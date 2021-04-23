@@ -35,9 +35,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef __RSFK__H
 #define __RSFK__H
 
-#include "common.h"
 
-#include "nvgraph.h"
+// #include "nvgraph.h"
 
 // Thrust includes
 #include <thrust/host_vector.h>

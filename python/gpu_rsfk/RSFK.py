@@ -150,7 +150,7 @@ class RSFK(object):
             # TODO: run name - Char pointer?
             ]
 
-
+        '''
         self._lib.pymodule_create_cluster_with_hbgf.restype = None
         self._lib.pymodule_create_cluster_with_hbgf.argtypes = [ 
             ctypes.c_int, # number of trees
@@ -187,6 +187,7 @@ class RSFK(object):
             np.ctypeslib.ndpointer(np.int32, ndim=1, flags='ALIGNED, CONTIGUOUS'), # points
             # TODO: run name - Char pointer?
             ]
+        '''
 
     def find_nearest_neighbors(self, points, num_nearest_neighbors,
                                n_trees=-1, max_tree_depth=5000,

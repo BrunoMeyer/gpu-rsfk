@@ -8,6 +8,9 @@ from cycler import cycler
 import matplotlib
 from PIL import ImageColor
 
+from datasets import load_dataset
+
+import pandas as pd
 
 def get_projection_val(serie_x, serie_y, value):
     serie_sorted_x = serie_x[np.argsort(serie_x)]
@@ -157,7 +160,8 @@ class KnnResult(object):
         self.data = new_data
         
     def plot(self, dataset_list, K, quality_name, dataX=None, dash_method=[],
-             fig_name=None, ignore_outliers=True, baseline=None, method_list=None):
+             fig_name=None, ignore_outliers=True, baseline=None, method_list=None,
+             export_data_to_sheet="plot_data.csv"):
         
         font_default = {
             # 'family' : 'normal',
@@ -165,8 +169,8 @@ class KnnResult(object):
             'size'   : 19
         }
 
-        matplotlib.rc('xtick', labelsize=22) 
-        matplotlib.rc('ytick', labelsize=22)
+        matplotlib.rc('xtick', labelsize=16) 
+        matplotlib.rc('ytick', labelsize=16)
 
 
         plt.rc('font', **font_default)
@@ -201,6 +205,12 @@ class KnnResult(object):
 
         dataset_legend_pos_rot = ['upper right', 'lower left']
         for dataset_count, dataset_name in enumerate(dataset_list):
+            ivfflat_x = None
+            ivfflat_y = None
+
+            dataX, dataY = load_dataset(dataset_name)
+            dataset_size = len(dataX)
+
             legend_namelist = []
             legend_curveslist = []
             if method_list is None: 
@@ -214,6 +224,7 @@ class KnnResult(object):
             
 
             for knn_method_name in method_list:
+                
                 for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
                     # legend_name = str(knn_method_name)+" ({})".format(parameter_name)
                     legend_name = str(knn_method_name)
@@ -239,23 +250,37 @@ class KnnResult(object):
                     quality_list = np.array(data[quality_name]["quality"])
                     time_list = np.array(data[quality_name]["time"])
 
-                    if not dataX is None:
-                        time_list = len(dataX)/time_list
                     
+
+                    time_list = dataset_size/time_list
+                    
+                    croped_point = None
                     if (not baseline is None) and (not ivfflat_x is None):
                         tmp_idx = np.argsort(quality_list)
                         idx = []
                         for i in tmp_idx:
-                            idx.append(i)
                             if quality_list[i] >= max(ivfflat_x):
                                 break
+                            idx.append(i)
                     else:
                         idx = np.argsort(quality_list)
 
+                    curve_x = np.array(quality_list[idx])
+                    curve_y = np.array(time_list[idx])
+
+                    if (not baseline is None) and (not ivfflat_x is None):
+                        new_point_x = [max(ivfflat_x)]
+                        new_point_y = get_projection(curve_x, curve_y, new_point_x)
+
+                        curve_x = np.concatenate((curve_x, np.array(new_point_x)))
+                        curve_y = np.concatenate((curve_y, np.array(new_point_y)))
+                    
+                        # print(max(ivfflat_x), curve_x)
                     if knn_method_name in dash_method:
-                        legend_curveslist.append(ax.plot(quality_list[idx], time_list[idx], ":|", label=legend_name)[0])
+                        legend_curveslist.append(ax.plot(curve_x, curve_y, ":|", label=legend_name)[0])
                     else:
-                        legend_curveslist.append(ax.plot(quality_list[idx], time_list[idx], "-|", label=legend_name)[0])
+                        legend_curveslist.append(ax.plot(curve_x, curve_y, "-|", label=legend_name)[0])
+                        
 
                     min_x = min(min_x, min(quality_list[idx]))
                     min_y = min(min_y, min(time_list[idx]))
@@ -266,16 +291,12 @@ class KnnResult(object):
                     if knn_method_name == baseline:
                         ivfflat_x = quality_list[idx]
                         ivfflat_y = time_list[idx]
-            
-            # fig.legend()
-            first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 14})
-            # Add the legend manually to the current Axes.
-            plt.gca().add_artist(first_legend)
-            # ax = plt.gca().add_artist(first_legend)
+                        ivfflat_y_total_time = np.array(data[quality_name]["time"])[idx]
             
 
             if (not baseline is None) and (not ivfflat_x is None):
-                # ax2.set_prop_cycle(cycler('color', plt_colors_cycle[non_baseline_count+1:]))
+                # WORKAROUND
+                # ax.set_prop_cycle(cycler('color', plt_colors_cycle[non_baseline_count+1:]))
 
                 curve_count = 0
                 for knn_method_name in method_list:
@@ -303,34 +324,68 @@ class KnnResult(object):
                         quality_list = np.array(data[quality_name]["quality"])
                         time_list = np.array(data[quality_name]["time"])
 
-                        if not dataX is None:
-                            time_list = len(dataX)/time_list
                         
                         idx = np.argsort(quality_list)
 
+                        '''
                         proj = get_projection(ivfflat_x, ivfflat_y, quality_list[idx])
                         fill_time = time_list[idx][proj != None]
+                        fill_proj2 = fill_time
                         fill_proj = proj[proj != None]
                         fill_quality = quality_list[idx][proj != None]
-
                         speedup = fill_time/fill_proj
+                        '''
+
+                        curve_x = np.array(quality_list[idx])
+                        curve_y = np.array(time_list[idx])
+
+                        if (not baseline is None) and (not ivfflat_x is None):
+                            new_point_x = [max(ivfflat_x)]
+                            new_point_y = get_projection(curve_x, curve_y, new_point_x)
+
+                            curve_x = np.concatenate((curve_x, np.array(new_point_x)))
+                            curve_y = np.concatenate((curve_y, np.array(new_point_y)))
+                            
+                        # '''
+                        fill_quality = np.arange(0.2,0.95,0.1)
+                        fill_quality = np.concatenate((fill_quality,np.array([max(ivfflat_x)])))
+                        
+                        proj = get_projection(ivfflat_x, ivfflat_y_total_time, fill_quality)
+                        fill_proj = proj[proj != None]
+                        
+                        proj2 = get_projection(curve_x, curve_y, fill_quality)
+                        fill_proj2 = proj2[proj != None]
+
+                        fill_quality = fill_quality[proj != None]
+                        
+                        speedup = fill_proj/fill_proj2
+                        # '''
+
+                        fill_proj2 = dataset_size/fill_proj2
+
                         # print(legend_name, ivfflat_x, quality_list[idx])
                         # print(proj)
                         # print(legend_name, proj, fill_time, fill_proj)
                         # ax2.plot(fill_quality, speedup, ":", label="Speedup " + legend_name)
                         
-                        plt.rc('font', size=7)
+
+                        plt.rc('font', size=9)
                         bbox_args = dict(boxstyle='square',
                                          facecolor='white',
                                         #  facecolor=str(plt_colors_cycle[non_baseline_count+curve_count+1]),
                                          edgecolor=str(plt_colors_cycle[non_baseline_count+curve_count+1])
                                          )
                         
-                        plt_colors_cycle[non_baseline_count+1:]
+                        
+                        
 
-                        for i in idx:
-                            if quality_list[i] < max(ivfflat_x):
-                                ax.annotate("{:.2f}".format(speedup[i]), (quality_list[i], time_list[i]), bbox=bbox_args)
+                        for i,x in enumerate(fill_quality):
+                            if x <= max(ivfflat_x):
+                                ax.annotate("{:.2f}".format(speedup[i]), (x, fill_proj2[i]), bbox=bbox_args)
+
+                        # for i in idx:
+                        #     if quality_list[i] < max(ivfflat_x):
+                        #         ax.annotate("{:.2f}".format(speedup[i]), (quality_list[i], time_list[i]), bbox=bbox_args)
                         
 
                         plt.rc('font', **font_default)
@@ -346,7 +401,9 @@ class KnnResult(object):
                     # ax2.legend()
                     # ax2.legend(loc=0)
 
-                non_baseline_count+=len(method_list)
+
+                # non_baseline_count+=len(method_list)
+                non_baseline_count+=len(method_list)+1 #WORKAROUND
                 
                 # ax2.set_ylabel('Speedup')
                 # ax2.set_ylim(1)
@@ -357,24 +414,48 @@ class KnnResult(object):
                 # ax2.grid(which='minor', alpha=0.2)
                 # ax2.grid(which='major', alpha=0.5)
 
+            # fig.legend()
+
+            legend_curveslist.append(ax.plot([], [], label="speedup ")[0])
+            first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 11})
+            # Add the legend manually to the current Axes.
+            plt.gca().add_artist(first_legend)
+            # ax = plt.gca().add_artist(first_legend)
+            # WORKAROUND
+            
+
+
+
         # ax.legend()
         # fig.legend(loc="lower left", bbox_to_anchor=(0,0), bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 14})
         # fig.legend()
         # plt.legend()
 
+        '''
         # major_ticks = np.arange(min_x, max_x, 1)
         # minor_ticks = np.arange(min_x, max_x, 0.5)
         # ax.set_yticks(major_ticks)
         # ax.set_yticks(minor_ticks, minor=True)
+        '''
 
         # major_ticks = np.arange(1, max_y2, 1)
         # minor_ticks = np.arange(0, max_y2, 0.5)
-        # ax.set_xticks(major_ticks)
+        major_ticks = np.arange(0.1,0.95,0.1)
+        # major_ticks = np.concatenate((major_ticks,np.array([max(ivfflat_x)])))
+        minor_ticks = np.arange(0.1,0.95,0.05)
+        # minor_ticks = np.concatenate((minor_ticks,np.array([max(ivfflat_x)])))
+        
+        ax.set_xticks(major_ticks)
         # ax.set_xticks(minor_ticks, minor=True)
+
+
+        # for label in ax.xaxis.get_ticklabels():
+        #     label.set_bbox(dict(facecolor='none', edgecolor='black'))
+
         
         ax.grid(which='minor', alpha=0.2)
         ax.grid(which='major', alpha=0.5)
-
+        # ax.xaxis.set_major_formatter(matplotlib.ticker.FormatStrFormatter('%.2f'))
 
         # And a corresponding grid
         ax.grid(which='both')
@@ -419,3 +500,151 @@ class KnnResult(object):
         # ax.set_title(fig_title)
         
         fig.savefig("{}.pdf".format(fig_name))
+
+    def export_time_accuracy_to_csv(self, dataset_list, K, quality_name, dataX=None, 
+             dash_method=[], fig_name=None, ignore_outliers=True, baseline=None, method_list=None, sheet_name="plot_data.xls"):
+        
+
+        assert (type(dataset_list) == str) or (type(dataset_list) == list)
+        if type(dataset_list) is str:
+            dataset_list = [dataset_list]
+
+
+        
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        if not baseline is None:
+            ivfflat_x = None
+            ivfflat_y = None
+            # ax2 = ax.twinx()
+            plt_colors_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            
+
+        min_x = np.inf
+        max_x = 0
+        min_y = np.inf
+        max_y = 0
+        min_y2 = np.inf
+        max_y2 = 0
+        non_baseline_count = 0
+
+        column_list_name = []
+        column_list_data = []
+
+        for dataset_count, dataset_name in enumerate(dataset_list):
+            ivfflat_x = None
+            ivfflat_y = None
+
+            dataX, dataY = load_dataset(dataset_name)
+            dataset_size = len(dataX)
+
+            legend_namelist = []
+            legend_curveslist = []
+            if method_list is None: 
+                method_list = list(self.data[dataset_name][str(K)].keys())
+                if "FLATL2" in method_list:
+                    method_list.remove("FLATL2")
+                    method_list = ["FLATL2"]+method_list
+                if "IVFFLAT" in method_list:
+                    method_list.remove("IVFFLAT")
+                    method_list = ["IVFFLAT"]+method_list
+            
+
+            for knn_method_name in method_list:
+                
+                for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
+                    
+                    legend_name = str(knn_method_name)
+                    if len(dataset_list) > 1:
+                        legend_name = "({}) ".format(dataset_name) + legend_name
+                    
+                    if knn_method_name == "IVFFLAT":
+                        legend_name = legend_name.replace("IVFFLAT", "FAISS IVFFLAT")
+
+                    legend_name = legend_name.replace("GOOGLE_NEWS300", "GoogleNews300")
+                    legend_name = legend_name.replace("AMAZON_REVIEW_ELETRONICS", "Amazon Electronics")
+                    legend_name = legend_name.replace("LUCID_INCEPTION", "Lucid Inception")
+                    legend_name = legend_name.replace("ATSNE_MNIST", "MNIST")
+                    legend_name = legend_name.replace("ATSNE_IMAGENET", "Imagenet")
+                    legend_name = legend_name.replace("ATSNE_CIFAR", "CIFAR")
+                    legend_namelist.append(legend_name)
+
+                    data = self.data[dataset_name][str(K)][knn_method_name][parameter_name]
+                    if not quality_name in data:
+                        continue
+                    
+                    parameter_list = data[quality_name]["parameters"]
+                    quality_list = np.array(data[quality_name]["quality"])
+                    time_list = np.array(data[quality_name]["time"])
+
+                    column_list_name.append("{} - Time".format(legend_name))
+                    column_list_data.append(time_list)
+
+                    column_list_name.append("{} - Accuracy".format(legend_name))
+                    column_list_data.append(quality_list)
+
+
+                    time_list = dataset_size/time_list
+
+                    column_list_name.append("{} - Points/second".format(legend_name))
+                    column_list_data.append(time_list)
+                    
+                    # croped_point = None
+                    # if (not baseline is None) and (not ivfflat_x is None):
+                    #     tmp_idx = np.argsort(quality_list)
+                    #     idx = []
+                    #     for i in tmp_idx:
+                    #         if quality_list[i] >= max(ivfflat_x):
+                    #             break
+                    #         idx.append(i)
+                    # else:
+                    #     idx = np.argsort(quality_list)
+
+                    # curve_x = np.array(quality_list[idx])
+                    # curve_y = np.array(time_list[idx])
+
+                    
+                    
+                    # if (not baseline is None) and (not ivfflat_x is None):
+                    #     new_point_x = [max(ivfflat_x)]
+                    #     new_point_y = get_projection(curve_x, curve_y, new_point_x)
+
+                    #     curve_x = np.concatenate((curve_x, np.array(new_point_x)))
+                    #     curve_y = np.concatenate((curve_y, np.array(new_point_y)))
+                    
+                    #     # print(max(ivfflat_x), curve_x)
+                    # if knn_method_name in dash_method:
+                    #     legend_curveslist.append(ax.plot(curve_x, curve_y, ":|", label=legend_name)[0])
+                    # else:
+                    #     legend_curveslist.append(ax.plot(curve_x, curve_y, "-|", label=legend_name)[0])
+                        
+
+                    # min_x = min(min_x, min(quality_list[idx]))
+                    # min_y = min(min_y, min(time_list[idx]))
+
+                    # max_x = max(max_x, max(quality_list[idx]))
+                    # max_y = max(max_y, max(time_list[idx]))
+                    
+                    # if knn_method_name == baseline:
+                    #     ivfflat_x = quality_list[idx]
+                    #     ivfflat_y = time_list[idx]
+                    #     ivfflat_y_total_time = np.array(data[quality_name]["time"])[idx]
+            
+            
+
+
+        df_list = []
+        
+        for cd, cn in zip(column_list_data,column_list_name):
+            df = pd.DataFrame({cn:cd})
+            df_list.append(df)
+
+        df = pd.concat(df_list, ignore_index=True, axis=1)
+        df.columns = column_list_name
+        # df.to_csv(sheet_name, columns=column_list_name, header=True, index=False)
+        df.to_excel(sheet_name, header=True, index=False)
+
+        # df = pd.DataFrame(column_list_data, columns=column_list_name)
+        # df.to_csv(sheet_name, columns=column_list_name, header=True, index=False)
+        

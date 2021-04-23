@@ -1,7 +1,7 @@
 all: main_archall python_archall
 
 main_archall: src/rsfk.cu
-	nvcc -O3 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_75,code=sm_75 -std=c++11 src/rsfk.cu -o rsfk
+	nvcc -lnvgraph -O3 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_75,code=sm_75 -std=c++11 --compiler-options '-fPIC' src/rsfk.cu -o rsfk
 
 python_archall: src/python/pymodule_ext.cu
 	nvcc -O3 -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_75,code=sm_75 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu

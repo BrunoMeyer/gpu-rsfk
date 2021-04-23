@@ -120,6 +120,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
 
     // Allocates the vectors for the first level of the tree
     int MAX_NODES = 1;
+    // device_tree[0] = new thrust::device_vector<RSFK_typepoints>(((D+19)+1)*MAX_NODES);
     device_tree[0] = new thrust::device_vector<RSFK_typepoints>((D+1)*MAX_NODES);
     // Random Projection Forest
     // device_random_directions[0] = new thrust::device_vector<RSFK_typepoints>(2*D*MAX_NODES);
@@ -310,6 +311,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
             device_tree[depth-1]->clear();
             device_tree[depth-1]->shrink_to_fit();
             
+            // device_tree[depth] = new thrust::device_vector<RSFK_typepoints>((((D+19)+1)*count_new_nodes));
             device_tree[depth] = new thrust::device_vector<RSFK_typepoints>(((D+1)*count_new_nodes));
             // device_random_directions[depth] = new thrust::device_vector<RSFK_typepoints>((2*D*count_new_nodes));
             device_tree_parents[depth] = new thrust::device_vector<int>(count_new_nodes,-1);
@@ -656,7 +658,7 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
     return tinfo;
 }
 
-
+/*
 __global__
 void create_point_to_anchor(int* point_to_anchor,
                             int* points_buckets,
@@ -755,6 +757,8 @@ struct FunctionalSqrt {
         return pow(x, 0.5);
     }
 };
+
+
 
 int RSFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
                                             int N, int D, int VERBOSE,
@@ -856,15 +860,15 @@ int RSFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
 
     // CREATE GRAPH OFFSET indexes
 
-    // Assumes that the knn_indices are precomputed
-    /*
-    nvgraph_top.source_offsets = new int[n_vertices];
-    for(int i=0; i < N; ++i){
-        // each data point contains an edge to a cluster for each tree
-        nvgraph_top.source_offsets[i] = i*num_neighbors;
-    }
-    // nvgraph_top.destination_indices = knn_indices;
-    */
+    // // Assumes that the knn_indices are precomputed
+    
+    // nvgraph_top.source_offsets = new int[n_vertices];
+    // for(int i=0; i < N; ++i){
+    //     // each data point contains an edge to a cluster for each tree
+    //     nvgraph_top.source_offsets[i] = i*num_neighbors;
+    // }
+    // // nvgraph_top.destination_indices = knn_indices;
+    
     nvgraph_top.source_offsets = source_offsets;
     nvgraph_top.destination_indices = knn_indices_sym;
 
@@ -970,11 +974,11 @@ int RSFK::spectral_clustering_with_knngraph(int* result, int num_neighbors,
     
     specParam.n_clusters = K;
     specParam.n_eig_vects = n_eig_vects;
-    /*
-    NVGRAPH_MODULARITY_MAXIMIZATION : maximize modularity with Lanczos solver.
-    NVGRAPH_BALANCED_CUT_LANCZOS : minimize balanced cut with Lanczos solver.
-    NVGRAPH_BALANCED_CUT_LOBPCG: minimize balanced cut with LOPCG solver. 
-    */
+    
+    // NVGRAPH_MODULARITY_MAXIMIZATION : maximize modularity with Lanczos solver.
+    // NVGRAPH_BALANCED_CUT_LANCZOS : minimize balanced cut with Lanczos solver.
+    // NVGRAPH_BALANCED_CUT_LOBPCG: minimize balanced cut with LOPCG solver. 
+    
     specParam.algorithm = NVGRAPH_MODULARITY_MAXIMIZATION; 
     specParam.evs_tolerance = 0.0f; // default value
     specParam.evs_max_iter = 0; // default value 
@@ -1300,11 +1304,11 @@ int RSFK::create_cluster_with_hbgf(int* result, int n_trees,
     specParam.n_clusters = K;
     // specParam.n_clusters = tinfo_list[0].total_leaves;
     specParam.n_eig_vects = n_eig_vects;
-    /*
-    NVGRAPH_MODULARITY_MAXIMIZATION : maximize modularity with Lanczos solver.
-    NVGRAPH_BALANCED_CUT_LANCZOS : minimize balanced cut with Lanczos solver.
-    NVGRAPH_BALANCED_CUT_LOBPCG: minimize balanced cut with LOPCG solver. 
-    */
+    
+    // NVGRAPH_MODULARITY_MAXIMIZATION : maximize modularity with Lanczos solver.
+    // NVGRAPH_BALANCED_CUT_LANCZOS : minimize balanced cut with Lanczos solver.
+    // NVGRAPH_BALANCED_CUT_LOBPCG: minimize balanced cut with LOPCG solver. 
+    
     specParam.algorithm = NVGRAPH_BALANCED_CUT_LOBPCG; 
     specParam.evs_tolerance = 0.0f; // default value
     specParam.evs_max_iter = 0; // default value 
@@ -1410,6 +1414,7 @@ int RSFK::create_cluster_with_hbgf(int* result, int n_trees,
 
     return 0;
 }
+*/
 
 void RSFK::update_knn_indice_with_buckets(
     thrust::device_vector<RSFK_typepoints> &device_points,
@@ -1440,6 +1445,7 @@ void RSFK::update_knn_indice_with_buckets(
     // cudaFuncSetCacheConfig(compute_knn_from_buckets_coalesced, cudaFuncCachePreferL1);
     // cudaFuncSetCacheConfig(compute_knn_from_buckets_perwarp_coalesced, cudaFuncCachePreferL1);
     // cudaFuncSetCacheConfig(compute_knn_from_buckets_perblock_coalesced_symmetric_dividek, cudaFuncCachePreferL1);
+    // cudaFuncSetCacheConfig(compute_knn_from_buckets_pertile, cudaFuncCachePreferL1);
 
     Cron cron_knn;
     cron_knn.start();
@@ -1449,13 +1455,22 @@ void RSFK::update_knn_indice_with_buckets(
     // compute_knn_from_buckets_perwarp_coalesced<<<NB,NT>>>(
     // compute_knn_from_buckets_perblock_coalesced_symmetric<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_perblock_coalesced_symmetric<<<NB,NT>>>(
-    compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
-                                              thrust::raw_pointer_cast(device_points.data()),
-                                              thrust::raw_pointer_cast(device_nodes_buckets.data()),
-                                              thrust::raw_pointer_cast(device_bucket_sizes.data()),
-                                              thrust::raw_pointer_cast(device_knn_indices.data()),
-                                              thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-                                              N, D, max_child, K, MAX_TREE_CHILD, total_leaves);
+    // compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
+    // compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,128>>>(
+    // compute_knn_from_buckets_pertile_coalesced_symmetric<<<total_leaves,NT, sizeof(RSFK_typepoints)*max_child>>>(
+    // compute_knn_from_buckets_pertile_coalesced_symmetric<<<total_leaves,32>>>(
+    // compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
+    // compute_knn_from_buckets_predist_nolock<<<total_leaves,32>>>(
+    compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
+    // compute_knn_from_buckets_pertile<<<total_leaves,512>>>(
+    // compute_knn_from_buckets_pertile<<<total_leaves,32>>>(
+    // compute_knn_from_buckets_pertile<<<1,32>>>(
+        thrust::raw_pointer_cast(device_points.data()),
+        thrust::raw_pointer_cast(device_nodes_buckets.data()),
+        thrust::raw_pointer_cast(device_bucket_sizes.data()),
+        thrust::raw_pointer_cast(device_knn_indices.data()),
+        thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+        N, D, max_child, K, MAX_TREE_CHILD, total_leaves);
     cudaDeviceSynchronize();
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
     cron_knn.stop();    
@@ -1478,9 +1493,36 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     Cron forest_total_cron;
     forest_total_cron.start();
     thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
+    
+    // thrust::device_vector<RSFK_typepoints> device_points(4096);
+    // cudaDeviceSynchronize();
+
+    /*
+    thrust::host_vector<int> H(points, points+N*D);
+
+    thrust::device_vector<RSFK_typepoints> device_points(N*D);
+    std::cout << "1 ############# " << N << " " << D <<  std::endl;
+
+    thrust::copy(H.begin(), H.end(), device_points.begin());
+
+    cudaDeviceSynchronize();
+    */
+    
+    // thrust::device_vector<RSFK_typepoints> device_points(N*(D+20), 0.0f);
+    // for(int i=0; i < N; ++i){
+    //     thrust::copy(points+i*D, points+(i+1)*D, device_points.begin()+i*(D+20));
+    // }
+        
+    // std::cout << "2 #############" << std::endl;
+    // cudaDeviceSynchronize();
+
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
+    
+    // std::cout << "3 #############" << std::endl;
+    
     thrust::device_vector<RSFK_typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
     
+    // std::cout << "4 #############" << std::endl;
 
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
