@@ -83,8 +83,85 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "kernels/build_tree_utils.h"
 #include "kernels/compute_knn_from_buckets.h"
 #include "kernels/nearest_neighbors_exploring.h"
+#include "kernels/build_tree_update_parents_ann.h"
 
 
+class RSFKIndexTree{
+public:
+    thrust::device_vector<RSFK_typepoints>** device_tree;
+    thrust::device_vector<int>** device_tree_parents;
+    thrust::device_vector<int>** device_tree_children;
+    thrust::device_vector<bool>** device_is_leaf;
+    thrust::device_vector<int>** device_child_count;
+    thrust::device_vector<int>** device_accumulated_child_count;
+    thrust::device_vector<int>** device_count_points_on_leaves;
+
+    thrust::device_vector<int>* device_points_parent;
+    thrust::device_vector<int>* device_points_depth;
+    thrust::device_vector<int>* device_is_right_child;
+    thrust::device_vector<int>* device_sample_candidate_points;
+
+    thrust::device_vector<int>* device_points_id_on_sample;
+    thrust::device_vector<int>* device_active_points;
+
+    thrust::device_vector<int>* device_depth_level_count;
+    thrust::device_vector<int>* device_accumulated_nodes_count;
+    thrust::device_vector<int>* device_tree_count;
+    thrust::device_vector<int>* device_count_new_nodes;
+    thrust::device_vector<int>* device_actual_depth;
+    thrust::device_vector<int>* device_active_points_count;
+
+    thrust::device_vector<int>* device_leaf_idx_to_node_idx;
+    thrust::device_vector<int>* device_node_idx_to_leaf_idx;
+    thrust::device_vector<int>* device_nodes_buckets;
+    thrust::device_vector<int>* device_bucket_sizes;
+
+    int total_leaves;
+    int max_child;
+    int reached_max_depth;
+
+    RSFKIndexTree(){
+        device_tree = nullptr;
+        device_tree_parents = nullptr;
+        device_tree_children = nullptr;
+        device_is_leaf = nullptr;
+        device_child_count = nullptr;
+        device_accumulated_child_count = nullptr;
+        device_count_points_on_leaves = nullptr;
+
+        device_points_parent = nullptr;
+        device_points_depth = nullptr;
+        device_is_right_child = nullptr;
+        device_sample_candidate_points = nullptr;
+
+        device_points_id_on_sample = nullptr;
+        device_active_points = nullptr;
+
+        device_depth_level_count = nullptr;
+        device_accumulated_nodes_count = nullptr;
+        device_tree_count = nullptr;
+        device_count_new_nodes = nullptr;
+        device_actual_depth = nullptr;
+        device_active_points_count = nullptr;
+
+        device_leaf_idx_to_node_idx = nullptr;
+        device_node_idx_to_leaf_idx = nullptr;
+        device_nodes_buckets = nullptr;
+        device_bucket_sizes = nullptr;
+
+        total_leaves = -1;
+        max_child = -1;
+        reached_max_depth = -1;
+        
+    }
+
+    // void update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
+    //                                     thrust::device_vector<int> &device_knn_indices,
+    //                                     thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
+    //                                     int K, int N, int D, int VERBOSE, TreeInfo tinfo,
+    //                                     ForestLog& forest_log,
+    //                                     std::string run_name);
+};
 
 class TreeInfo{
 public:
@@ -244,6 +321,7 @@ public:
     // Data points. It will be stored as POINTS x DIMENSION or
     // DIMENSION x POINTS considering the defined POINTS_STRUCTURE
     RSFK_typepoints* points; 
+    RSFK_typepoints* query_points; 
     
     // Indices of the estimated k-nearest neighbors for each point
     // and squared distances between
@@ -283,6 +361,7 @@ public:
     float* log_forest_output;
     
     RSFK(RSFK_typepoints* points,
+         RSFK_typepoints* query_points,
          int* knn_indices,
          RSFK_typepoints* knn_sqr_distances,
          int MIN_TREE_CHILD,
@@ -292,6 +371,7 @@ public:
          int nn_exploring_factor,
          float* log_forest_output):
          points(points),
+         query_points(query_points),
          knn_indices(knn_indices),
          knn_sqr_distances(knn_sqr_distances),
          MIN_TREE_CHILD(MIN_TREE_CHILD),
@@ -312,7 +392,9 @@ public:
     TreeInfo create_bucket_from_sample_tree(thrust::device_vector<RSFK_typepoints> &device_points,
                                             int N, int D, int VERBOSE,
                                             ForestLog& forest_log,
-                                            std::string run_name);
+                                            std::string run_name,
+                                            bool free_index,
+                                            RSFKIndexTree* rsfkindextree);
 
     void update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
                                         thrust::device_vector<int> &device_knn_indices,
@@ -344,6 +426,13 @@ public:
                                           int K, int n_eig_vects,
                                           bool free_knn_indices,
                                           std::string run_name);
+
+
+    void knn_gpu_rsfk_forest_ann(int n_trees,
+                                 int K, int N, int NQ, int D, int VERBOSE,
+                                 std::string run_name,
+                                 RSFKIndexTree* rsfkindextree);
 };
+
 
 #endif

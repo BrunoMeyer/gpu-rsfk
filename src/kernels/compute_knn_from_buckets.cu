@@ -1380,8 +1380,8 @@ void compute_knn_from_buckets_predist_nolock(
 // This kernel is a optmization of compute_knn_from_buckets_perblock_coalesced_symmetric kernel
 // The optimization consists use and communicate idle threads during lock system
 __global__ void
-__launch_bounds__(1024, 1)
-// __launch_bounds__(512, 2)
+// __launch_bounds__(1024, 1)
+__launch_bounds__(512, 2)
 compute_knn_from_buckets_pertile(
                               RSFK_typepoints* points,
                               int* nodes_bucket,

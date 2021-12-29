@@ -130,7 +130,9 @@ void build_tree_check_points_side(RSFK_typepoints* tree,
 
             tmp_product = 0.0f;
             for(k=tidw; k < D; k+=32){
-                tmp_product+=tree[get_tree_idx(points_parent[tmp_p],k,*count_new_nodes,D)]*points[get_point_idx(tmp_p,k,N,D)];
+                // TODO: (ANN Change) Verify if it is working (replacing count_new_nodes with depth_level_count)
+                // tmp_product+=tree[get_tree_idx(points_parent[tmp_p],k,*count_new_nodes,D)]*points[get_point_idx(tmp_p,k,N,D)];
+                tmp_product+=tree[get_tree_idx(points_parent[tmp_p],k,depth_level_count[*actual_depth-1],D)]*points[get_point_idx(tmp_p,k,N,D)];
             }
             
             tmp_product += __shfl_xor_sync( 0xffffffff, tmp_product,  1); // assuming warpSize=32

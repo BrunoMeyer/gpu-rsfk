@@ -110,9 +110,9 @@ class RSFK(object):
         self.random_state = int(random_state)
         
         self._path = pkg_resources.resource_filename('gpu_rsfk','') # Load from current location
+        print(self._path)
         self._lib = np.ctypeslib.load_library('librsfk', self._path) # Load the ctypes library
         # self._lib = np.ctypeslib.load_library('librsfk', ".") # Load the ctypes library
-        
         # Hook the RSFK KNN methods
         self._lib.pymodule_rsfk_knn.restype = None
         self._lib.pymodule_rsfk_knn.argtypes = [ 
@@ -132,7 +132,25 @@ class RSFK(object):
             np.ctypeslib.ndpointer(np.float32, ndim=1, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # log_forest
             # TODO: run name - Char pointer?
             ]
-
+        self._lib.pymodule_rsfk_knn_ann.argtypes = [ 
+            ctypes.c_int, # number of trees
+            ctypes.c_int, # number of nearest neighbors
+            ctypes.c_int, # total of points
+            ctypes.c_int, # total of query points
+            ctypes.c_int, # dimensions of points
+            ctypes.c_int, # minimum tree node children
+            ctypes.c_int, # maximum tree node children
+            ctypes.c_int, # maximum depth of tree
+            ctypes.c_int, # verbose (1,2,or 3)
+            ctypes.c_int, # random state/seed
+            ctypes.c_int, # Nearest Neighbor exploring factor
+            np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # points
+            np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS'), # query points
+            np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
+            np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
+            np.ctypeslib.ndpointer(np.float32, ndim=1, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # log_forest
+            # TODO: run name - Char pointer?
+            ]
         self._lib.pymodule_cluster_by_sample_tree.restype = None
         self._lib.pymodule_cluster_by_sample_tree.argtypes = [ 
             ctypes.c_int, # total of points
@@ -347,6 +365,175 @@ class RSFK(object):
                     knn_indices,
                     knn_squared_dist,
                     log_forest)
+        
+        self._last_search_time = time.time() - t_init
+        return knn_indices, knn_squared_dist
+
+    def find_nearest_neighbors_ann(
+        self, points, query_points, num_nearest_neighbors,
+        n_trees=-1, max_tree_depth=5000,
+        verbose=0, min_tree_children=-1,
+        max_tree_children=-1,
+        ensure_valid_indices=True,
+        add_bit_random_motion=False,
+        random_motion_force=1.0,
+        nn_exploring_factor=-1,
+        point_in_self_neigh=True):
+        """Creation of the K-NNG from a set of points.
+
+        Parameters
+        ----------
+        points : ndarray of shape (`n_points`, `n_dimensions`)
+            The set of `n_points` with points with `n_dimensions` dimensions
+        num_nearest_neighbors : int
+            The Number of neighbors (K) considered in the K-NN graph
+        n_trees : int, optional
+            The Number of trees used to construct the K-NN graph
+            If not specified, a heuristic will be used to estimate a proper
+            number based on empiric experiments
+            This heuristic will consider the total of points, dimensions, and
+            the bucket size
+        max_tree_depth : int, optional
+            The depth limit for each tree built
+            If this value is to low, it can lead to an error during execution
+        verbose : bool, optional
+            Verbosity level: 0, 1, 2 or 3
+        min_tree_children : int, optional
+            The minimum number of points that will be contained in each bucket
+        max_tree_children : int, optional
+            The maximum number of points that will be contained in each bucket
+            It must be at least 2*`min_tree_children`
+            It must be at most 1024
+        ensure_valid_indices : bool, optional
+            If ensure_valid_indices is True and `min_tree_children` < K+1,
+            then create an additional tree with `min_tree_children`=`num_nearest_neighbor`+1
+            and `max_tree_children`=3*(`num_nearest_neighbor`+1)
+            If ensure_valid_indices is False and `min_tree_children` < K+1,
+            then it is possible that some points doesnt get the expected
+            number of neighbors (will receive -1 index as result instead
+            of others points index)
+            If ensure_valid_indices is False and `min_tree_children` >= K+1,
+            it has none effect
+        add_bit_random_motion : bool, optional
+            If the points contain points with the same position,
+            the construction of a tree reaches the max_tree_depth
+            To prevent this, set `add_bit_random_motion`, which automatically will
+            estimate a random motion to each point and can be controlled by
+            `random_motion_force` parameter
+        random_motion_force : float, optional
+            Used only if `add_bit_random_motion` is True
+            Check `random_motion` function for more details
+        nn_exploring_factor : int, optional
+            The Number of iterations of the nearest neighborhood exploration step
+            If not specified, it will be 1 if `num_nearest_neighbors` < 32,
+            or 0 otherwise.
+            If it is 0, then the neighborhood exploration will not be used
+        point_in_self_neigh : bool, optional
+            If True, the index of a point will be considered in its self neighborhood
+        
+        Returns
+        -------
+        knn_indices : ndarray of shape (`num_nearest_neighbors`, `n_dimensions`)
+            The matrix with the neighborhood of each point (index of points)
+            If `ensure_valid_indices`=False, some indexes may be set as -1
+        knn_squared_dist : ndarray of shape (`num_nearest_neighbors`, `n_dimensions`)
+            For each neighbor in `knn_indices`, the `knn_squared_dist`
+            contains the squared distance computed
+        """
+        points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+
+        max_tree_depth = int(max_tree_depth)
+        verbose = int(verbose)
+        max_tree_children = int(max_tree_children)
+        N = points.shape[0]
+        NQ = query_points.shape[0]
+        D = points.shape[1]
+        K = num_nearest_neighbors
+        n_trees = int(n_trees)
+
+        if nn_exploring_factor == -1:
+            if K <= 32:
+                nn_exploring_factor = 1
+            else:
+                nn_exploring_factor = 0
+
+        if min_tree_children == -1:
+            min_tree_children = K+1
+        if min_tree_children < 0:
+            raise Exception('min_tree_children = {} \t => min_tree_children must be at least 1'.format(min_tree_children))
+        if max_tree_children == -1:
+            max_tree_children = 2*min_tree_children
+        if max_tree_children < 2*min_tree_children:
+            raise Exception('min_tree_children = {}, max_tree_children = {} \t => max_tree_children must be at least 2*min_tree_children'.format(min_tree_children, max_tree_children))
+        
+        if n_trees == -1:
+            avgBucketSize = (min_tree_children+max_tree_children)/2
+            n_trees = (N*D)/(avgBucketSize*24913) # Magic number collected by experiments (reported in paper)
+            n_trees = max(np.ceil(n_trees), 50)
+            if verbose > 0:
+                print("Automatically setting n_trees to {}".format(n_trees))
+            
+        n_trees = int(n_trees)
+        if(add_bit_random_motion):
+            random_motion(points, random_motion_force)
+
+        # TODO: Prevent np.require to create a copy of the data. This double the memory usage              
+        points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+        query_points = np.require(query_points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+        
+        init_knn_indices = np.full((NQ,K), -1)
+        if point_in_self_neigh:
+            init_knn_indices[:,0] = np.arange(NQ)
+        
+        init_squared_dist = np.full((NQ,K), np.inf)
+        if point_in_self_neigh:
+            init_squared_dist[:,0] = np.zeros(NQ)
+
+        knn_indices = np.require(init_knn_indices, np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+        knn_squared_dist = np.require(init_squared_dist, np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+
+        t_init = time.time()
+        
+        log_forest = np.require(np.zeros(n_trees*16+2), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+        self._lib.pymodule_rsfk_knn_ann(
+            ctypes.c_int(n_trees), # number of trees
+            ctypes.c_int(K), # number of nearest neighbors
+            ctypes.c_int(N), # total of points
+            ctypes.c_int(NQ), # total of points
+            ctypes.c_int(D), # dimensions of points
+            ctypes.c_int(min_tree_children), # minimum tree node children
+            ctypes.c_int(max_tree_children), # maximum tree node children
+            ctypes.c_int(max_tree_depth), # maximum depth of tree
+            ctypes.c_int(verbose), # verbose (1,2,or 3)
+            ctypes.c_int(self.random_state), # random state/seed
+            ctypes.c_int(nn_exploring_factor), # random state/seed
+            points,
+            query_points,
+            knn_indices,
+            knn_squared_dist,
+            log_forest)
+
+        # self.log_forest = ForestLog(log_forest)
+
+        log_forest = np.require(np.zeros(n_trees*16+2), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
+        if ensure_valid_indices and min_tree_children < K+1:
+            self._lib.pymodule_rsfk_knn_ann(
+                ctypes.c_int(1), # number of trees
+                ctypes.c_int(K), # number of nearest neighbors
+                ctypes.c_int(N), # total of points
+                ctypes.c_int(NQ), # total of points
+                ctypes.c_int(D), # dimensions of points
+                ctypes.c_int(K+1), # minimum tree node children
+                ctypes.c_int(3*(K+1)), # maximum tree node children
+                ctypes.c_int(max_tree_depth), # maximum depth of tree
+                ctypes.c_int(verbose), # verbose (1,2,or 3)
+                ctypes.c_int(self.random_state), # random state/seed
+                ctypes.c_int(nn_exploring_factor), # random state/seed
+                points,
+                query_points,
+                knn_indices,
+                knn_squared_dist,
+                log_forest)
         
         self._last_search_time = time.time() - t_init
         return knn_indices, knn_squared_dist

@@ -42,33 +42,53 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <thrust/fill.h>
 
 extern "C" {
-    void pymodule_rsfk_knn(int n_trees,
-                           int num_neighbors,
-                           int N,
-                           int D,
-                           int MIN_TREE_CHILD,
-                           int MAX_TREE_CHILD,
-                           int MAX_DEPTH,
-                           int VERBOSE,
-                           int RANDOM_STATE,
-                           int nn_exploring_factor,
-                           RSFK_typepoints* points,
-                           int* knn_indices,
-                           RSFK_typepoints* knn_sqr_distances,
-                           float* log_forest);
+    void pymodule_rsfk_knn(
+        int n_trees,
+        int num_neighbors,
+        int N,
+        int D,
+        int MIN_TREE_CHILD,
+        int MAX_TREE_CHILD,
+        int MAX_DEPTH,
+        int VERBOSE,
+        int RANDOM_STATE,
+        int nn_exploring_factor,
+        RSFK_typepoints* points,
+        int* knn_indices,
+        RSFK_typepoints* knn_sqr_distances,
+        float* log_forest);
+    
+    void pymodule_rsfk_knn_ann(
+        int n_trees,
+        int num_neighbors,
+        int N,
+        int NQ,
+        int D,
+        int MIN_TREE_CHILD,
+        int MAX_TREE_CHILD,
+        int MAX_DEPTH,
+        int VERBOSE,
+        int RANDOM_STATE,
+        int nn_exploring_factor,
+        RSFK_typepoints* points,
+        RSFK_typepoints* query_points,
+        int* knn_indices,
+        RSFK_typepoints* knn_sqr_distances,
+        float* log_forest);
 
-    void pymodule_cluster_by_sample_tree(int N,
-                                         int D,
-                                         int MIN_TREE_CHILD,
-                                         int MAX_TREE_CHILD,
-                                         int MAX_DEPTH,
-                                         int VERBOSE,
-                                         int RANDOM_STATE,
-                                         RSFK_typepoints* points,
-                                         int** nodes_buckets,
-                                         int** bucket_sizes,
-                                         int* total_leaves,
-                                         int* max_child);
+    void pymodule_cluster_by_sample_tree(
+        int N,
+        int D,
+        int MIN_TREE_CHILD,
+        int MAX_TREE_CHILD,
+        int MAX_DEPTH,
+        int VERBOSE,
+        int RANDOM_STATE,
+        RSFK_typepoints* points,
+        int** nodes_buckets,
+        int** bucket_sizes,
+        int* total_leaves,
+        int* max_child);
     
     /*
     void pymodule_create_cluster_with_hbgf(int n_trees,
@@ -117,13 +137,50 @@ void pymodule_rsfk_knn(int n_trees,
                        float* log_forest_output)
 {
     std::string run_name="run";
-    RSFK rsfk_knn(points, knn_indices, knn_sqr_distances,
+    RSFK rsfk_knn(points, nullptr, knn_indices, knn_sqr_distances,
                   MIN_TREE_CHILD, MAX_TREE_CHILD,
                   MAX_DEPTH, RANDOM_STATE, nn_exploring_factor,
                   log_forest_output);
 
     rsfk_knn.knn_gpu_rsfk_forest(n_trees, num_neighbors, N, D, VERBOSE,
                                  run_name);
+}
+
+void pymodule_rsfk_knn_ann(
+    int n_trees,
+    int num_neighbors,
+    int N,
+    int NQ,
+    int D,
+    int MIN_TREE_CHILD,
+    int MAX_TREE_CHILD,
+    int MAX_DEPTH,
+    int VERBOSE,
+    int RANDOM_STATE,
+    int nn_exploring_factor,
+    RSFK_typepoints* points,
+    RSFK_typepoints* query_points,
+    int* knn_indices,
+    RSFK_typepoints* knn_sqr_distances,
+    float* log_forest_output)
+{
+    std::string run_name="run";
+    RSFK rsfk_knn(points, query_points, knn_indices, knn_sqr_distances,
+                  MIN_TREE_CHILD, MAX_TREE_CHILD,
+                  MAX_DEPTH, RANDOM_STATE, nn_exploring_factor,
+                  log_forest_output);
+
+    RSFKIndexTree rsfkindextree;
+
+    rsfk_knn.knn_gpu_rsfk_forest_ann(
+        n_trees,
+        num_neighbors,
+        N,
+        NQ,
+        D,
+        VERBOSE,
+        run_name,
+        &rsfkindextree);
 }
 
 void pymodule_cluster_by_sample_tree(int N,
@@ -142,7 +199,7 @@ void pymodule_cluster_by_sample_tree(int N,
     std::string run_name="run";
 
     float* forest_log_output = (float*)malloc(sizeof(float)*1*16+2);
-    RSFK rsfk_knn(points, nullptr, nullptr,
+    RSFK rsfk_knn(points, nullptr, nullptr, nullptr,
                   MIN_TREE_CHILD, MAX_TREE_CHILD,
                   MAX_DEPTH, RANDOM_STATE, 0, forest_log_output);
 
