@@ -476,6 +476,7 @@ class RSFK(object):
         n_trees = int(n_trees)
         if(add_bit_random_motion):
             random_motion(points, random_motion_force)
+            random_motion(query_points, random_motion_force)
 
         # TODO: Prevent np.require to create a copy of the data. This double the memory usage              
         points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])

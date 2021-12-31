@@ -64,6 +64,7 @@ void build_tree_update_parents_ann(
     int* depth_level_count,
     int* count_new_nodes,
     int N, int D,
-    int MIN_TREE_CHILD, int MAX_TREE_CHILD);
+    int MIN_TREE_CHILD, int MAX_TREE_CHILD,
+    bool is_last_level);
 
 #endif

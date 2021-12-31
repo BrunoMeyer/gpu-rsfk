@@ -119,6 +119,8 @@ public:
     int total_leaves;
     int max_child;
     int reached_max_depth;
+    int MAX_TREE_CHILD;
+    int total_buckets;
 
     RSFKIndexTree(){
         device_tree = nullptr;
@@ -152,6 +154,9 @@ public:
         total_leaves = -1;
         max_child = -1;
         reached_max_depth = -1;
+
+        MAX_TREE_CHILD = -1;
+        total_buckets = -1;
         
     }
 
