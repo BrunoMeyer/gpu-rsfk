@@ -97,17 +97,50 @@ void print_int_array(int* arr, int N, bool print_index=true){
 
 void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
                                    int K, int N, int NQ, int D, int VERBOSE,
-                                   std::string run_name,
-                                   RSFKIndexTree* rsfkindextree)
+                                   std::string run_name)
+{
+    thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
+    thrust::device_vector<RSFK_typepoints> device_query_points(query_points, query_points+NQ*D);
+
+    thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+NQ*K);
+    thrust::device_vector<RSFK_typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+NQ*K);
+
+    RSFKIndexTree rsfkindextree;
+
+    for(int i=0; i < n_trees; ++i){
+        knn_gpu_rsfk_forest_ann_tree(
+            n_trees,
+            device_points,
+            device_query_points,
+            device_knn_sqr_distances,
+            device_knn_indices,
+            K, N, NQ, D, VERBOSE, run_name, &rsfkindextree
+        );
+        cudaDeviceSynchronize();
+    }
+
+    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + NQ*K, knn_indices);
+    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + NQ*K, knn_sqr_distances);
+    cudaDeviceSynchronize();
+
+}
+
+// TODO (ANN): Enable option to index to file
+void RSFK::knn_gpu_rsfk_forest_ann_tree(
+    int n_trees,
+    thrust::device_vector<RSFK_typepoints> &device_points,
+    thrust::device_vector<RSFK_typepoints> &device_query_points,
+    thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
+    thrust::device_vector<int> &device_knn_indices,
+    int K, int N, int NQ, int D, int VERBOSE,
+    std::string run_name,
+    RSFKIndexTree* rsfkindextree)
 {
     Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
          organize_sample_candidate_cron, dynamic_memory_allocation_cron;
     
-    thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
-    thrust::device_vector<RSFK_typepoints> device_query_points(query_points, query_points+NQ*D);
-
-
+    //TODO: Measure time and identify bottleneck
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
 
@@ -204,7 +237,6 @@ void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
 
     
     for(depth=1; depth < rsfkindextree->reached_max_depth; depth++){
-        std::cout << "Current depth: " << depth << std::endl;
         check_active_points_cron.start();
         cudaDeviceSynchronize();
         
@@ -286,12 +318,6 @@ void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
         cudaDeviceSynchronize();
         CudaTest((char *)"build_tree_utils Kernel failed!");
         update_parents_cron.stop();
-        
-
-        if(VERBOSE >= 2){
-            // std::cout << "\e[ABuilding Tree Depth: " << depth+1 << "/" << MAX_DEPTH;
-            std::cout << " | Total nodes: " << count_total_nodes << std::endl;
-        }
 
         if(count_new_nodes == 0){
             if(VERBOSE >= 1) std::cout << "Early stop: 0 new nodes created." << std::endl;
@@ -342,13 +368,8 @@ void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
     CudaTest((char *)"compute_bucket_for_query_points Kernel failed!");
 
 
-
-    thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
-    
-    // std::cout << "3 #############" << std::endl;
-    
-    thrust::device_vector<RSFK_typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
-
+    Cron knn_ann;
+    knn_ann.start();
     compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT>>>(
         thrust::raw_pointer_cast(rsfkindextree->device_points_parent->data()),
         thrust::raw_pointer_cast(device_points_depth.data()),
@@ -366,10 +387,8 @@ void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
     );
     cudaDeviceSynchronize();
     CudaTest((char *)"compute_bucket_for_query_points Kernel failed!");
-
-    thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + N*K, knn_indices);
-    thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + N*K, knn_sqr_distances);
-
+    knn_ann.stop();
+    std::cout << "compute_knn_from_buckets_perwarp_coalesced_ann: " << (float)(knn_ann.t_total/1000) << " seconds" << std::endl;
         // do 
     // {
     // std::cout << '\n' << "Press a key to continue...";

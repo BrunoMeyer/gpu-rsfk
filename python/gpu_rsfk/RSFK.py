@@ -110,7 +110,6 @@ class RSFK(object):
         self.random_state = int(random_state)
         
         self._path = pkg_resources.resource_filename('gpu_rsfk','') # Load from current location
-        print(self._path)
         self._lib = np.ctypeslib.load_library('librsfk', self._path) # Load the ctypes library
         # self._lib = np.ctypeslib.load_library('librsfk', ".") # Load the ctypes library
         # Hook the RSFK KNN methods

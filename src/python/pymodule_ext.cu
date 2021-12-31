@@ -170,8 +170,6 @@ void pymodule_rsfk_knn_ann(
                   MAX_DEPTH, RANDOM_STATE, nn_exploring_factor,
                   log_forest_output);
 
-    RSFKIndexTree rsfkindextree;
-
     rsfk_knn.knn_gpu_rsfk_forest_ann(
         n_trees,
         num_neighbors,
@@ -179,8 +177,7 @@ void pymodule_rsfk_knn_ann(
         NQ,
         D,
         VERBOSE,
-        run_name,
-        &rsfkindextree);
+        run_name);
 }
 
 void pymodule_cluster_by_sample_tree(int N,

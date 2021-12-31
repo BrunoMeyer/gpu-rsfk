@@ -433,10 +433,20 @@ public:
                                           std::string run_name);
 
 
-    void knn_gpu_rsfk_forest_ann(int n_trees,
-                                 int K, int N, int NQ, int D, int VERBOSE,
-                                 std::string run_name,
-                                 RSFKIndexTree* rsfkindextree);
+    void knn_gpu_rsfk_forest_ann(
+        int n_trees,
+        int K, int N, int NQ, int D, int VERBOSE,
+        std::string run_name);
+    
+    void knn_gpu_rsfk_forest_ann_tree(
+        int n_trees,
+        thrust::device_vector<RSFK_typepoints> &device_points,
+        thrust::device_vector<RSFK_typepoints> &device_query_points,
+        thrust::device_vector<RSFK_typepoints> &device_knn_sqr_distances,
+        thrust::device_vector<int> &device_knn_indices,
+        int K, int N, int NQ, int D, int VERBOSE,
+        std::string run_name,
+        RSFKIndexTree* rsfkindextree);
 };
 
 
