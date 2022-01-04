@@ -98,12 +98,19 @@ void print_int_array(int* arr, int N, bool print_index=true){
 void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
                                    int K, int N, int NQ, int D, int VERBOSE,
                                    std::string run_name)
-{
+{   
+    Cron allocate_copy_points, allocate_copy_knn, copy_knn, total_ann;
+    total_ann.start();
+
+    allocate_copy_points.start();
     thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
     thrust::device_vector<RSFK_typepoints> device_query_points(query_points, query_points+NQ*D);
+    allocate_copy_points.stop();
 
+    allocate_copy_knn.start();
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+NQ*K);
     thrust::device_vector<RSFK_typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+NQ*K);
+    allocate_copy_knn.stop();
 
     RSFKIndexTree rsfkindextree;
 
@@ -119,9 +126,20 @@ void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
         cudaDeviceSynchronize();
     }
 
+    copy_knn.start();
     thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + NQ*K, knn_indices);
     thrust::copy(device_knn_sqr_distances.begin(), device_knn_sqr_distances.begin() + NQ*K, knn_sqr_distances);
+    copy_knn.stop();
     cudaDeviceSynchronize();
+
+    total_ann.stop();
+
+
+    std::cout << "allocate_copy_points: " << (float)(allocate_copy_points.t_total/1000) << " seconds" << std::endl;
+    std::cout << "allocate_copy_knn: " << (float)(allocate_copy_knn.t_total/1000) << " seconds" << std::endl;
+    std::cout << "copy_knn: " << (float)(copy_knn.t_total/1000) << " seconds" << std::endl;
+    std::cout << "total_ann: " << (float)(total_ann.t_total/1000) << " seconds" << std::endl;
+
 
 }
 
@@ -144,6 +162,8 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
 
+    init_tree_cron.start();
+
     tinfo = create_bucket_from_sample_tree(
         device_points, N, D, VERBOSE, forest_log, run_name, false, rsfkindextree);
     
@@ -158,7 +178,7 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     // cudaDeviceSynchronize();
     
 
-    init_tree_cron.start();
+    
     
     // DEBUG Variables
     #if RSFK_COMPILE_TYPE == RSFK_DEBUG
@@ -324,6 +344,7 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
             break;
         }
     }
+    total_tree_build_cron.stop();
 
     // print_float_array<<<1,1>>>(thrust::raw_pointer_cast(device_points_parent.data()), NQ);
     // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(device_points_parent.data()), NQ);
@@ -388,6 +409,8 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     cudaDeviceSynchronize();
     CudaTest((char *)"compute_bucket_for_query_points Kernel failed!");
     knn_ann.stop();
+    std::cout << "init_tree_cron: " << (float)(init_tree_cron.t_total/1000) << " seconds" << std::endl;
+    std::cout << "total_tree_build_cron: " << (float)(total_tree_build_cron.t_total/1000) << " seconds" << std::endl;
     std::cout << "compute_knn_from_buckets_perwarp_coalesced_ann: " << (float)(knn_ann.t_total/1000) << " seconds" << std::endl;
         // do 
     // {
@@ -927,6 +950,8 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
 
     thrust::fill(thrust::device, device_total_leaves->begin(), device_total_leaves->end(), 0);
     cudaDeviceSynchronize();
+
+    // std::cout << MAX_NODES << std::endl;
 
     for(depth=0; depth < reached_max_depth; ++depth){
         build_tree_set_leaves_idx<<<NB,NT>>>(thrust::raw_pointer_cast(device_leaf_idx_to_node_idx->data()),

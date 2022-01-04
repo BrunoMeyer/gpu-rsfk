@@ -242,6 +242,56 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
         }
         current_bucket_size = bucket_size[bid];
 
+        int local_max_position = -1;
+        float local_max_dist = -1.0f;
+
+        float tmp_max_dist;
+        int tmp_max_position;
+        
+        
+        for(k=lane; k < K; k+=RSFK_WarpSize){
+            if(knn_sqr_dist[knn_id+k] > local_max_dist){
+                local_max_position = knn_id+k;
+                local_max_dist = knn_sqr_dist[knn_id+k];
+            }
+        }
+        
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  16); // assuming warpSize=32
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  16); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  8); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  8); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  4); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  4); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  2); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  2); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist, 1); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position, 1); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+
+        max_id_point = __shfl_sync(0xffffffff, local_max_position, 0);
+        max_dist_val = __shfl_sync(0xffffffff, local_max_dist, 0);
+
+
+
         for(_pb = lane; __any_sync(__activemask(), _pb < current_bucket_size); _pb+=32){
             candidate_point = -1;
 
@@ -315,10 +365,8 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
                 __syncwarp();
                 tmp_candidate = __shfl_sync(0xffffffff, candidate_point, j);
                 if(tmp_candidate == -1) continue;
-                tmp_p = __shfl_sync(0xffffffff, pq, j);
                 tmp_dist = __shfl_sync(0xffffffff, candidate_dist_val, j);
                 tmp_max_dist_val = __shfl_sync(0xffffffff, max_dist_val, j);
-                tmp_knn_id = __shfl_sync(0xffffffff, knn_id, j);
 
                 if(tmp_dist < tmp_max_dist_val){
                     if(lane == j){
@@ -347,9 +395,9 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
                     // }
                     
                     for(k=lane; k < K; k+=RSFK_WarpSize){
-                        if(knn_sqr_dist[tmp_knn_id+k] > local_max_dist){
-                            local_max_position = tmp_knn_id+k;
-                            local_max_dist = knn_sqr_dist[tmp_knn_id+k];
+                        if(knn_sqr_dist[knn_id+k] > local_max_dist){
+                            local_max_position = knn_id+k;
+                            local_max_dist = knn_sqr_dist[knn_id+k];
                         }
                     }
                     
