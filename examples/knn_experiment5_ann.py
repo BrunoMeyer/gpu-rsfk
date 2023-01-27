@@ -32,7 +32,7 @@ from utils.knn_compare import get_nne_rate, create_recall_eps, KnnResult
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Parameters used to init experiments")
     parser.add_argument("-n", "--name", help="Experiment name used to create json log",
-                        type=str, default="exp4")
+                        type=str, default="exp1")
     parser.add_argument("-p", "--path", help="Experiment path used to create json log",
                         type=str, default=".")
     parser.add_argument("-v", "--rsfk_verbose", help="RSFK verbose level ",
@@ -50,7 +50,7 @@ if __name__ == "__main__":
                         type=float, default=0.01)
     
     parser.add_argument('-e', '--nnexp_factor_list', type=int, nargs='+',
-                        default=[0],
+                        default=[0,1,2],
                         help='Nearest Neighbors Exploring factor list to test')
 
     parser.add_argument('-t','--n_trees_list', type=int, nargs='+',
@@ -80,13 +80,6 @@ if __name__ == "__main__":
 
     parser.add_argument('--test_rsfk', dest='test_rsfk', action='store_true', default=False,
                         help="Test Random Projection Forest KNN")
-
-    # parser.add_argument('--test_rsfk', dest='test_rsfk', action='store_true', default=False,
-                        # help="Test Random Projection Forest KNN")
-
-    parser.add_argument('--test_annoy', dest='test_annoy', action='store_true', default=False,
-                        help="Test ANNOY")
-
     parser.add_argument('--test_ivfflat', dest='test_ivfflat', action='store_true', default=False,
                         help="Test FAISS-IVFFLAT")
     parser.add_argument('--test_flatl2', dest='test_flatl2', action='store_true', default=False,
@@ -150,7 +143,7 @@ if __name__ == "__main__":
     
 
     TEST_RSFK = args.test_rsfk
-    TEST_ANNOY = args.test_annoy
+    TEST_ANNOY = False
     TEST_IVFFLAT = False
     TEST_IVFFLAT10 = args.test_ivfflat
     TEST_IVFPQ = False
@@ -200,15 +193,6 @@ if __name__ == "__main__":
     real_sqd_dist = real_sqd_dist[new_indices,:K]
     # '''
 
-
-    # knn_method_name = "RSFK-Atomic"
-    knn_method_name = "RSFK-Tiles"
-    # knn_method_name = "RSFK-Tiles (1024 threads per block)"
-    # knn_method_name = "RSFK-Tiles (512 threads per block)"
-    # knn_method_name = "RSFK-Diagonal"
-    # knn_method_name = "FAISS"
-    # knn_method_name = "ANNOY"
-    
     if TEST_RSFK:
         # for nnef in [0]:
         # for nnef in [1]:
@@ -216,20 +200,16 @@ if __name__ == "__main__":
         # for nnef in [0,1,2]:
         for nnef in nnexp_factor_list:
         # for nnef in [3]:
-            # if nnef > 0:
-                # if max_tree_children == -1:
-                #     knn_method_name = "RSFK (NN exploring factor = {})".format(nnef)
-                # else:
-                #     knn_method_name = "RSFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
-            # else:
-            #     if max_tree_children == -1:
-            #         knn_method_name = "RSFK"
-            #     else:
-            #         knn_method_name = "RSFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
-
             if nnef > 0:
-                knn_method_name = "RSFK-Tiles, NNEF: {}".format(nnef)
-
+                if max_tree_children == -1:
+                    knn_method_name = "RSFK (NN exploring factor = {})".format(nnef)
+                else:
+                    knn_method_name = "RSFK MNTC{} MXTC{} (NN exploring factor = {})".format(min_tree_children, max_tree_children, nnef)
+            else:
+                if max_tree_children == -1:
+                    knn_method_name = "RSFK"
+                else:
+                    knn_method_name = "RSFK MNTC{} MXTC{}".format(min_tree_children, max_tree_children)
 
             print("Testing knn method: {}".format(knn_method_name))
             parameter_name = "n_trees"
@@ -250,7 +230,7 @@ if __name__ == "__main__":
                                                             random_motion_force=0.1,
                                                             ensure_valid_indices=True,
                                                             nn_exploring_factor=nnef,
-                                                            add_bit_random_motion=False,
+                                                            add_bit_random_motion=True,
                                                             # verbose=0)
                                                             # verbose=1)
                                                             # verbose=2)
@@ -311,7 +291,7 @@ if __name__ == "__main__":
             for i,v in enumerate(dataX):
                 t.add_item(i, v)
 
-            t.build(n_trees, n_jobs=-1) # 10 trees
+            t.build(n_trees) # 10 trees
             indices = []
             distances = [] 
 
@@ -407,21 +387,16 @@ if __name__ == "__main__":
         for nprobe in parameter_list:
             init_t = time.time()
             quantizer = faiss.IndexFlatL2(d)  # the other index
-            index = faiss.IndexIVFFlat(quantizer, d, 256, faiss.METRIC_L2)
-            # index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
-            
-            index = faiss.index_cpu_to_gpu(res, 0, index)
-
+            index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
             index.nprobe = nprobe              # default nprobe is 1, try a few more
             # here we specify METRIC_L2, by default it performs inner-product search
             assert not index.is_trained
             index.train(xb)
             assert index.is_trained
-            
 
             index.add(xb)                  # add may be a bit slower as well
             
-            # index = faiss.index_cpu_to_gpu(res, 0, index)
+            index = faiss.index_cpu_to_gpu(res, 0, index)
             D, I = index.search(xq, K)     # actual search
 
             t = time.time() - init_t
@@ -437,21 +412,19 @@ if __name__ == "__main__":
     
         
     if TEST_IVFPQ:
-        for nprobe in [1,2,4,8,16,32,64,128,256]:
-            init_t = time.time()
-            # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
-            m = 64
-            quantizer = faiss.IndexFlatL2(d)  # this remains the same
-            index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 4)
-                                            # 8 specifies that each sub-vector is encoded as 8 bits
-            index.nprobe = nprobe              # make comparable with experiment above
-            index.train(xb)
-            index.add(xb)
-            index = faiss.index_cpu_to_gpu(res, 0, index)
-            D, I = index.search(xq, K)     # search
-            print("FAISS IVFPQ takes {} seconds".format(time.time() - init_t))
-            print("FAISS IVFPQ NNE: {}".format(quality_function(real_indices,I, max_k=K)))
-
+        init_t = time.time()
+        # m=min([x for x in range(1,d) if d%x == 0 and x >= 32])
+        m = 5
+        quantizer = faiss.IndexFlatL2(d)  # this remains the same
+        index = faiss.IndexIVFPQ(quantizer, d, nlist, m, 8)
+                                        # 8 specifies that each sub-vector is encoded as 8 bits
+        index.nprobe = 1              # make comparable with experiment above
+        index.train(xb)
+        index.add(xb)
+        index = faiss.index_cpu_to_gpu(res, 0, index)
+        D, I = index.search(xq, K)     # search
+        print("FAISS IVFPQ takes {} seconds".format(time.time() - init_t))
+        print("FAISS IVFPQ NNE: {}".format(quality_function(real_indices,I, max_k=K)))
     if TEST_IVFPQ10:
         init_t = time.time()
         m = 4
@@ -510,11 +483,5 @@ if __name__ == "__main__":
         knn_result_exp.save()
     
     if save_plot:
-        # knn_result_exp.plot([dataset_name], K, quality_name, dataX,
-        #                     dash_method=["FLATL2"], baseline="IVFFLAT",
-        #                     method_list=["IVFFLAT", "RSFK-Tiles"])
-
-        knn_result_exp.plot(["ATSNE_IMAGENET"], K, quality_name, dataX,
-                            dash_method=["FLATL2"], baseline="IVFFLAT",
-                            method_list=["IVFFLAT", "RSFK-Tiles, NNEF: 1", "RSFK-Tiles"], fig_name="exp4_titanblack.pdf")
-                            # method_list=["IVFFLAT", "RSFK-Tiles"], fig_name="exp4_with_annoy_imagenet.pdf")
+        knn_result_exp.plot(dataset_name, K, quality_name, dataX,
+                            dash_method=["FLATL2"])

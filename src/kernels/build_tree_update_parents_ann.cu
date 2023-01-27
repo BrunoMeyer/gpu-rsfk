@@ -38,6 +38,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "../include/common.h"
 
 __global__
+void build_tree_bucket_points_ann(int* points_parent,
+                                  int* points_depth,
+                                  int* accumulated_nodes_count,
+                                  int* node_idx_to_leaf_idx,
+                                  int* nodes_bucket,
+                                  int* bucket_sizes,
+                                  int N, int max_bucket_size, int total_leafs)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int my_id_on_bucket, parent_id;
+    for(int p = tid; p < N; p+=blockDim.x*gridDim.x){
+        parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
+        my_id_on_bucket = atomicAdd(&bucket_sizes[node_idx_to_leaf_idx[parent_id]], 1);
+        nodes_bucket[node_idx_to_leaf_idx[parent_id]*max_bucket_size + my_id_on_bucket] = p;
+    }
+}
+
+
+__global__
 void check_points_is_leaf(
     int* points_parent,
     int* points_depth,
@@ -185,6 +204,37 @@ RSFK_typepoints euclidean_distance_sqr_coalesced_ann(
     return s;
 }
 
+
+__device__                // NOTE: value returned in register (NO SHM)
+inline                    // function return type CHANGED
+RSFK_typepoints euclidean_distance_sqr_coalesced_ann_regpoint(
+    int pq,
+    int pb,
+    RSFK_typepoints* points_query,
+    RSFK_typepoints* points,
+    int D,
+    int N,
+    int lane)
+{
+    RSFK_typepoints diff;
+    RSFK_typepoints s = 0.0f;
+    
+    int j = 0;
+    for(int i=lane; i < D; i+=32){
+        diff = points_query[j] - points[get_point_idx(pb,i,N,D)];
+        s+=diff*diff;
+        j++;
+    }
+    //atomicAdd(diff_sqd,s);
+    s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32
+    // all lanes have the value, just return it
+    return s;
+}
+
 __global__
 void compute_knn_from_buckets_perwarp_coalesced_ann(
     int* points_parent,
@@ -208,6 +258,9 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
     int knn_id, tmp_knn_id;
     int lane = threadIdx.x % 32; // my id on warp
     
+    // extern __shared__ RSFK_typepoints reg_point [];
+    // RSFK_typepoints reg_point [32];
+    RSFK_typepoints reg_point [8];
 
     #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
     __shared__ RSFK_typepoints candidate_dist_val[1024];
@@ -223,6 +276,10 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
     RSFK_typepoints tmp_max_dist_val;
     
     for(pq = tid/32; pq < NQ; pq+=blockDim.x*gridDim.x/32){
+        for(int i=lane; i < D; i+=RSFK_WarpSize){
+            reg_point[i/RSFK_WarpSize] = points_query[get_point_idx(pq,i,N,D)];
+        }
+
         int bid = query_to_bucket_id[pq];
         current_bucket_size = bucket_size[bid];
         knn_id = pq*K;
@@ -327,7 +384,300 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
                                                 lane,
                                                 &candidate_dist_val[init_warp_on_block+j]);
                 #else
-                tmp_dist_val = euclidean_distance_sqr_coalesced_ann(tmp_p, tmp_candidate, points, points_query, D, N, lane);
+                // tmp_dist_val = euclidean_distance_sqr_coalesced_ann(tmp_p, tmp_candidate, points_query, points, D, N, lane);
+                tmp_dist_val = euclidean_distance_sqr_coalesced_ann_regpoint(tmp_p, tmp_candidate, reg_point, points, D, N, lane);
+                if(lane == j) candidate_dist_val = tmp_dist_val;
+                #endif
+            }
+            // if(candidate_point == -1) continue;
+
+            // If the candidate is closer than the pre-computed furthest point,
+            // switch them
+            // #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+            // if(candidate_dist_val[threadIdx.x] < max_dist_val){
+            // #else
+            // if(candidate_dist_val < max_dist_val){
+            // #endif
+                // knn_indices[max_id_point] = candidate_point;
+                // #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+                // knn_sqr_dist[max_id_point] = candidate_dist_val[threadIdx.x];
+                // #else
+                // knn_sqr_dist[max_id_point] = candidate_dist_val;
+                // #endif
+                // Also update the furthest point that will be used in the next
+                // comparison
+                
+                /*
+                max_id_point = knn_id;
+                max_dist_val = knn_sqr_dist[knn_id];
+                for(j=1; j < K; ++j){
+                    if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                        max_id_point = knn_id+j;
+                        max_dist_val = knn_sqr_dist[knn_id+j];
+                    }
+                }
+                printf("%d %d %f %f %f\n", pq, max_id_point-knn_id, max_dist_val, knn_sqr_dist[knn_id+3], candidate_dist_val);
+                */
+            // }
+            for(j=0; j < 32; ++j){
+                __syncwarp();
+                tmp_candidate = __shfl_sync(0xffffffff, candidate_point, j);
+                if(tmp_candidate == -1) continue;
+                tmp_dist = __shfl_sync(0xffffffff, candidate_dist_val, j);
+                tmp_max_dist_val = __shfl_sync(0xffffffff, max_dist_val, j);
+
+                if(tmp_dist < tmp_max_dist_val){
+                    if(lane == j){
+                        knn_indices[max_id_point] = candidate_point;
+                        knn_sqr_dist[max_id_point] = candidate_dist_val;
+                    }
+                    // if(lane == 0){
+                    //     knn_indices[max_id_point] = tmp_candidate;
+                    //     knn_sqr_dist[max_id_point] = tmp_dist;
+                    // }
+
+                    __syncwarp();
+                    int local_max_position = -1;
+                    float local_max_dist = -1.0f;
+
+                    float tmp_max_dist;
+                    int tmp_max_position;
+                    
+                    // if(lane == 0){
+                    //     for(k=0; k < K; k+=1){
+                    //         if(knn_sqr_dist[tmp_knn_id+k] > local_max_dist){
+                    //             local_max_position = tmp_knn_id+k;
+                    //             local_max_dist = knn_sqr_dist[tmp_knn_id+k];
+                    //         }
+                    //     }
+                    // }
+                    
+                    for(k=lane; k < K; k+=RSFK_WarpSize){
+                        if(knn_sqr_dist[knn_id+k] > local_max_dist){
+                            local_max_position = knn_id+k;
+                            local_max_dist = knn_sqr_dist[knn_id+k];
+                        }
+                    }
+                    
+                    tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  16); // assuming warpSize=32
+                    tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  16); // assuming warpSize=32
+                    if(tmp_max_dist > local_max_dist){
+                        local_max_dist = tmp_max_dist;
+                        local_max_position = tmp_max_position;
+                    }
+                    tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  8); // assuming warpSize=32
+                    tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  8); // assuming warpSize=32
+                    if(tmp_max_dist > local_max_dist){
+                        local_max_dist = tmp_max_dist;
+                        local_max_position = tmp_max_position;
+                    }
+                    tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  4); // assuming warpSize=32
+                    tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  4); // assuming warpSize=32
+                    if(tmp_max_dist > local_max_dist){
+                        local_max_dist = tmp_max_dist;
+                        local_max_position = tmp_max_position;
+                    }
+                    tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  2); // assuming warpSize=32
+                    tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  2); // assuming warpSize=32
+                    if(tmp_max_dist > local_max_dist){
+                        local_max_dist = tmp_max_dist;
+                        local_max_position = tmp_max_position;
+                    }
+                    tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist, 1); // assuming warpSize=32
+                    tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position, 1); // assuming warpSize=32
+                    if(tmp_max_dist > local_max_dist){
+                        local_max_dist = tmp_max_dist;
+                        local_max_position = tmp_max_position;
+                    }
+                    // if(lane == 0 || lane == j){
+                    //     __shfl_down_sync( 0xffffffff, s,  1 );
+                    // }
+
+                    // if(lane == 0){
+                    //     printf("%d %d %d %d %f %f \n", tmp_p, current_bucket_size, max_id_point, local_max_position, max_dist_val, local_max_dist);
+                    // }
+                    max_id_point = __shfl_sync(0xffffffff, local_max_position, 0);
+                    max_dist_val = __shfl_sync(0xffffffff, local_max_dist, 0);
+                    // if(lane == j){
+                        // printf("%d %d %d %d %f %f \n", pq, current_bucket_size, max_id_point, local_max_position, max_dist_val, local_max_dist);
+                        // max_id_point = tmp_max_position;
+                        // max_dist_val = tmp_max_dist;
+                        // printf("%d %d %f %f %f\n", pq, max_id_point-tmp_knn_id, max_dist_val, knn_sqr_dist[knn_id+3], candidate_dist_val);
+                    // }
+                }
+            }
+            
+            
+        }
+    }
+}
+
+
+
+__global__
+void compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves(
+    int* points_parent,
+    int* points_depth,
+    int* accumulated_nodes_count,
+    RSFK_typepoints* points,
+    RSFK_typepoints* points_query,
+    int* query_to_bucket_id,
+    int* node_idx_to_leaf_idx,
+    int* nodes_bucket,
+    int* bucket_size,
+    int* query_nodes_bucket,
+    int* query_bucket_size,
+    int* knn_indices,
+    RSFK_typepoints* knn_sqr_dist,
+    int N, int NQ, int D, int max_bucket_size, int K,
+    int MAX_TREE_CHILD, int total_buckets)
+{
+    int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int parent_id, current_bucket_size, max_id_point, candidate_point;
+    RSFK_typepoints max_dist_val;
+    
+    int knn_id, tmp_knn_id;
+    int lane = threadIdx.x % 32; // my id on warp
+    
+    // extern __shared__ RSFK_typepoints reg_point [];
+    // RSFK_typepoints reg_point [32];
+    RSFK_typepoints reg_point [8];
+
+    #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+    __shared__ RSFK_typepoints candidate_dist_val[1024];
+    int init_warp_on_block = (threadIdx.x/32)*32;
+    #else
+    RSFK_typepoints candidate_dist_val, tmp_dist_val;
+    #endif
+
+    int bid, i, j, k;
+    int pq, _pb, pb;
+    int tmp_candidate, tmp_p;
+    float tmp_dist;
+    RSFK_typepoints tmp_max_dist_val;
+    
+    // TODO: Para cada bloco (folha)
+    int leaf_id = blockIdx.x;
+    current_bucket_size = bucket_size[leaf_id];
+    int current_bucket_size = current_bucket_size[leaf_id];
+    int current_query_bucket_size = query_current_bucket_size[leaf_id];
+
+    for(pq = tid/32; pq < NQ; pq+=blockDim.x*gridDim.x/32){
+
+        // TODO: Para cada ponto da base
+        // Fazer cache a cada 64 pontos da base
+
+            // TODO: Fazer cache do ponto de consulta (registrador)
+            // TODO: Para cada ponto de consulta
+            // Para cada ponto da base cache
+        for(int i=lane; i < D; i+=RSFK_WarpSize){
+            reg_point[i/RSFK_WarpSize] = points_query[get_point_idx(pq,i,N,D)];
+        }
+
+        knn_id = pq*K;
+
+        // parent_id = accumulated_nodes_count[points_depth[p]] + points_parent[p];
+        // current_bucket_size = bucket_size[node_idx_to_leaf_idx[parent_id]];
+
+        max_id_point = knn_id;
+        max_dist_val = knn_sqr_dist[knn_id];
+        // Finds the index of the furthest point from the current result of knn_indices
+        // and the distance between them
+        for(j=1; j < K; ++j){
+            if(knn_sqr_dist[knn_id+j] > max_dist_val){
+                max_id_point = knn_id+j;
+                max_dist_val = knn_sqr_dist[knn_id+j];
+            }
+        }
+        current_bucket_size = bucket_size[bid];
+
+        int local_max_position = -1;
+        float local_max_dist = -1.0f;
+
+        float tmp_max_dist;
+        int tmp_max_position;
+        
+        
+        for(k=lane; k < K; k+=RSFK_WarpSize){
+            if(knn_sqr_dist[knn_id+k] > local_max_dist){
+                local_max_position = knn_id+k;
+                local_max_dist = knn_sqr_dist[knn_id+k];
+            }
+        }
+        
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  16); // assuming warpSize=32
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  16); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  8); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  8); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  4); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  4); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist,  2); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position,  2); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+        tmp_max_dist = __shfl_down_sync( 0xffffffff, local_max_dist, 1); // assuming warpSize=32
+        tmp_max_position = __shfl_down_sync( 0xffffffff, local_max_position, 1); // assuming warpSize=32
+        if(tmp_max_dist > local_max_dist){
+            local_max_dist = tmp_max_dist;
+            local_max_position = tmp_max_position;
+        }
+
+        max_id_point = __shfl_sync(0xffffffff, local_max_position, 0);
+        max_dist_val = __shfl_sync(0xffffffff, local_max_dist, 0);
+
+
+
+        for(_pb = lane; __any_sync(__activemask(), _pb < current_bucket_size); _pb+=32){
+            candidate_point = -1;
+
+            if(_pb < current_bucket_size){
+                pb = nodes_bucket[bid*max_bucket_size + _pb];
+                // candidate_point = nodes_bucket[node_idx_to_leaf_idx[parent_id]*max_bucket_size + i];
+                candidate_point = pb;
+                
+                // Verify if the candidate point (inside the bucket of current point)
+                // already is in the knn_indices result
+                for(j=0; j < K; ++j){
+                    if(candidate_point == knn_indices[knn_id+j]){
+                        candidate_point = -1;
+                        break;
+                    }
+                }
+                // If it is, then it doesnt need to be treated, then go to
+                // the next iteration and wait the threads from same warp to goes on
+            }
+            
+
+            #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+            candidate_dist_val[threadIdx.x] = 0.0f;
+            #endif
+
+            for(j=0; j < 32; ++j){
+                __syncwarp();
+                tmp_candidate = __shfl_sync(0xffffffff, candidate_point, j);
+                if(tmp_candidate == -1) continue;
+                tmp_p = __shfl_sync(0xffffffff, pq, j);
+                #if RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_NOATOMIC_NOSHM && RSFK_EUCLIDEAN_DISTANCE_VERSION!=RSFK_EDV_WARP_REDUCE_XOR_NOSHM
+                euclidean_distance_sqr_coalesced_ann(tmp_candidate, tmp_p, points, D, N,
+                                                lane,
+                                                &candidate_dist_val[init_warp_on_block+j]);
+                #else
+                // tmp_dist_val = euclidean_distance_sqr_coalesced_ann(tmp_p, tmp_candidate, points_query, points, D, N, lane);
+                tmp_dist_val = euclidean_distance_sqr_coalesced_ann_regpoint(tmp_p, tmp_candidate, reg_point, points, D, N, lane);
                 if(lane == j) candidate_dist_val = tmp_dist_val;
                 #endif
             }

@@ -193,7 +193,7 @@ if __name__ == "__main__":
     # export_csv_name = "knn_experiment3_var_datasets_dividek.csv"
     # for dataset_name in df_index:
 
-    # df_index = [32,64,128,256,512]
+    df_index = [32,64,128,256]
     # df_index = [128]
     # df_index = [256]
     # df_index = [512]
@@ -203,12 +203,12 @@ if __name__ == "__main__":
     
     # export_csv_name = "knn_experiment3_var_ndim_dividek.csv"
     # export_csv_name = "knn_experiment3_var_ndim_pertile_1024_1.csv"
-    # export_csv_name = "knn_experiment3_var_ndim_pertile_512_2.csv"
+    export_csv_name = "knn_experiment3_var_ndim_pertile_512_2.csv"
     # export_csv_name = "knn_experiment3_var_ndim_predistnolock.csv"
 
     for ndim in df_index:
     
-    # df_index = [2**17, 2**18, 2**19, 2**20, 2**21]
+    # df_index = [2**17, 2**18, 2**19, 2**20]
     # export_csv_name = "knn_experiment3_var_npoints_dividek.csv"
     # export_csv_name = "knn_experiment3_var_npoints_pertile_1024_1.csv"
     # export_csv_name = "knn_experiment3_var_npoints_pertile_512_2.csv"
@@ -367,9 +367,9 @@ if __name__ == "__main__":
     df_data[:, -2] = np.array(time_list)
     df_data[:, -1] = np.array(quality_list)
     
-    np.set_printoptions(suppress=True)
-    print(list(zip(df_columns[60:], df_data[:, 60:].T)))
-    exit()
+    # np.set_printoptions(suppress=True)
+    # print(list(zip(df_columns[60:], df_data[:, 60:].T)))
+    # exit()
     # pprint.pprint(df_data[:, df_columns=="Check Points Side Time (sum)"], width=1)
 
     df = pd.DataFrame(df_data, columns=df_columns, index=df_index)

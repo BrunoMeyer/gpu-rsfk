@@ -166,7 +166,8 @@ class KnnResult(object):
         font_default = {
             # 'family' : 'normal',
             # 'weight' : 'bold',
-            'size'   : 19
+            # 'size'   : 19
+            'size'   : 14
         }
 
         matplotlib.rc('xtick', labelsize=16) 
@@ -182,7 +183,7 @@ class KnnResult(object):
 
         
         if fig_name is None:
-            fig_name = "{}_{}".format(quality_name,"_".join(dataset_list))+str(self._experiment_name)+"_K{}".format(K)
+            fig_name = "{}_{}".format(quality_name,"_".join(dataset_list))+str(self._experiment_name)+"_K{}.pdf".format(K)
 
         
 
@@ -208,7 +209,9 @@ class KnnResult(object):
             ivfflat_x = None
             ivfflat_y = None
 
-            dataX, dataY = load_dataset(dataset_name)
+            if dataX is None:
+                dataX, dataY = load_dataset(dataset_name)
+            
             dataset_size = len(dataX)
 
             legend_namelist = []
@@ -228,12 +231,26 @@ class KnnResult(object):
                 for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
                     # legend_name = str(knn_method_name)+" ({})".format(parameter_name)
                     legend_name = str(knn_method_name)
+                    
                     if len(dataset_list) > 1:
                         legend_name = "({}) ".format(dataset_name) + legend_name
                     
+                    # legend_name = "({}) ".format(dataset_name) + legend_name
+                    
                     if knn_method_name == "IVFFLAT":
                         legend_name = legend_name.replace("IVFFLAT", "FAISS IVFFLAT")
+                    if knn_method_name == "IVFPQ":
+                        legend_name = legend_name.replace("IVFPQ", "FAISS IVFPQ")
+                    if knn_method_name == "FLATL2":
+                        legend_name = legend_name.replace("FLATL2", "FAISS FLATL2")
+                    
+                    if "RSFK-Tiles" in knn_method_name:
+                        legend_name = legend_name.replace("RSFK-Tiles", "w-KNNG-Tiles")
 
+                    if "ANNOY" == knn_method_name:
+                        legend_name = "ANNOY (CPU)"
+
+                    legend_name = legend_name.replace("GOOGLE_NEWS300_3000000", "GoogleNews300")
                     legend_name = legend_name.replace("GOOGLE_NEWS300", "GoogleNews300")
                     legend_name = legend_name.replace("AMAZON_REVIEW_ELETRONICS", "Amazon Electronics")
                     legend_name = legend_name.replace("LUCID_INCEPTION", "Lucid Inception")
@@ -252,6 +269,7 @@ class KnnResult(object):
 
                     
 
+                    
                     time_list = dataset_size/time_list
                     
                     croped_point = None
@@ -268,7 +286,7 @@ class KnnResult(object):
                     curve_x = np.array(quality_list[idx])
                     curve_y = np.array(time_list[idx])
 
-                    if (not baseline is None) and (not ivfflat_x is None):
+                    if (not baseline is None) and (not ivfflat_x is None) and (max(quality_list) > max(ivfflat_x)):
                         new_point_x = [max(ivfflat_x)]
                         new_point_y = get_projection(curve_x, curve_y, new_point_x)
 
@@ -306,9 +324,11 @@ class KnnResult(object):
                         
                         # legend_name = str(knn_method_name)+" ({})".format(parameter_name)
                         legend_name = str(knn_method_name)
+                        
                         if len(dataset_list) > 1:
                             legend_name = "({}) ".format(dataset_name) + legend_name
 
+                        legend_name = legend_name.replace("GOOGLE_NEWS300_3000000", "GoogleNews300")
                         legend_name = legend_name.replace("GOOGLE_NEWS300", "GoogleNews300")
                         legend_name = legend_name.replace("AMAZON_REVIEW_ELETRONICS", "Amazon Electronics")
                         legend_name = legend_name.replace("LUCID_INCEPTION", "Lucid Inception")
@@ -339,16 +359,19 @@ class KnnResult(object):
                         curve_x = np.array(quality_list[idx])
                         curve_y = np.array(time_list[idx])
 
-                        if (not baseline is None) and (not ivfflat_x is None):
+                        if (not baseline is None) and (not ivfflat_x is None) and (max(curve_x) > max(ivfflat_x)):
                             new_point_x = [max(ivfflat_x)]
                             new_point_y = get_projection(curve_x, curve_y, new_point_x)
 
                             curve_x = np.concatenate((curve_x, np.array(new_point_x)))
                             curve_y = np.concatenate((curve_y, np.array(new_point_y)))
+
                             
                         # '''
-                        fill_quality = np.arange(0.2,0.95,0.1)
-                        fill_quality = np.concatenate((fill_quality,np.array([max(ivfflat_x)])))
+                        fill_quality = np.arange(0.2,min(np.max(curve_x),0.95),0.1)
+
+                        if (max(curve_x) > max(ivfflat_x)):
+                            fill_quality = np.concatenate((fill_quality,np.array([max(ivfflat_x)])))
                         
                         proj = get_projection(ivfflat_x, ivfflat_y_total_time, fill_quality)
                         fill_proj = proj[proj != None]
@@ -357,7 +380,10 @@ class KnnResult(object):
                         fill_proj2 = proj2[proj != None]
 
                         fill_quality = fill_quality[proj != None]
-                        
+
+                        # print(fill_proj)
+                        # print(fill_proj2)
+                        # print("")
                         speedup = fill_proj/fill_proj2
                         # '''
 
@@ -378,7 +404,6 @@ class KnnResult(object):
                         
                         
                         
-
                         for i,x in enumerate(fill_quality):
                             if x <= max(ivfflat_x):
                                 ax.annotate("{:.2f}".format(speedup[i]), (x, fill_proj2[i]), bbox=bbox_args)
@@ -416,10 +441,12 @@ class KnnResult(object):
 
             # fig.legend()
 
-            legend_curveslist.append(ax.plot([], [], label="speedup ")[0])
+            # legend_curveslist.append(ax.plot([], [], label=" ")[0])
+            # legend_curveslist.append(ax.plot([], [], label="Speedups over FAISS")[0])
             first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 11})
             # Add the legend manually to the current Axes.
             plt.gca().add_artist(first_legend)
+
             # ax = plt.gca().add_artist(first_legend)
             # WORKAROUND
             
@@ -466,8 +493,10 @@ class KnnResult(object):
 
 
 
-        ax.set_xlabel('K-NNG Accuracy')
-        ax.set_ylabel('Average of points treated per second')
+        # ax.set_xlabel('K-NNG Accuracy')
+        # ax.set_ylabel('Average of points treated per second')
+        ax.set_xlabel('Acurácia')
+        ax.set_ylabel('Média de pontos processados por segundo')
         # ax1.set_title('a sine wave')
         fig_title  = "{}-Nearest Neighbors".format(K)
         ax.set_yscale('log')
@@ -499,7 +528,7 @@ class KnnResult(object):
         
         # ax.set_title(fig_title)
         
-        fig.savefig("{}.pdf".format(fig_name))
+        fig.savefig(fig_name)
 
     def export_time_accuracy_to_csv(self, dataset_list, K, quality_name, dataX=None, 
              dash_method=[], fig_name=None, ignore_outliers=True, baseline=None, method_list=None, sheet_name="plot_data.xls"):
@@ -561,7 +590,11 @@ class KnnResult(object):
                     
                     if knn_method_name == "IVFFLAT":
                         legend_name = legend_name.replace("IVFFLAT", "FAISS IVFFLAT")
-
+                    if knn_method_name == "IVFPQ":
+                        legend_name = legend_name.replace("IVFPQ", "FAISS IVFPQ")
+                    if knn_method_name == "FLATL2":
+                        legend_name = legend_name.replace("FLATL2", "FAISS FLATL2")
+                        
                     legend_name = legend_name.replace("GOOGLE_NEWS300", "GoogleNews300")
                     legend_name = legend_name.replace("AMAZON_REVIEW_ELETRONICS", "Amazon Electronics")
                     legend_name = legend_name.replace("LUCID_INCEPTION", "Lucid Inception")

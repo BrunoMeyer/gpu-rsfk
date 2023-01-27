@@ -135,11 +135,21 @@ void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
     total_ann.stop();
 
 
-    std::cout << "allocate_copy_points: " << (float)(allocate_copy_points.t_total/1000) << " seconds" << std::endl;
-    std::cout << "allocate_copy_knn: " << (float)(allocate_copy_knn.t_total/1000) << " seconds" << std::endl;
-    std::cout << "copy_knn: " << (float)(copy_knn.t_total/1000) << " seconds" << std::endl;
-    std::cout << "total_ann: " << (float)(total_ann.t_total/1000) << " seconds" << std::endl;
+    if(VERBOSE > 1){
+        std::cout << "Allocate+copy points takes: " << (float)(allocate_copy_points.t_total/1000) << " seconds" << std::endl;
+        std::cout << "Allocate+copy KNN takes: " << (float)(allocate_copy_knn.t_total/1000) << " seconds" << std::endl;
+        std::cout << "Copy KNN takes: " << (float)(copy_knn.t_total/1000) << " seconds" << std::endl;
+        // std::cout << "total_ann: " << (float)(total_ann.t_total/1000) << " seconds" << std::endl;
+    }
 
+    device_points.clear();
+    device_points.shrink_to_fit();
+    device_query_points.clear();
+    device_query_points.shrink_to_fit();
+    device_knn_indices.clear();
+    device_knn_indices.shrink_to_fit();
+    device_knn_sqr_distances.clear();
+    device_knn_sqr_distances.shrink_to_fit();
 
 }
 
@@ -154,20 +164,21 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     std::string run_name,
     RSFKIndexTree* rsfkindextree)
 {
-    Cron init_tree_cron, end_tree_cron, total_tree_build_cron, check_active_points_cron,
+    Cron allocate_structures_query_traversal, tree_bucket_construction, end_tree_cron, total_tree_build_cron, check_active_points_cron,
          update_parents_cron, create_nodes_cron, check_points_side_cron, tree_count_cron,
          organize_sample_candidate_cron, dynamic_memory_allocation_cron;
     
     //TODO: Measure time and identify bottleneck
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
+    cudaError_t err;
 
-    init_tree_cron.start();
-
+    tree_bucket_construction.start();
     tinfo = create_bucket_from_sample_tree(
         device_points, N, D, VERBOSE, forest_log, run_name, false, rsfkindextree);
-    
-    cudaError_t err;
+    tree_bucket_construction.stop();
+
+    allocate_structures_query_traversal.start();
     // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()), rsfkindextree->reached_max_depth);
     // err = cudaGetLastError();
     // if ( err != cudaSuccess )
@@ -228,6 +239,7 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     // Total of points that are not already in a leaf (bucket)
     thrust::device_vector<int> device_active_points_count(1, 0);
 
+    allocate_structures_query_traversal.stop();
 
     // Automatically get the ideal number of threads per block and total of blocks
     // used in kernels
@@ -248,7 +260,6 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     }
 
     
-    init_tree_cron.stop();
     total_tree_build_cron.start();
     int depth, count_new_nodes, count_total_nodes, reached_max_depth;
     
@@ -377,6 +388,20 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     // }
     
     thrust::device_vector<int> device_query_to_bucket_id(NQ, -1);
+
+
+    thrust::device_vector<int>* device_nodes_buckets = new thrust::device_vector<int>(total_leaves*max_child, -1);
+    thrust::device_vector<int>* device_bucket_sizes = new thrust::device_vector<int>(total_leaves, 0);
+    
+    build_tree_bucket_points<<<NB,NT>>>(thrust::raw_pointer_cast(device_points_parent.data()),
+                                        thrust::raw_pointer_cast(device_points_depth.data()),
+                                        thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()),
+                                        thrust::raw_pointer_cast(rsfkindextree->device_node_idx_to_leaf_idx->data()),
+                                        thrust::raw_pointer_cast(device_nodes_buckets->data()),
+                                        thrust::raw_pointer_cast(device_bucket_sizes->data()),
+                                        N, max_child, total_leaves);
+    
+
     compute_bucket_for_query_points<<<NB,NT>>>(
         thrust::raw_pointer_cast(device_points_parent.data()),
         thrust::raw_pointer_cast(device_points_depth.data()),
@@ -391,7 +416,24 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
 
     Cron knn_ann;
     knn_ann.start();
-    compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT>>>(
+    // // compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT>>>(
+    // compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
+    //     thrust::raw_pointer_cast(rsfkindextree->device_points_parent->data()),
+    //     thrust::raw_pointer_cast(device_points_depth.data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()),
+    //     thrust::raw_pointer_cast(device_points.data()),
+    //     thrust::raw_pointer_cast(device_query_points.data()),
+    //     thrust::raw_pointer_cast(device_query_to_bucket_id.data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_node_idx_to_leaf_idx->data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_nodes_buckets->data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_bucket_sizes->data()),
+    //     thrust::raw_pointer_cast(device_knn_indices.data()),
+    //     thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+    //     N, NQ, D, rsfkindextree->max_child, K,
+    //     rsfkindextree->MAX_TREE_CHILD, rsfkindextree->total_leaves
+    // );
+
+    compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves<<<rsfkindextree->total_leaves, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
         thrust::raw_pointer_cast(rsfkindextree->device_points_parent->data()),
         thrust::raw_pointer_cast(device_points_depth.data()),
         thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()),
@@ -409,9 +451,12 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     cudaDeviceSynchronize();
     CudaTest((char *)"compute_bucket_for_query_points Kernel failed!");
     knn_ann.stop();
-    std::cout << "init_tree_cron: " << (float)(init_tree_cron.t_total/1000) << " seconds" << std::endl;
-    std::cout << "total_tree_build_cron: " << (float)(total_tree_build_cron.t_total/1000) << " seconds" << std::endl;
-    std::cout << "compute_knn_from_buckets_perwarp_coalesced_ann: " << (float)(knn_ann.t_total/1000) << " seconds" << std::endl;
+
+    if(VERBOSE > 1){
+        std::cout << "Build tree+buckets takes: " << (float)(tree_bucket_construction.t_total/1000) << " seconds" << std::endl;
+        std::cout << "Allocate query structures takes: " << (float)(allocate_structures_query_traversal.t_total/1000) << " seconds" << std::endl;
+        std::cout << "Update KNN of query points takes: " << (float)(knn_ann.t_total/1000) << " seconds" << std::endl;
+    }
         // do 
     // {
     // std::cout << '\n' << "Press a key to continue...";
@@ -421,6 +466,31 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     // cudaDeviceSynchronize();
     // CudaTest((char *)"build_tree_utils Kernel failed!");
     
+    rsfkindextree->free();
+
+    device_points_parent.clear();
+    device_points_parent.shrink_to_fit();
+    device_points_depth.clear();
+    device_points_depth.shrink_to_fit();
+    device_is_right_child.clear();
+    device_is_right_child.shrink_to_fit();
+    device_sample_candidate_points.clear();
+    device_sample_candidate_points.shrink_to_fit();
+    device_points_id_on_sample.clear();
+    device_points_id_on_sample.shrink_to_fit();
+    device_active_points.clear();
+    device_active_points.shrink_to_fit();
+    device_accumulated_nodes_count.clear();
+    device_accumulated_nodes_count.shrink_to_fit();
+    device_count_new_nodes.clear();
+    device_count_new_nodes.shrink_to_fit();
+    device_actual_depth.clear();
+    device_actual_depth.shrink_to_fit();
+    device_active_points_count.clear();
+    device_active_points_count.shrink_to_fit();
+    device_query_to_bucket_id.clear();
+    device_query_to_bucket_id.shrink_to_fit();
+
     end_tree_cron.stop();
 
 }
@@ -983,6 +1053,11 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
         device_leaf_idx_to_node_idx->shrink_to_fit();
         device_node_idx_to_leaf_idx->clear();
         device_node_idx_to_leaf_idx->shrink_to_fit();
+        device_nodes_buckets->clear();
+        device_nodes_buckets->shrink_to_fit();
+        device_bucket_sizes->clear();
+        device_bucket_sizes->shrink_to_fit();
+        
         device_points_parent->clear();
         device_points_parent->shrink_to_fit();
         device_points_depth->clear();
@@ -1004,6 +1079,8 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
         device_count_new_nodes->shrink_to_fit();
         device_actual_depth->clear();
         device_actual_depth->shrink_to_fit();
+        device_active_points->clear();
+        device_active_points->shrink_to_fit();
         
         device_max_leaf_size->clear();
         device_max_leaf_size->shrink_to_fit();
@@ -1064,10 +1141,13 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
         rsfkindextree->device_nodes_buckets = device_nodes_buckets;
         rsfkindextree->device_bucket_sizes = device_bucket_sizes;
 
-
         rsfkindextree->reached_max_depth = reached_max_depth;
         rsfkindextree->total_leaves = total_leaves;
         rsfkindextree->max_child = max_child;
+
+        rsfkindextree->device_max_leaf_size = device_max_leaf_size;
+        rsfkindextree->device_min_leaf_size = device_min_leaf_size;
+        rsfkindextree->device_total_leaves = device_total_leaves;
     }
 
     // do 

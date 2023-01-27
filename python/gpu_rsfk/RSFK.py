@@ -376,8 +376,7 @@ class RSFK(object):
         ensure_valid_indices=True,
         add_bit_random_motion=False,
         random_motion_force=1.0,
-        nn_exploring_factor=-1,
-        point_in_self_neigh=True):
+        nn_exploring_factor=-1):
         """Creation of the K-NNG from a set of points.
 
         Parameters
@@ -482,12 +481,13 @@ class RSFK(object):
         query_points = np.require(query_points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
         
         init_knn_indices = np.full((NQ,K), -1)
-        if point_in_self_neigh:
-            init_knn_indices[:,0] = np.arange(NQ)
-        
         init_squared_dist = np.full((NQ,K), np.inf)
-        if point_in_self_neigh:
-            init_squared_dist[:,0] = np.zeros(NQ)
+
+        # if point_in_self_neigh:
+        #     init_knn_indices[:,0] = np.arange(NQ)
+        
+        # if point_in_self_neigh:
+        #     init_squared_dist[:,0] = np.zeros(NQ)
 
         knn_indices = np.require(init_knn_indices, np.int32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         knn_squared_dist = np.require(init_squared_dist, np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])

@@ -115,6 +115,10 @@ public:
     thrust::device_vector<int>* device_node_idx_to_leaf_idx;
     thrust::device_vector<int>* device_nodes_buckets;
     thrust::device_vector<int>* device_bucket_sizes;
+    
+    thrust::device_vector<int>* device_max_leaf_size;
+    thrust::device_vector<int>* device_min_leaf_size;
+    thrust::device_vector<int>* device_total_leaves;
 
     int total_leaves;
     int max_child;
@@ -151,6 +155,10 @@ public:
         device_nodes_buckets = nullptr;
         device_bucket_sizes = nullptr;
 
+        device_max_leaf_size = nullptr;
+        device_min_leaf_size = nullptr;
+        device_total_leaves = nullptr;
+
         total_leaves = -1;
         max_child = -1;
         reached_max_depth = -1;
@@ -158,6 +166,71 @@ public:
         MAX_TREE_CHILD = -1;
         total_buckets = -1;
         
+    }
+
+    void free(){
+        device_leaf_idx_to_node_idx->clear();
+        device_leaf_idx_to_node_idx->shrink_to_fit();
+        device_node_idx_to_leaf_idx->clear();
+        device_node_idx_to_leaf_idx->shrink_to_fit();
+        device_nodes_buckets->clear();
+        device_nodes_buckets->shrink_to_fit();
+        device_bucket_sizes->clear();
+        device_bucket_sizes->shrink_to_fit();
+        device_points_parent->clear();
+        device_points_parent->shrink_to_fit();
+        device_points_depth->clear();
+        device_points_depth->shrink_to_fit();
+        device_is_right_child->clear();
+        device_is_right_child->shrink_to_fit();
+        device_sample_candidate_points->clear();
+        device_sample_candidate_points->shrink_to_fit();
+        device_points_id_on_sample->clear();
+        device_points_id_on_sample->shrink_to_fit();
+
+        device_depth_level_count->clear();
+        device_depth_level_count->shrink_to_fit();
+        device_accumulated_nodes_count->clear();
+        device_accumulated_nodes_count->shrink_to_fit();
+        device_tree_count->clear();
+        device_tree_count->shrink_to_fit();
+        device_count_new_nodes->clear();
+        device_count_new_nodes->shrink_to_fit();
+        device_actual_depth->clear();
+        device_actual_depth->shrink_to_fit();
+        
+        device_max_leaf_size->clear();
+        device_max_leaf_size->shrink_to_fit();
+        device_min_leaf_size->clear();
+        device_min_leaf_size->shrink_to_fit();
+        device_total_leaves->clear();
+        device_total_leaves->shrink_to_fit();
+        device_active_points->clear();
+        device_active_points->shrink_to_fit();
+
+        for(int depth=0; depth < reached_max_depth; ++depth){
+            // Random Projection Forest
+            // device_random_directions[depth]->clear();
+            // device_random_directions[depth]->shrink_to_fit();
+            // device_min_random_proj_values[depth]->clear();
+            // device_min_random_proj_values[depth]->shrink_to_fit();
+            // device_max_random_proj_values[depth]->clear();
+            // device_max_random_proj_values[depth]->shrink_to_fit();
+            device_tree[depth]->clear();
+            device_tree[depth]->shrink_to_fit();
+            device_tree_parents[depth]->clear();
+            device_tree_parents[depth]->shrink_to_fit();
+            device_tree_children[depth]->clear();
+            device_tree_children[depth]->shrink_to_fit();
+            device_is_leaf[depth]->clear();
+            device_is_leaf[depth]->shrink_to_fit();
+            device_child_count[depth]->clear();
+            device_child_count[depth]->shrink_to_fit();
+            device_accumulated_child_count[depth]->clear();
+            device_accumulated_child_count[depth]->shrink_to_fit();
+            device_count_points_on_leaves[depth]->clear();
+            device_count_points_on_leaves[depth]->shrink_to_fit();
+        }
     }
 
     // void update_knn_indice_with_buckets(thrust::device_vector<RSFK_typepoints> &device_points,
