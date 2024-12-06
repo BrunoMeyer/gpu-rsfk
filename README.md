@@ -28,7 +28,6 @@ Please cite the corresponding papers if it was useful for your research:
   publisher={ACM New York, NY}
 }
 
-```bibtex
 @inproceedings{meyer2021warp,
   title={Warp-centric k-nearest neighbor graphs construction on GPU},
   author={Meyer, Bruno and Pozo, Aurora and Nunan Zola, Wagner M},
