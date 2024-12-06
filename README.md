@@ -7,24 +7,26 @@ This project presents a CUDA implementation of the Random Sample Forest KNN (RSF
 Please cite the corresponding papers if it was useful for your research:
 
 ```bibtex
-@article{10.1145/3447779,
-author = {Meyer, Bruno Henrique and Pozo, Aurora Trinidad Ramirez and Zola, Wagner M. Nunan},
-title = {Improving Barnes-Hut t-SNE Algorithm&nbsp;in Modern GPU Architectures with Random Forest KNN and Simulated Wide-Warp},
-year = {2021},
-issue_date = {October 2021},
-publisher = {Association for Computing Machinery},
-address = {New York, NY, USA},
-volume = {17},
-number = {4},
-issn = {1550-4832},
-url = {https://doi.org/10.1145/3447779},
-doi = {10.1145/3447779},
-month = {jun},
-articleno = {53},
-numpages = {26},
-keywords = {t-Distributed Stochastic Neighbor Embedding, K-Nearest Neighbors, Random Forest, KNN, t-SNE, Barnes-Hut, GPU}
+@article{meyer2022global,
+  title={Global and local structure preserving GPU t-SNE methods for large-scale applications},
+  author={Meyer, Bruno Henrique and Pozo, Aurora Trinidad Ramirez and Zola, Wagner M Nunan},
+  journal={Expert Systems with Applications},
+  volume={201},
+  pages={116918},
+  year={2022},
+  publisher={Elsevier}
 }
-```
+
+@article{meyer2021improving,
+  title={Improving barnes-hut t-sne algorithm in modern gpu architectures with random forest knn and simulated wide-warp},
+  author={Meyer, Bruno Henrique and Pozo, Aurora Trinidad Ramirez and Zola, Wagner M Nunan},
+  journal={ACM Journal on Emerging Technologies in Computing Systems (JETC)},
+  volume={17},
+  number={4},
+  pages={1--26},
+  year={2021},
+  publisher={ACM New York, NY}
+}
 
 ```bibtex
 @inproceedings{meyer2021warp,
