@@ -4,9 +4,9 @@ This project presents a CUDA implementation of the Random Sample Forest KNN (RSF
 
 # Citation
 
-Please cite the corresponding paper if it was useful for your research:
+Please cite the corresponding papers if it was useful for your research:
 
-```
+```bibtex
 @article{10.1145/3447779,
 author = {Meyer, Bruno Henrique and Pozo, Aurora Trinidad Ramirez and Zola, Wagner M. Nunan},
 title = {Improving Barnes-Hut t-SNE Algorithm&nbsp;in Modern GPU Architectures with Random Forest KNN and Simulated Wide-Warp},
@@ -19,12 +19,20 @@ number = {4},
 issn = {1550-4832},
 url = {https://doi.org/10.1145/3447779},
 doi = {10.1145/3447779},
-abstract = {The t-Distributed Stochastic Neighbor Embedding (t-SNE) is a widely used technique for dimensionality reduction but is limited by its scalability when applied to large datasets. Recently, BH-tSNE was proposed; this is a successful approximation that transforms a step of the original algorithm into an N-Body simulation problem that can be solved by a modified Barnes-Hut algorithm. However, this improvement still has limitations to process large data volumes (millions of records). Late studies, such as t-SNE-CUDA, have used GPUs to implement highly parallel BH-tSNE. In this research we have developed a new GPU BH-tSNE implementation that produces the embedding of multidimensional data points into three-dimensional space. We examine scalability issues in two of the most expensive steps of GPU BH-tSNE by using efficient memory access strategies , recent acceleration techniques , and a new approach to compute the KNN graph structure used in BH-tSNE with GPU. Our design allows up to 460\% faster execution when compared to the t-SNE-CUDA implementation. Although our SIMD acceleration techniques were used in a modern GPU setup, we have also verified a potential for applications in the context of multi-core processors.},
-journal = {J. Emerg. Technol. Comput. Syst.},
 month = {jun},
 articleno = {53},
 numpages = {26},
 keywords = {t-Distributed Stochastic Neighbor Embedding, K-Nearest Neighbors, Random Forest, KNN, t-SNE, Barnes-Hut, GPU}
+}
+```
+
+```bibtex
+@inproceedings{meyer2021warp,
+  title={Warp-centric k-nearest neighbor graphs construction on GPU},
+  author={Meyer, Bruno and Pozo, Aurora and Nunan Zola, Wagner M},
+  booktitle={50th International Conference on Parallel Processing Workshop},
+  pages={1--10},
+  year={2021}
 }
 ```
 
