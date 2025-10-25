@@ -32,52 +32,39 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __COMMON_RSFK__H
-#define __COMMON_RSFK__H
+#ifndef __BUILD_TREE_UPDATE_PARENTS_ANN__H
+#define __BUILD_TREE_UPDATE_PARENTS_ANN__H
 
-#define RSFK_typepoints float
+#include "../../kernels/build_tree_update_parents_ann.cu"
 
-// Lines per column
-#define RSFK_N_D 0
+__global__
+void
+build_tree_utils_ann(int* actual_depth,
+                 int* depth_level_count,
+                 int* count_new_nodes,
+                 int* tree_count,
+                 int* accumulated_nodes_count,
+                 int* device_active_points_count);
 
-// Columns 
-#define RSFK_D_N 1
-
-#define RSFK_POINTS_STRUCTURE RSFK_N_D
-#define RSFK_TREE_STRUCTURE RSFK_N_D
-
-#if   RSFK_POINTS_STRUCTURE == RSFK_D_N
-    #define get_point_idx(point,dimension,N,D) (dimension*N+point)
-#elif RSFK_POINTS_STRUCTURE == RSFK_N_D
-    // #define get_point_idx(point,dimension,N,D) (point*(D+20)+dimension)
-    #define get_point_idx(point,dimension,N,D) (point*D+dimension)
-#endif
-
-#if   RSFK_TREE_STRUCTURE == RSFK_D_N
-    #define get_tree_idx(nidx,dimension,N,D) (dimension*N+nidx)
-#elif RSFK_TREE_STRUCTURE == RSFK_N_D
-    // #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+19+1)+dimension)
-    #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+1)+dimension)
-#endif
-
-
-// EDV = EUCLIDIEAN DISTANCE VERSION
-#define RSFK_EDV_ATOMIC_OK               0
-#define RSFK_EDV_ATOMIC_CSE              1   // common subexpression elimination
-#define RSFK_EDV_NOATOMIC                2
-#define RSFK_EDV_NOATOMIC_NOSHM          3   // value returned in register (NO SHM)
-#define RSFK_EDV_WARP_REDUCE_XOR         4
-#define RSFK_EDV_WARP_REDUCE_XOR_NOSHM   5   // value returned in register (NO SHM)
-
-#define RSFK_EUCLIDEAN_DISTANCE_VERSION RSFK_EDV_WARP_REDUCE_XOR_NOSHM
-
-
-#define RSFK_RELEASE 0
-#define RSFK_DEBUG 1
-#define RSFK_COMPILE_TYPE RSFK_RELEASE
-
-
-#define RSFK_WarpSize 32
-#define RSFK_TILE_SIZE 32
+__global__
+void build_tree_update_parents_ann(
+    RSFK_typepoints* tree,
+    int* tree_parents,
+    int* tree_children,
+    int* points_parent,
+    int* points_depth,
+    int* is_right_child,
+    bool* is_leaf,
+    bool* is_leaf_new_depth,
+    int* child_count,
+    int* child_count_new_depth,
+    RSFK_typepoints* points,
+    int* actual_depth,
+    int* tree_count,
+    int* depth_level_count,
+    int* count_new_nodes,
+    int N, int D,
+    int MIN_TREE_CHILD, int MAX_TREE_CHILD,
+    bool is_last_level);
 
 #endif

@@ -67,11 +67,40 @@ void create_root(RSFK_typepoints* tree,
     }
 }
 
+// __device__
+// inline
+// void create_node(int parent,
+//                  int is_right_child,
+//                  RSFK_typepoints* tree,
+//                  int* tree_parents,
+//                  int* tree_children,
+//                  int* tree_count,
+//                  int* count_new_nodes,
+//                  int p1,
+//                  int p2,
+//                  RSFK_typepoints* points,
+//                  int D, int N)
+// {
+//     // Average point
+//     // node_path*D*2 : D*2 = size of centroid point and normal vector
+
+//     int node_idx = atomicAdd(tree_count, 1);
+//     tree_parents[node_idx] = parent;
+    
+//     tree_children[2*parent+is_right_child] = node_idx;
+//     int i;
+
+//     RSFK_typepoints s = 0.0f;
+//     for(i=0; i < D; ++i){
+//         tree[get_tree_idx(node_idx,i,*count_new_nodes,D)] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
+//         s+= tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 
+//     }
+//     tree[get_tree_idx(node_idx,D,*count_new_nodes,D)] = s;
+// }
+
 __device__
 inline
-void create_node(int parent,
-                 int is_right_child,
-                 RSFK_typepoints* tree,
+void create_node(RSFK_typepoints* tree,
                  int* tree_parents,
                  int* tree_children,
                  int* tree_count,
@@ -79,23 +108,31 @@ void create_node(int parent,
                  int p1,
                  int p2,
                  RSFK_typepoints* points,
-                 int D, int N)
+                 int D, int N,
+                 int node_idx,
+                 int tidw)
 {
     // Average point
     // node_path*D*2 : D*2 = size of centroid point and normal vector
 
-    int node_idx = atomicAdd(tree_count, 1);
-    tree_parents[node_idx] = parent;
-    
-    tree_children[2*parent+is_right_child] = node_idx;
-    int i;
+    register RSFK_typepoints tmp1;
+    register RSFK_typepoints tmp2;
 
     RSFK_typepoints s = 0.0f;
-    for(i=0; i < D; ++i){
-        tree[get_tree_idx(node_idx,i,*count_new_nodes,D)] = points[get_point_idx(p1,i,N,D)]-points[get_point_idx(p2,i,N,D)];
-        s+= tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*(points[get_point_idx(p1,i,N,D)]+points[get_point_idx(p2,i,N,D)])/2; // multiply the point of plane and the normal vector 
+    for(int i=tidw; i < D; i+=32){
+        tmp1 = points[get_point_idx(p1,i,N,D)];
+        tmp2 = points[get_point_idx(p2,i,N,D)];
+        tree[get_tree_idx(node_idx,i,*count_new_nodes,D)] = tmp1-tmp2;
+        s+= tree[get_tree_idx(node_idx,i,*count_new_nodes,D)]*(tmp1+tmp2)/2; // multiply the point of plane and the normal vector 
     }
-    tree[get_tree_idx(node_idx,D,*count_new_nodes,D)] = s;
-}
+    
+    s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+    s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32
 
+    tree[get_tree_idx(node_idx,D,*count_new_nodes,D)] = s;
+    __syncwarp();
+}
 #endif

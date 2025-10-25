@@ -150,11 +150,8 @@ void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
 
 // Assign a bucket (leaf in the tree) to each warp and a point to each thread (persistent kernel)
 __global__
-void compute_knn_from_buckets_pertile_coalesced_symmetric(int* points_parent,
-                              int* points_depth,
-                              int* accumulated_nodes_count,
+void compute_knn_from_buckets_perblock_coalesced_symmetric_dividek(
                               RSFK_typepoints* points,
-                              int* node_idx_to_leaf_idx,
                               int* nodes_bucket,
                               int* bucket_size,
                               int* knn_indices,

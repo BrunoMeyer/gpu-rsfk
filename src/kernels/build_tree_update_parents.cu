@@ -108,6 +108,9 @@ void build_tree_post_update_parents(RSFK_typepoints* tree,
             child_count_new_depth[points_parent[p]] = 0;
             is_leaf_new_depth[points_parent[p]] = false;
             
+            // TODO (ANN) Verify possible bug
+            // tree_children[parent_leaf_node+is_right_child[p]] = -1;
+
             // If the parent node was a left node then this point must be moved
             // to the right sibling . Otherwise it will be moved to the right sibling
             right_child = abs(is_right_child[p]-1);

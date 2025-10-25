@@ -59,6 +59,8 @@ void build_tree_create_nodes(RSFK_typepoints* tree_new_depth,
                              int N, int D, int MIN_TREE_CHILD, int MAX_TREE_CHILD, int RANDOM_SEED)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
+    int tidw = threadIdx.x % 32; // my id on warp
+    
     curandState_t r; 
     curand_init(*actual_depth*(RANDOM_SEED+blockDim.x)+RANDOM_SEED+tid, // the seed controls the sequence of random values that are produced
             blockIdx.x,  // the sequence number is only important with multiple cores 
@@ -68,12 +70,25 @@ void build_tree_create_nodes(RSFK_typepoints* tree_new_depth,
     int p1, p2, node_thread;
     // int parent_id;
     int rand_id;
+    
+    int i, tmp_p1, tmp_p2, node_idx, tmp_node_idx, is_leaf_node;
 
     // Create new nodes
-    for(node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){
+    // for(node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){
+    for(node_thread = tid; __any_sync(__activemask(), node_thread < depth_level_count[*actual_depth-1]); node_thread+=blockDim.x*gridDim.x){
         for(int is_right=0; is_right < 2; ++is_right){
-            if(!is_leaf[node_thread]){
+            p1 = -1;
+            is_leaf_node = 1;
+            
+            if(node_thread < depth_level_count[*actual_depth-1]){
+                is_leaf_node = is_leaf[node_thread];
+            }
+
+            __syncthreads();
+            if(!is_leaf_node){
+            // if(!is_leaf[node_thread]){
                 if(count_points_on_leafs[2*node_thread+is_right] > 0){
+                    
                     rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
                     p1 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  +  rand_id];
                     rand_id = (curand(&r) % count_points_on_leafs[2*node_thread+is_right]);
@@ -84,10 +99,22 @@ void build_tree_create_nodes(RSFK_typepoints* tree_new_depth,
                         p2 = sample_candidate_points[accumulated_child_count[2*node_thread+is_right]  + rand_id];
                     }
 
-                    __syncthreads();
-                    create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
-                                tree_children, tree_count, count_new_nodes, p1, p2, points, D, N);
+                    node_idx = atomicAdd(tree_count, 1);
+                    tree_parents_new_depth[node_idx] = node_thread;
+                    tree_children[2*node_thread+is_right] = node_idx;
                 }
+            }
+            __syncthreads();
+            // create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
+            //             tree_children, tree_count, count_new_nodes, p1, p2, points, D, N);node_thread
+            for(i=0; i < 32; ++i){
+                tmp_p1 = __shfl_sync(__activemask(), p1, i);
+                if(tmp_p1 == -1) continue;
+                tmp_p2 = __shfl_sync(__activemask(), p2, i);
+                tmp_node_idx = __shfl_sync(__activemask(), node_idx, i);
+                // printf("%d %d %d\n", tmp_p1, tmp_2, tmp_node_idx)
+                create_node(tree_new_depth, tree_parents_new_depth,
+                            tree_children, tree_count, count_new_nodes, tmp_p1, tmp_p2, points, D, N, tmp_node_idx, tidw);
             }
         }
     }
