@@ -1,0 +1,53 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gpu-rsfk"
+dynamic = ["version"]
+description = "GPU implementation of Random Sample Forest KNN (Similarity Search)"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+authors = [
+    {name = "Bruno Meyer", email = "buba.meyer_@hotmail.com"}
+]
+keywords = [
+    "Similarity Search",
+    "KNN",
+    "GPU",
+    "CUDA",
+    "Machine Learning",
+    "AI",
+    "Random Sample Forest",
+    "Nearest Neighbors"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Operating System :: POSIX :: Linux",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.6",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+]
+dependencies = [
+    "numpy>=1.14.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/BrunoMeyer/gpu-rsfk"
+"Bug Tracker" = "https://github.com/BrunoMeyer/gpu-rsfk/issues"
+"Source Code" = "https://github.com/BrunoMeyer/gpu-rsfk"
+
+[tool.setuptools]
+packages = ["gpu_rsfk"]
+zip-safe = false
+
+[tool.setuptools.package-data]
+gpu_rsfk = ["*.so"]

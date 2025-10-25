@@ -1,0 +1,48 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile
+docker-compose.yml
+DOCKER.md
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+python/dist/
+python/build/
+python/*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Results and outputs
+results/
+*.out
+*.png
+
+# Datasets (may be large, mount as volume instead)
+datasets/
+
+# Documentation
+docs/
+
+# GitHub
+.github/
+
+# Profiling reports
+*.ncu-rep
+
+# Compiled binaries
+rsfk

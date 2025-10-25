@@ -1,0 +1,98 @@
+name: Build and Publish to PyPI
+
+on:
+  # Trigger on new releases
+  release:
+    types: [published]
+  
+  # Allow manual trigger
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish to PyPI (yes/no)'
+        required: true
+        default: 'no'
+
+jobs:
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Install build dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build setuptools wheel twine
+    
+    - name: Build source distribution
+      run: |
+        cd python
+        python -m build --sdist
+    
+    - name: Check package
+      run: |
+        cd python
+        twine check dist/*
+    
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: python-package-distributions
+        path: python/dist/
+
+  publish-to-pypi:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Only run on release or manual trigger with 'yes'
+    if: |
+      github.event_name == 'release' || 
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'yes')
+    
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: python-package-distributions
+        path: dist/
+    
+    - name: Publish to PyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist/
+        skip-existing: true
+
+  publish-to-test-pypi:
+    name: Publish to TestPyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Run on manual trigger
+    if: github.event_name == 'workflow_dispatch'
+    
+    permissions:
+      id-token: write  # IMPORTANT: mandatory for trusted publishing
+    
+    steps:
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: python-package-distributions
+        path: dist/
+    
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/
+        packages-dir: dist/
+        skip-existing: true
