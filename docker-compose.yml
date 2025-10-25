@@ -40,6 +40,33 @@ services:
 
   # Service specifically for running experiments
   experiments:
-    extends: gpu-rsfk
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: gpu-rsfk:latest
     container_name: gpu-rsfk-experiments
+    
+    # GPU support
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    # Environment variables
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    
+    # Volumes
+    volumes:
+      - ./examples:/workspace/examples
+      - ./datasets:/workspace/datasets
+      - ./results:/workspace/results
+    
+    # Working directory
+    working_dir: /workspace
+    
     command: python3 examples/create_knn_graph.py

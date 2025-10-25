@@ -47,6 +47,12 @@ docker build -t gpu-rsfk:latest .
 
 ### Using Docker Compose
 
+The Docker Compose configuration includes two services:
+- `gpu-rsfk`: Interactive shell for development
+- `experiments`: Pre-configured to run example scripts
+
+Both services will automatically build the image (including compiling the CUDA library and installing the gpu_rsfk package) if it doesn't exist.
+
 Run the default interactive shell:
 
 ```bash

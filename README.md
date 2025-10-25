@@ -47,16 +47,16 @@ In this project, we provide an implementation of RSFK algorithm in CUDA language
 ## Compiling and Installing
 
 ### Using Docker (Recommended)
-The easiest way to build and run GPU-RSFK is using Docker:
+The easiest way to build and run GPU-RSFK is using Docker. The image build process compiles the CUDA library and installs the gpu_rsfk Python package:
 
 ```bash
-# Build the Docker image
+# Build the Docker image (compiles CUDA library and installs package)
 docker-compose build
 
 # Run interactively
 docker-compose run --rm gpu-rsfk
 
-# Run a specific example
+# Run a specific example (image will be built automatically if it doesn't exist)
 docker-compose run --rm gpu-rsfk python3 examples/create_knn_graph.py
 ```
 
