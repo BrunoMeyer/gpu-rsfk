@@ -13,10 +13,17 @@ on:
         required: true
         default: 'no'
 
+# Default permissions (will be overridden per job)
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build Package
     runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
     
     steps:
     - name: Checkout code

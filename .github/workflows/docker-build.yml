@@ -7,6 +7,10 @@ on:
     branches: [ main, master, develop ]
   workflow_dispatch:
 
+# Restrict permissions to minimum required
+permissions:
+  contents: read
+
 jobs:
   docker-build:
     name: Test Docker Build
