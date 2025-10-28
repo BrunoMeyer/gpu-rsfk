@@ -559,8 +559,8 @@ void compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves(
     // TODO: Para cada bloco (folha)
     int leaf_id = blockIdx.x;
     current_bucket_size = bucket_size[leaf_id];
-    int current_bucket_size = current_bucket_size[leaf_id];
-    int current_query_bucket_size = query_current_bucket_size[leaf_id];
+    // int current_bucket_size = current_bucket_size[leaf_id];
+    // int current_query_bucket_size = query_current_bucket_size[leaf_id];
 
     for(pq = tid/32; pq < NQ; pq+=blockDim.x*gridDim.x/32){
 

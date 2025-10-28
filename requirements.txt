@@ -1,0 +1,17 @@
+# Core dependencies
+numpy>=1.14.1
+
+# Machine Learning and Scientific Computing
+scikit-learn>=0.19.0
+scipy>=1.0.0
+
+# Data handling and visualization
+pandas>=0.23.0
+matplotlib>=2.2.0
+tqdm>=4.0.0
+
+# Optional dependencies for examples
+# These may require additional setup or GPU support
+# faiss-gpu  # For GPU-accelerated similarity search
+# annoy  # For approximate nearest neighbors
+# tsnecuda  # For GPU t-SNE (requires CUDA)

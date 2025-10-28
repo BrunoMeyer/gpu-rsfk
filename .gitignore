@@ -4,3 +4,12 @@
 rsfk
 __pycache__/
 .vscode/
+
+# Docker
+results/
+
+# Python packaging
+python/build/
+python/dist/
+python/*.egg-info/
+*.egg-info/
