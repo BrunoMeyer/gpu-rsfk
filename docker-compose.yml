@@ -36,7 +36,10 @@ services:
     tty: true
     
     # Default command
-    command: /bin/bash
+    # command: /bin/bash
+    # command: make
+    # arguments: "python_arch89 && make install && python3 test_md.py"
+    command: bash -c "make python_arch89 && make install && python3 test_md.py"
 
   # Service specifically for running experiments
   experiments:
@@ -69,4 +72,5 @@ services:
     # Working directory
     working_dir: /workspace
     
-    command: python3 examples/create_knn_graph.py
+    # command: python3 examples/create_knn_graph.py
+    command: python3 test_md.py

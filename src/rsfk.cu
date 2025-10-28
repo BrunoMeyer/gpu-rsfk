@@ -389,7 +389,8 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     
     thrust::device_vector<int> device_query_to_bucket_id(NQ, -1);
 
-
+    int total_leaves = rsfkindextree->total_leaves;
+    int max_child = rsfkindextree->max_child;
     thrust::device_vector<int>* device_nodes_buckets = new thrust::device_vector<int>(total_leaves*max_child, -1);
     thrust::device_vector<int>* device_bucket_sizes = new thrust::device_vector<int>(total_leaves, 0);
     
@@ -416,24 +417,9 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
 
     Cron knn_ann;
     knn_ann.start();
-    // // compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT>>>(
-    // compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
-    //     thrust::raw_pointer_cast(rsfkindextree->device_points_parent->data()),
-    //     thrust::raw_pointer_cast(device_points_depth.data()),
-    //     thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()),
-    //     thrust::raw_pointer_cast(device_points.data()),
-    //     thrust::raw_pointer_cast(device_query_points.data()),
-    //     thrust::raw_pointer_cast(device_query_to_bucket_id.data()),
-    //     thrust::raw_pointer_cast(rsfkindextree->device_node_idx_to_leaf_idx->data()),
-    //     thrust::raw_pointer_cast(rsfkindextree->device_nodes_buckets->data()),
-    //     thrust::raw_pointer_cast(rsfkindextree->device_bucket_sizes->data()),
-    //     thrust::raw_pointer_cast(device_knn_indices.data()),
-    //     thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
-    //     N, NQ, D, rsfkindextree->max_child, K,
-    //     rsfkindextree->MAX_TREE_CHILD, rsfkindextree->total_leaves
-    // );
-
-    compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves<<<rsfkindextree->total_leaves, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
+    // compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT>>>(
+    compute_knn_from_buckets_perwarp_coalesced_ann<<<NB, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
+    // compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves<<<rsfkindextree->total_leaves, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
         thrust::raw_pointer_cast(rsfkindextree->device_points_parent->data()),
         thrust::raw_pointer_cast(device_points_depth.data()),
         thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()),
@@ -448,6 +434,22 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
         N, NQ, D, rsfkindextree->max_child, K,
         rsfkindextree->MAX_TREE_CHILD, rsfkindextree->total_leaves
     );
+
+    // compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves<<<rsfkindextree->total_leaves, NT, 1+D*sizeof(RSFK_typepoints)/32>>>(
+    //     thrust::raw_pointer_cast(rsfkindextree->device_points_parent->data()),
+    //     thrust::raw_pointer_cast(device_points_depth.data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()),
+    //     thrust::raw_pointer_cast(device_points.data()),
+    //     thrust::raw_pointer_cast(device_query_points.data()),
+    //     thrust::raw_pointer_cast(device_query_to_bucket_id.data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_node_idx_to_leaf_idx->data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_nodes_buckets->data()),
+    //     thrust::raw_pointer_cast(rsfkindextree->device_bucket_sizes->data()),
+    //     thrust::raw_pointer_cast(device_knn_indices.data()),
+    //     thrust::raw_pointer_cast(device_knn_sqr_distances.data()),
+    //     N, NQ, D, rsfkindextree->max_child, K,
+    //     rsfkindextree->MAX_TREE_CHILD, rsfkindextree->total_leaves
+    // );
     cudaDeviceSynchronize();
     CudaTest((char *)"compute_bucket_for_query_points Kernel failed!");
     knn_ann.stop();
@@ -1053,10 +1055,11 @@ TreeInfo RSFK::create_bucket_from_sample_tree(
         device_leaf_idx_to_node_idx->shrink_to_fit();
         device_node_idx_to_leaf_idx->clear();
         device_node_idx_to_leaf_idx->shrink_to_fit();
-        device_nodes_buckets->clear();
-        device_nodes_buckets->shrink_to_fit();
-        device_bucket_sizes->clear();
-        device_bucket_sizes->shrink_to_fit();
+
+        // device_nodes_buckets->clear();
+        // device_nodes_buckets->shrink_to_fit();
+        // device_bucket_sizes->clear();
+        // device_bucket_sizes->shrink_to_fit();
         
         device_points_parent->clear();
         device_points_parent->shrink_to_fit();
@@ -1999,9 +2002,9 @@ void RSFK::update_knn_indice_with_buckets(
     
     // compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile_coalesced_symmetric<<<total_leaves,32>>>(
-    // compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
+    compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
-    compute_knn_from_buckets_pertile<<<total_leaves,512>>>(
+    // compute_knn_from_buckets_pertile<<<total_leaves,512>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,32>>>(
     // compute_knn_from_buckets_pertile<<<1,32>>>(
         thrust::raw_pointer_cast(device_points.data()),

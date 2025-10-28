@@ -1,4 +1,5 @@
 # Use NVIDIA CUDA base image with development tools
+# FROM nvidia/cuda:13.0.1-devel-ubuntu22.04
 FROM nvidia/cuda:11.8.0-devel-ubuntu22.04
 
 # Set non-interactive installation
@@ -17,15 +18,13 @@ RUN apt-get update && apt-get install -y \
 # Set working directory
 WORKDIR /workspace
 
-# Copy project files
-COPY . .
 
 # Build the CUDA library for multiple architectures
 # Using archall target from Makefile which supports compute_30, compute_61, and compute_75
-RUN make python_archall
+# RUN make python_archall
 
 # Install Python package
-RUN cd python && pip3 install --no-cache-dir .
+# RUN cd python && pip3 install --no-cache-dir .
 
 # Install common dependencies for examples
 RUN pip3 install --no-cache-dir \
@@ -38,6 +37,10 @@ RUN pip3 install --no-cache-dir \
 
 # Set Python path to find the installed package
 ENV PYTHONPATH=/workspace:$PYTHONPATH
+
+
+# Copy project files
+COPY . .
 
 # Default command
 CMD ["/bin/bash"]
