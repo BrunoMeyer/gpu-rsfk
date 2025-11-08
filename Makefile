@@ -29,6 +29,7 @@ main_arch75: src/rsfk.cu
 
 python_arch75: src/python/pymodule_ext.cu
 	nvcc -lnvgraph -O3 -gencode=arch=compute_75,code=sm_75 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu
+# nvcc -lnvgraph -O3 -gencode=arch=compute_75,code=sm_75 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu
 
 main_arch35: src/rsfk.cu
 	nvcc -std=c++14 -lnvgraph -O3 -gencode=arch=compute_35,code=sm_35 -std=c++11 src/rsfk.cu -o rsfk
@@ -37,7 +38,8 @@ python_arch35: src/python/pymodule_ext.cu
 	nvcc -std=c++14 -lnvgraph -O3 -gencode=arch=compute_35,code=sm_35 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu
 
 main_arch86: src/rsfk.cu
-	nvcc -lnvgraph -O3 -gencode=arch=compute_86,code=sm_86 -std=c++11 src/rsfk.cu -o rsfk
+	nvcc -O3 -gencode=arch=compute_86,code=sm_86 -std=c++11 src/rsfk.cu -o rsfk
+# nvcc -lnvgraph -O3 -gencode=arch=compute_86,code=sm_86 -std=c++11 src/rsfk.cu -o rsfk
 
 python_arch86: src/python/pymodule_ext.cu
 	nvcc -std=c++14 -lnvgraph -O3 -gencode=arch=compute_86,code=sm_86 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu

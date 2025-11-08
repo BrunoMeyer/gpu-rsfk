@@ -36,6 +36,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __RSFK__CU
 
 #include "include/rsfk.h"
+#include "knng-kmeansyy.h"
 
 static void CudaTest(char* msg)
 {
@@ -1999,7 +2000,8 @@ void RSFK::update_knn_indice_with_buckets(
     cron_knn.start();
 
     // TODO: Check if it is viable to use shared memory 
-    
+    cudaDeviceSynchronize();
+    gpuErrchk( cudaPeekAtLastError() );
     // compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile_coalesced_symmetric<<<total_leaves,32>>>(
     compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
@@ -2016,7 +2018,10 @@ void RSFK::update_knn_indice_with_buckets(
     cudaDeviceSynchronize();
     // printf("%s\n", cudaGetErrorString(cudaPeekAtLastError()));
     // printf("%s\n", cudaGetErrorString(cudaThreadSynchronize()));
-    CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
+    CudaTest((char *)"compute_knn_from_buckets Kernel failed! rsfk.cu line 2020");
+
+    //TODO: ERRO ACIMA!!!
+
     cron_knn.stop();    
 
     tinfo.free();
@@ -2071,11 +2076,15 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
     for(int i=0; i < n_trees; ++i){
-        tinfo = create_bucket_from_sample_tree(device_points,
-                                               N, D, VERBOSE-1,
-                                               forest_log,
-                                               run_name+"_"+std::to_string(i)+".png",
-                                               true, nullptr);
+        // tinfo = create_bucket_from_sample_tree(device_points,
+        //                                        N, D, VERBOSE-1,
+        //                                        forest_log,
+        //                                        run_name+"_"+std::to_string(i)+".png",
+        //                                        true, nullptr);
+
+        tinfo = create_bucket_from_kmeansyy(device_points,
+                                               N, D, VERBOSE-1);
+
 
         update_knn_indice_with_buckets(device_points,
                                        device_knn_indices,
