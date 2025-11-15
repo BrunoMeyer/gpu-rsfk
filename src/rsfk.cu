@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "include/rsfk.h"
 #include "knng-kmeansyy.h"
+// #include "kmeans/cpu-utils.c"
 
 static void CudaTest(char* msg)
 {
@@ -1999,6 +2000,16 @@ void RSFK::update_knn_indice_with_buckets(
     Cron cron_knn;
     cron_knn.start();
 
+    fprintf(stderr, "Calling compute_knn_from_buckets kernel with %d blocks of %d threads\n",
+            total_leaves, NT);
+    
+    // Print parameters
+    printf("KNN from buckets parameters:\n");
+    printf("  N: %d\n", N);
+    printf("  D: %d\n", D);
+    printf("  K: %d\n", K);
+    printf("  total_leaves: %d\n", total_leaves);
+    printf("  max_child: %d\n", max_child);
     // TODO: Check if it is viable to use shared memory 
     cudaDeviceSynchronize();
     gpuErrchk( cudaPeekAtLastError() );
@@ -2024,16 +2035,54 @@ void RSFK::update_knn_indice_with_buckets(
 
     cron_knn.stop();    
 
-    tinfo.free();
+    tinfo.free(); 
 
     // Report total time of each step
     if(VERBOSE >= 1){
         printf("KNN computation Kernel takes %lf seconds\n", cron_knn.t_total/1000);
     }
 
-    forest_log.update_cron_knn_list((float)cron_knn.t_total/1000);
+    forest_log.update_cron_knn_list((float)cron_knn.t_total/1000); //ERRO: BRUNO ACHO QUE O ERRO ESTÁ AQUI, 
+    // PQ O ALGORITMO ESPERA QUE O CONTADOR DE ARVORE SEJA INCREMENTADO NO FINAL DA CONSTRUÇÃO DA ARVORE,
+    // MAS COMO O KMEANS É USADO, ELE NUNCA É INCREMENTADO. 
 }
 
+// void RSFK::print_treeinfo_data_host(float* host_tinfo_data,
+//                                  int size,
+//                                  std::string filename="treeinfo.png")
+// {
+//     thrust::host_vector<float> host_data_vec(size);
+//     thrust::copy(host_tinfo_data,
+//                  host_tinfo_data + size,
+//                  host_data_vec.begin());
+
+//     RSFKPlot::plot_treeinfo_data(
+//         thrust::raw_pointer_cast(host_data_vec.data()),
+//         size,
+//         filename);
+// }
+
+// void RSFK::print_treeinfo_data_device(float* device_tinfo_data,
+//                                    int size,
+//                                    std::string filename="treeinfo.png")
+// {
+//     thrust::device_vector<float> device_data_vec(size);
+//     thrust::copy(thrust::device,
+//                  device_tinfo_data,
+//                  device_tinfo_data + size,
+//                  device_data_vec.begin());
+//     cudaDeviceSynchronize();
+
+//     thrust::host_vector<float> host_data_vec(size);
+//     thrust::copy(device_data_vec.begin(),
+//                  device_data_vec.end(),
+//                  host_data_vec.begin());
+//     cudaDeviceSynchronize();
+
+//     print_treeinfo_data_host(thrust::raw_pointer_cast(host_data_vec.data()),
+//                              size,
+//                              filename);
+// }
 
 void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
@@ -2083,15 +2132,28 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         //                                        true, nullptr);
 
         tinfo = create_bucket_from_kmeansyy(device_points,
-                                               N, D, VERBOSE-1);
+                                               N, D, VERBOSE-1, forest_log);
+        
+        printf("kmeans runned\n");
+        // DEBUG: Move to device and print all tinfo data
+        // thrust::device_vector<float> device_tinfo_data(tinfo.data(), tinfo.data() + tinfo.size());
 
+        // tinfo.device_nodes_buckets
+        // tinfo.device_bucket_sizes
+        
+        
+        // tinfo.print_buckets();
+        // exit(0);
 
+        printf("Tree %d/%d created with %d leaves\n", i+1, n_trees, tinfo.total_leaves);
+        printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
         update_knn_indice_with_buckets(device_points,
                                        device_knn_indices,
                                        device_knn_sqr_distances,
                                        K, N, D, VERBOSE-1, tinfo,
                                        forest_log,
                                        run_name+"_"+std::to_string(i)+".png");
+        printf("Tree %d/%d processed\n", i+1, n_trees);
 
         RANDOM_SEED++;
     }
@@ -2101,7 +2163,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
 
-    
+    printf("Starting Nearest Neighbors Exploring with factor %d\n", nn_exploring_factor);
     Cron cron_nearest_neighbors_exploring;
     cron_nearest_neighbors_exploring.start();
     
@@ -2181,14 +2243,45 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     log_forest_output[16*n_trees] = forest_log.rsfk_total_cron;
     log_forest_output[16*n_trees + 1] = forest_log.nn_exploration_cron;
     
+    printf("RSFK forest KNN finished.\n");
+    printf("Cleaning device_points...\n");
     device_points.clear();
     device_points.shrink_to_fit();
+    printf("Cleaning device_knn_indices...\n");
     device_knn_indices.clear();
     device_knn_indices.shrink_to_fit();
+    printf("Cleaning device_knn_sqr_distances...\n");
     device_knn_sqr_distances.clear();
     device_knn_sqr_distances.shrink_to_fit();
     
+    printf("Freeing forest_log...\n");
     forest_log.free();
+
+    printf("RSFK KNN process done.\n");
+
+}
+
+void write_points_to_file(
+		float* points,
+		int np,
+		int dim,
+		char* file_name
+		){
+
+	FILE* file = fopen(file_name,"w");
+	if(file == NULL){
+		printf("ERROR: can't create file.\n");
+		return;
+	}
+
+	for (int i = 0; i < np; ++i){
+        fprintf(file, "%f",points[i*dim]);
+		for(int j = 1; j < dim; j++){
+			fprintf(file, " %f",points[i*dim+j]);
+		}
+		fprintf(file,"\n");
+	}
+	fclose(file);
 }
 
 TreeInfo RSFK::cluster_by_sample_tree(int N, int D, int VERBOSE,
@@ -2292,6 +2385,13 @@ int main(int argc,char* argv[])
         }
         labels[i] = (l>N/2);
     }
+
+    write_points_to_file(
+        points,
+        N,
+        D,
+        "dataset_rsfk.txt"
+    );
 
     int nn_exploring_factor = 0;
     float* forest_log_output = (float*)malloc(sizeof(float)*5*16+2);

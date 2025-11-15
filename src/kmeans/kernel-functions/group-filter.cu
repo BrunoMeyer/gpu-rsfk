@@ -1,21 +1,22 @@
 #include "gpu-utils.cu"
 
 __global__
-void group_filter_assignment(float* dataset, uint dataset_size, 
-        uint dim, uint k, 
-        float* centroids, uint* labels){
+void group_filter_assignment(float* centroids, uint k, 
+        uint dim, uint t_groups, 
+        float* group_centroid, uint* labels){
 
     // extern __shared__ uint sm[];
-    // float* centroids = sm; //usage: k*dim
+    // float* group_centroid = sm; //usage: t_groups*dim
 
     // initialize variables
     uint warpIdx = threadIdx.x / WARP_SIZE;
     uint laneIdx = threadIdx.x % WARP_SIZE;
+    int nwarps = blockDim.x / WARP_SIZE;
 
-    for(uint i = warpIdx+blockIdx.x*N_WARPS; i < dataset_size; i += N_WARPS*N_BLOCKS){
+    for(uint i = warpIdx+blockIdx.x*nwarps; i < k; i += nwarps*blockDim.x){
         float min_dist = MAX_FLOAT;
         uint nearest_cent=0;
-        for(uint j = 0; j < k; j++){
+        for(uint j = 0; j < t_groups; j++){
             ////////////////////////
             // CALCULATE DISTANCE //
             ////////////////////////
@@ -23,8 +24,8 @@ void group_filter_assignment(float* dataset, uint dataset_size,
     		float s = 0.0f;
             uint nf = dim/4;
 	    	for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
-               a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-                b = reinterpret_cast<float4*>(centroids)[j*nf+d];
+               a = reinterpret_cast<float4*>(centroids)[i*nf+d];
+                b = reinterpret_cast<float4*>(group_centroid)[j*nf+d];
                 float4 diff;
                 diff.x = a.x - b.x;
                 diff.y = a.y - b.y;
@@ -51,17 +52,16 @@ void group_filter_assignment(float* dataset, uint dataset_size,
 
         }
         if(laneIdx == 0){
-            if(nearest_cent==100000)
-                printf("ERROR in %s %d: wid=%d,wid_global=%d,k=%d,i=%d\n",__FILE__, __LINE__,warpIdx,warpIdx+blockIdx.x*N_WARPS,k,i);
             labels[i] = nearest_cent;
         }
+        
     }
 }
 
 __global__
-void group_filter_update(float* dataset, uint dataset_size, 
+void group_filter_update(float* centroids, uint k, 
         uint dim,
-        float* centroids, uint* labels){
+        float* group_centroid, uint* labels){
 
     __shared__ uint count;
     extern __shared__ uint sm[];
@@ -79,10 +79,10 @@ void group_filter_update(float* dataset, uint dataset_size,
     }
     __syncthreads();
 
-    for(uint i = warpIdx; i < dataset_size; i += N_WARPS){
+    for(uint i = warpIdx; i < k; i += N_WARPS){
         if(labels[i] == blockIdx.x){
             for(int j = laneIdx; j < dim; j+= WARP_SIZE){
-                atomicAdd(&new_centroid[j], dataset[i*dim+j]);
+                atomicAdd(&new_centroid[j], centroids[i*dim+j]);
             }
             if(laneIdx == 0){
                 atomicAdd(&count,1);
@@ -92,15 +92,17 @@ void group_filter_update(float* dataset, uint dataset_size,
     __syncthreads();
     
     for(int j = laneIdx; j < dim; j+= WARP_SIZE){
-        centroids[blockIdx.x*dim+j] = new_centroid[j]/(float)count;
+        group_centroid[blockIdx.x*dim+j] = new_centroid[j]/(float)count;
     }
 
-    // if(threadIdx.x == 0 && blockIdx.x == 0){
-    //     for(int i = 0; i < dataset_size; i+= 1){
-    //         printf("%d ",labels[i]);
-    //     }
-    //     printf("\n");
-    // }
+    #if DEBUG_GROUP_FILTER
+    if(threadIdx.x == 0 && blockIdx.x == 0){
+        for(int i = 0; i < k; i+= 1){
+            printf("%d ",labels[i]);
+        }
+        printf("\n");
+    }
+    #endif
 }
 
 __global__

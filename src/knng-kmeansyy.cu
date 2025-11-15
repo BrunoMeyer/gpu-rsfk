@@ -90,11 +90,37 @@ void create_buckets_mt(    RSFK_typepoints* points,
     }
 }
 
+__global__ void create_contiguous_array(
+    int* array
+)
+{
+    // Set array with 0, 1, 2, ..., N-1
+    int tid = blockDim.x*blockIdx.x + threadIdx.x;
+    array[tid] = tid;
+
+    __syncthreads();
+}
+
+__global__ void count_points_per_cluster(
+    uint* sorted_labels,
+    int N,
+    int* label_counts
+)
+{
+    //Find the transition of values in sorted_labels to count how many points per cluster
+    int tid = blockDim.x*blockIdx.x + threadIdx.x;
+    if(tid < N-1){
+        if(sorted_labels[tid] != sorted_labels[tid+1]){
+            atomicAdd(&label_counts[sorted_labels[tid]], 1);
+        }
+    }
+}
+
 TreeInfo create_bucket_from_kmeansyy(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
-    std::string run_name="out.png",
-    int total_buckets=128,
+    ForestLog& forest_log,
+    int total_buckets=64,
     int max_iter = 30,
     int check_method = 2,
     // printf("check_method: 0 -> until max it\n"),
@@ -102,9 +128,11 @@ TreeInfo create_bucket_from_kmeansyy(
     // printf("              2 -> by number of reassingments (default)\n"),
     int tolerance = 0.01,
     int init_method = 1, //0 -> random, 1 -> kmeans++
-    int t_groups = 64
+    int t_groups = 32
     )
 {
+    forest_log.count_tree += 1;
+    
     int devUsed = 0;
     cudaSetDevice(devUsed);
     cudaDeviceProp deviceProp;
@@ -122,137 +150,146 @@ TreeInfo create_bucket_from_kmeansyy(
 		fprintf(stderr, "Failed to allocate device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-	float *d_centroids = NULL;
-	err = cudaMalloc((void **)&d_centroids, sizeof(uint)*N);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device vector d_centroids (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
 
-    kmeansGpu( 
+    kmeansGpu(
             thrust::raw_pointer_cast(device_points.data()), 
             N, D, total_buckets,
             max_iter,
-            check_method, tolerance,
+            check_method,
+            tolerance,
             init_method,
             t_groups,
             VERBOSE,
-            d_labels,
-            d_centroids
-    );
-
-    // create buckets 
-    // allocate d_label_counts and initilize with 0
-    int* d_label_counts = NULL;
-    err = cudaMalloc((void **)&d_label_counts, sizeof(int)*total_buckets);
-    if (err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector d_label_counts (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    cudaMemset(d_label_counts, 0, sizeof(int)*total_buckets);
-
-
-
-    int* d_max_bucket_size = NULL;
-    err = cudaMalloc((void **)&d_max_bucket_size, sizeof(int));
-    if (err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector d_max_bucket_size (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    cudaMemset(d_max_bucket_size, 0, sizeof(int));
-
-
-    int nb = (N/nthreads) + ((N % nthreads) ? 1 : 0);
-    count_labels_mt<<<nb, nthreads>>>( 
-        d_labels,
-        N,
-        d_label_counts,
-        total_buckets
+            d_labels
     );
 
 
+    // Pass d_labels to thrust
+    thrust::device_vector<uint> device_labels(N);
+    cudaMemcpy(thrust::raw_pointer_cast(device_labels.data()), d_labels, sizeof(uint)*N, cudaMemcpyDeviceToDevice);
 
-    find_max_bucket_size<<<nthreads, nthreads>>>( 
-        d_label_counts,
-        total_buckets,
-        d_max_bucket_size
+    // Argsort to create bucket indexes
+    // thrust::device_vector<std::intptr_t> indices(N);
+    thrust::device_vector<int> indices(N);
+    thrust::sequence(indices.begin(), indices.end());
+    thrust::sort_by_key(
+        device_labels.begin(), device_labels.end(),
+        indices.begin()
     );
-    int max_bucket_size;
-    cudaMemcpy(&max_bucket_size, d_max_bucket_size, sizeof(int), cudaMemcpyDeviceToHost);
 
+    // 
 
+    thrust::host_vector<uint> h_labels = device_labels;
+    thrust::host_vector<int> h_indices = indices;
 
+    // for(int i = 0; i < N; i++){
+    //     std::cout << "Point " << i << " label: " << h_labels[i] << std::endl;
+    // }
+    // for(int i = 0; i < N; i++){
+    //     std::cout << "Point " << i << " index: " << h_indices[i] << std::endl;
+    // }
 
-    int* d_nodes_buckets = NULL;
-    err = cudaMalloc((void **)&d_nodes_buckets, sizeof(int)*max_bucket_size*total_buckets);
+    // // Print sorted labels
+    // std::cout << "Sorted labels: " << std::endl;
+    // for(int i = 0; i < N; i++){
+    //     std::cout << h_labels[i] << " ";
+    // }
+    // std::cout << std::endl;
+
+    // Iterate over sorted labels and count the maximum bucket size
+    int max_bucket_size = 0;
+    int current_label = -1;
+    int current_count = 0;
+    for(int i = 0; i < N; i++){
+        if(h_labels[i] != current_label){
+            if(current_count > max_bucket_size){
+                max_bucket_size = current_count;
+            }
+            current_label = h_labels[i];
+            current_count = 1;
+        }
+        else{
+            current_count++;
+        }
+    }
+    // Check last bucket
+    if(current_count > max_bucket_size){
+        max_bucket_size = current_count;
+    }
+    // std::cout << "Max bucket size: " << max_bucket_size << std::endl;
+    
+    // Create padded bucket array (each cluster with max_bucket_size)
+    thrust::host_vector<int> h_nodes_bucket(total_buckets * max_bucket_size, -1);
+    thrust::host_vector<int> h_bucket_size(total_buckets, 0);
+    
+    // Fill the buckets in host
+    for(int i = 0; i < N; i++){
+        int label = h_labels[i];
+        int index = h_indices[i];
+        int pos = h_bucket_size[label];
+        h_nodes_bucket[label * max_bucket_size + pos] = index;
+        h_bucket_size[label]++;
+    }
+    thrust::device_vector<int> d_nodes_bucket(total_buckets * max_bucket_size, -1);
+    thrust::device_vector<int> d_bucket_size(total_buckets, 0);    
+
+    // Print padded buckets
+    #define DEBUG_BUCKETS 1
+    #ifdef DEBUG_BUCKETS
+    for(int i = 0; i < total_buckets; i++){
+        std::cout << "Bucket " << i << " (size " << h_bucket_size[i] << "): ";
+        for(int j = 0; j < max_bucket_size; j++){
+            std::cout << h_nodes_bucket[i * max_bucket_size + j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    #endif
+
+    // Update ForestInfo for max_bucket_size
+    
+
+    // exit(0);
+
+    // const thrust::device_vector< int > v{std::cbegin(init), std::cend(init)};
+
+    // // optimization to avoid unnecessary initialization of index to zero
+    // auto const seq_iter =
+    //     thrust::make_counting_iterator(
+    //         static_cast< std::intptr_t >(0));
+
+    // thrust::device_vector< std::intptr_t > index{seq_iter,
+    //                                              thrust::next(seq_iter, v.size())};
+    
+    // auto const v_ptr = v.data();
+
+    // thrust::sort(
+    //     index.begin(), index.end(),
+    //     [v_ptr] __host__ __device__ (std::intptr_t left_idx, std::intptr_t right_idx)
+    //     {
+    //         return v_ptr[left_idx] < v_ptr[right_idx];
+    //     });
+
+    // thrust::copy(
+    //     index.cbegin(), index.cend(),
+    //     std::ostream_iterator< std::intptr_t >(std::cout, ", "));
+    // std::cout << std::endl;
+
+    err = cudaFree(d_labels);
     if (err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector d_nodes_buckets (error code %s)!\n", cudaGetErrorString(err));
+        fprintf(stderr, "Failed to free device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
+    
+
+    
 
 
-
-
-    int* d_bucket_sizes = NULL;
-    err = cudaMalloc((void **)&d_bucket_sizes, sizeof(int)*total_buckets);
-    if (err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector d_bucket_sizes (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    cudaMemset(d_bucket_sizes, 0, sizeof(int)*total_buckets);
-
-    // TODO: TROCAR PELO ALGORITMO MRBIN
-    create_buckets_mt<<<nb, nthreads>>>( 
-                        thrust::raw_pointer_cast(device_points.data()),
-                        d_labels,
-                        d_nodes_buckets,
-                        d_bucket_sizes,
-                        N, D, max_bucket_size,
-                        total_buckets
-    );
-    cudaDeviceSynchronize();
-
-    printf("PASSOU0: KMeansYY Bucket Creation Complete: %d buckets created with max size %d\n", total_buckets, 
-        max_bucket_size);
-
-	err = cudaFree(d_labels);
-    err = cudaFree(d_label_counts);
-    err = cudaFree(d_max_bucket_size);
-
-    printf("PASSOU1: KMeansYY Bucket Creation Complete: %d buckets created with max size %d\n", total_buckets, max_bucket_size);
-
-    // thrust::device_vector<int> thr_nodes_bucket(
-    //     d_nodes_buckets, d_nodes_buckets + total_buckets*max_bucket_size);
-    // thrust::device_vector<int> thr_bucket_size(
-    //     d_bucket_sizes, d_bucket_sizes + max_bucket_size);
-
-    thrust::device_ptr<int> dptr_nodes(d_nodes_buckets);
-    thrust::device_ptr<int> dptr_sizes(d_bucket_sizes);
-
-    thrust::device_vector<int> thr_nodes_bucket(
-        dptr_nodes, dptr_nodes + total_buckets * max_bucket_size);
-
-    thrust::device_vector<int> thr_bucket_size(
-        dptr_sizes, dptr_sizes + total_buckets);
-
-
-    printf("PASSOU2: KMeansYY Bucket Creation Complete: %d buckets created with max size %d\n", total_buckets, max_bucket_size);
-
+    
     TreeInfo tinfo = TreeInfo(total_buckets, max_bucket_size,
-                              thr_nodes_bucket, thr_bucket_size);
-
-    printf("PASSOU3: KMeansYY Bucket Creation Complete: %d buckets created with max size %d\n", total_buckets, max_bucket_size);
-
-    err = cudaFree(d_nodes_buckets);
-    err = cudaFree(d_bucket_sizes);
-
-    if (err != cudaSuccess){
-        fprintf(stderr, "Failed to allocate device vector d_bucket_sizes (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-    printf("PASSOU4: KMeansYY Bucket Creation Complete: %d buckets created with max size %d\n", total_buckets, max_bucket_size);
+                              d_nodes_bucket, d_bucket_size);
 
     return tinfo;
+
 }
 
 #endif

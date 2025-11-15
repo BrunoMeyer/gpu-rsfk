@@ -1,7 +1,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define RANDOM_SEED 0
 #define CREATEDATA_RAND_MAX 10000000
 
 void create_data(float* dataset, uint dataset_size){
@@ -36,9 +35,9 @@ void from_file(const char* filename,
 
 void write_data(
 		char* file_name,
-		uint k,
+		uint np,
 		uint dim,
-		float* centroids){
+		float* points){
 
 	FILE* file = fopen(file_name,"w");
 	if(file == NULL){
@@ -46,14 +45,39 @@ void write_data(
 		return;
 	}
 
-	for (int i = 0; i < k; ++i){
-		for(int j = 0; j < dim; j++){
-			fprintf(file, "%f",centroids[i*dim+j]);
+	for (int i = 0; i < np; ++i){
+		fprintf(file, "%f",points[i*dim]);
+		for(int j = 1; j < dim; j++){
+			fprintf(file, " %f",points[i*dim+j]);
 		}
 		fprintf(file,"\n");
 	}
 	fclose(file);
 }
+
+void write_data(
+		char* file_name,
+		uint np,
+		uint dim,
+		int* points){
+
+	FILE* file = fopen(file_name,"w");
+	if(file == NULL){
+		printf("ERROR: can't create file.\n");
+		return;
+	}
+
+	for (int i = 0; i < np; ++i){
+		fprintf(file, "%d",points[i*dim]);
+		for(int j = 1; j < dim; j++){
+			fprintf(file, " %d",points[i*dim+j]);
+		}
+		fprintf(file,"\n");
+	}
+	fclose(file);
+}
+
+
 
 // Example: cmdOptionExists(argv, argc+argv, "-ntimes")
 inline bool cmdOptionExists(char** begin, char** end, const std::string& option){
@@ -156,7 +180,7 @@ void read_csv(char* file_name,
 }
 
 void shuffle_data(float* data, int totalsize, int d, int nshuffle){
-	srand(RANDOM_SEED);
+	srand(0);
 	for (uint i = 0; i < nshuffle; ++i){
 		uint r = rand()%totalsize;
 		if(r != i){

@@ -25,10 +25,16 @@ void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size,
     }
 }
 
-
+// For each point in the dataset, compute its distance to the newly added centroid,
+// and update its label, upper bound, and lower bound accordingly
+// Also, find the point with the maximum distance to its nearest centroid
+// to be used as the next centroid
+// TODO: it is possible to optimize the search for the next centroid using atomics
 __global__
 void find_new_centroid_kmeanspp(float* dataset, uint dataset_size, 
-        float* centroids, uint k, uint dim, 
+        float* centroids, 
+        uint k, // current number of centroids 
+        uint dim, 
         uint* labels,
         float* upperbounds, float* lowerbounds,
         uint* chosen_centroids,
@@ -38,12 +44,13 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
     // initialize variables
     uint warpIdx = threadIdx.x / WARP_SIZE;
     uint laneIdx = threadIdx.x % WARP_SIZE;
-    uint cent = k-1;
+    uint cent = k-1; // index of the the current centroid added
 
     uint candidate_to_centroid; // point that has the farthest nearest centroid
     float max_dist = 0.0; // distance to farthest nearest centroid
+    int nwarps = blockDim.x / WARP_SIZE;
 
-    for(uint i = warpIdx+blockIdx.x*N_WARPS; i < dataset_size; i += N_WARPS*N_BLOCKS){
+    for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*blockDim.x){
         ////////////////////////
         // CALCULATE DISTANCE //
         ////////////////////////
@@ -101,24 +108,28 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
     }
     if(laneIdx == 0){
         // printf("%u %f\n",candidate_to_centroid,max_dist);
-        max_min_cent_dist[blockIdx.x*N_WARPS+warpIdx] = max_dist;
-        candidates[blockIdx.x*N_WARPS+warpIdx] = candidate_to_centroid;
+        max_min_cent_dist[blockIdx.x*nwarps+warpIdx] = max_dist;
+        candidates[blockIdx.x*nwarps+warpIdx] = candidate_to_centroid;
     }
        
 }
 
+// Find the point with the maximum distance to its nearest centroid
+// and append it to the centroids list
+// (following the KMeans++ initialization method (Arthur and Vassilvitskii, 2007))
+// This kernel is launched with a single block
 __global__
 void append_centroid_kmeanspp(float* dataset, uint dataset_size, 
         float* centroids, uint k, uint dim,
         uint* chosen_centroids,
-        uint* candidates, float* max_min_cent_dist
+        uint* candidates, float* max_min_cent_dist, int total_candidates
 ){
     __shared__ float sh_max_dist[MAX_THREADS];
     __shared__ uint sh_next_cent[MAX_THREADS];
     
     float max = 0.0;
     uint next_cent=dataset_size+1;
-    for(int i = threadIdx.x; i < N_BLOCKS*N_WARPS; i+=blockDim.x){
+    for(int i = threadIdx.x; i < total_candidates; i+=blockDim.x){
         if(max < max_min_cent_dist[i]){
             max = max_min_cent_dist[i];
             next_cent = candidates[i];
