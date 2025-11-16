@@ -1,7 +1,7 @@
 __global__
 void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size, 
         uint dim,
-        float* centroids, uint* chosen_centroids){
+        float* centroids, uint* chosen_centroids, unsigned long long seed){
     
     __shared__ uint r;
 
@@ -9,7 +9,7 @@ void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size,
 
     if(threadIdx.x == 0){
         curandStateMRG32k3a_t  state;
-        curand_init(blockIdx.x,
+        curand_init(seed+blockIdx.x,
             0,
             0,
             &state);
@@ -22,6 +22,16 @@ void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size,
     for(int i = threadIdx.x; i < dim; i+=blockDim.x){
         // printf("bid = %i, c[%i] = %f\n",r,threadIdx.x,dataset[i+r*dim]);
         centroids[i] = dataset[i+r*dim];
+    }
+}
+
+__global__
+void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size, 
+        uint dim,
+        float* centroids, uint* chosen_centroids){
+    chosen_centroids[0] = 0;
+    for(int i = threadIdx.x; i < dim; i+=blockDim.x){
+        centroids[i] = dataset[i];
     }
 }
 
@@ -44,13 +54,14 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
     // initialize variables
     uint warpIdx = threadIdx.x / WARP_SIZE;
     uint laneIdx = threadIdx.x % WARP_SIZE;
-    uint cent = k-1; // index of the the current centroid added
+    uint cent = k-1; // index of the last centroid added
 
-    uint candidate_to_centroid; // point that has the farthest nearest centroid
-    float max_dist = 0.0; // distance to farthest nearest centroid
+    uint candidate_to_centroid = 0; // point that has the farthest nearest centroid
+    float max_dist = -1.0; // distance to farthest nearest centroid
     int nwarps = blockDim.x / WARP_SIZE;
 
-    for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*blockDim.x){
+    // for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*blockDim.x){
+    for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
         ////////////////////////
         // CALCULATE DISTANCE //
         ////////////////////////
@@ -79,20 +90,18 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
         ////////////////////////
         ////////////////////////
 
-        // upperbounds[i] == min dist
-        // lowerbounds[i] == sec min dist
-        if(new_dist < upperbounds[i]){
-            lowerbounds[i] = upperbounds[i];
-            upperbounds[i] = new_dist;
-            labels[i] = cent;
-        }
-        else{
-            if(new_dist < lowerbounds[i]){
-                lowerbounds[i] = new_dist;
+        // upperbounds[i] is the distance from the point 'i' to its nearest centroid
+        // lowerbounds[i] The lowerbound is the distance from the point 'i' to its second nearest centroid
+        if(new_dist < lowerbounds[i]){
+            if(new_dist < upperbounds[i]){
+                lowerbounds[i] = upperbounds[i];
+                upperbounds[i] = new_dist;
+                labels[i] = cent;
             }
-            new_dist = upperbounds[i];
+            else
+                lowerbounds[i] = new_dist;
         }
-        if(new_dist > max_dist){
+        if(upperbounds[i] > max_dist){
             // uint not_chosen = 1;
             // for(uint l=laneIdx; l < k; l+=WARP_SIZE){
             //     if(chosen_centroids[l] == i){
@@ -100,7 +109,7 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
             //     }
             // }
             // if(__all_sync(FULL, not_chosen)){
-                max_dist = new_dist;
+                max_dist = upperbounds[i];
                 candidate_to_centroid=i; //i is candidate to next centroid
             // }
         }
@@ -120,15 +129,15 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
 // This kernel is launched with a single block
 __global__
 void append_centroid_kmeanspp(float* dataset, uint dataset_size, 
-        float* centroids, uint k, uint dim,
+        float* centroids, uint n_chosen_centroids, uint dim,
         uint* chosen_centroids,
         uint* candidates, float* max_min_cent_dist, int total_candidates
 ){
     __shared__ float sh_max_dist[MAX_THREADS];
     __shared__ uint sh_next_cent[MAX_THREADS];
     
-    float max = 0.0;
-    uint next_cent=dataset_size+1;
+    float max = -1.0;
+    uint next_cent=0;
     for(int i = threadIdx.x; i < total_candidates; i+=blockDim.x){
         if(max < max_min_cent_dist[i]){
             max = max_min_cent_dist[i];
@@ -144,20 +153,17 @@ void append_centroid_kmeanspp(float* dataset, uint dataset_size,
             if(sh_max_dist[threadIdx.x] < sh_max_dist[threadIdx.x + s]){
                 sh_max_dist[threadIdx.x] = sh_max_dist[threadIdx.x + s];
                 sh_next_cent[threadIdx.x] = sh_next_cent[threadIdx.x + s];
-
             }
         }
         __syncthreads();
     }
     uint new_cent = sh_next_cent[0];
     if(threadIdx.x == 0){
-        // if(new_cent >= dataset_size){
-        //     printf("ERROR: new cent == %u dist == %f\n",sh_next_cent[0],sh_max_dist[0]);
-        // }
-        chosen_centroids[k] = new_cent;
+        printf("new cent == %u dist == %f\n",sh_next_cent[0],sh_max_dist[0]);
+        chosen_centroids[n_chosen_centroids] = new_cent;
     }
     for(int i = threadIdx.x; i < dim; i+=blockDim.x){
-        centroids[i+k*dim] = dataset[i+new_cent*dim];
+        centroids[i+n_chosen_centroids*dim] = dataset[i+new_cent*dim];
     }
 }
 

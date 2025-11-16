@@ -2398,7 +2398,8 @@ int main(int argc,char* argv[])
 
     RSFK rsfk_knn(points, nullptr, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
                   RANDOM_SEED, nn_exploring_factor, forest_log_output);
-    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
+    // rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
+    rsfk_knn.knn_gpu_rsfk_forest(1, K, N, D, VERBOSE, "tree");
 
     return 0;
 }

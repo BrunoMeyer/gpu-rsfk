@@ -23,6 +23,10 @@
 
 #include "kernel-functions/kmeanspp.cu"
 
+
+#define DEBUG_KMEANSPP 1 //DEBUG !!!!!!!!!!!!!!!!!
+
+
 void write_data_from_device(float* d_data, uint n, uint d, char* filename) {
 
 	thrust::host_vector<float> h_data(d*n);
@@ -61,6 +65,11 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
     cudaGetDeviceProperties(&deviceProp, devUsed);
 
     // Tries to ensure that there are at least two blocks per multiprocessor
+	int max_threads = deviceProp.maxThreadsPerBlock;
+	if(max_threads > MAX_THREADS){
+		printf("WARNING: The macro MAX_THREADS (%d) is lower than the device max threads per block (%d). \n",MAX_THREADS,max_threads);
+		max_threads = MAX_THREADS;
+	}
     int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
     if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
     int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
@@ -68,6 +77,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 	printf("K-Means GPU Implementation\n");
 	printf("Using %d blocks of %d threads (Device: %s)\n",nblocks,nthreads,deviceProp.name);
+	printf("Max threads per block: %d\n",max_threads);
 	printf("Dataset size: %d, Dim: %d, K: %d\n",dataset_size,dim,k);
 
 
@@ -342,16 +352,26 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		//initialize first centroid at random and set bounds as max float
 		setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_upperbounds,dataset_size);
 		setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
-		initialize_first_cent_kmeanspp<<<1,MAX_THREADS>>>(
+		
+		// RANDOM FIRST CENTROID 
+		static unsigned long long seed = 0;
+		initialize_first_cent_kmeanspp<<<1,max_threads>>>(
 			d_dataset,dataset_size,logic_dim,
-			d_centroids, d_chosen_centroids);
+			d_centroids, d_chosen_centroids, seed);
+		seed+=1;
+
+		// GET FIRST POINT TO BE THE FIRST CENTROID
+		// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+		// 	d_dataset,dataset_size,logic_dim,
+		// 	d_centroids, d_chosen_centroids);
+		
 		cudaDeviceSynchronize();
 		gpuErrchk( cudaPeekAtLastError() );
 
-		for(uint i = 1; i < k; i++){
+		for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
 			find_new_centroid_kmeanspp<<<nblocks,nthreads>>>(
 				d_dataset,dataset_size,
-				d_centroids,i,
+				d_centroids,n_chosen_centroids,
 				logic_dim,
 				d_labels,
 				d_upperbounds,d_lowerbounds,
@@ -361,9 +381,10 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 			cudaDeviceSynchronize();
 			gpuErrchk( cudaPeekAtLastError() );
 
-			append_centroid_kmeanspp<<<1,MAX_THREADS>>>(
+			//WARNING: max_threads has to be power of 2
+			append_centroid_kmeanspp<<<1,max_threads>>>(
 				d_dataset,dataset_size,
-				d_centroids,i,
+				d_centroids,n_chosen_centroids,
 				logic_dim,
 				d_chosen_centroids,
 				d_candidates_to_nextcent, d_max_min_cent_dist, nblocks*nwarps
@@ -373,7 +394,15 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 			#if DEBUG_KMEANSPP 
 				char filename[100];
-				sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",i);
+				sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
+				write_data_from_device(
+					d_centroids,
+					n_chosen_centroids+1,
+					logic_dim,
+					filename
+				);
+
+				sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
 				write_data_from_device(
 					(int*)d_labels,
 					dataset_size,
@@ -382,7 +411,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 				);
 
 
-				sprintf(filename,"./out/upperbound-it-%03u.txt",i);
+				sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
 				write_data_from_device(
 					d_upperbounds,
 					dataset_size,
@@ -391,7 +420,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 				);
 
 
-				sprintf(filename,"./out/lowerbound-it-%03u.txt",i);
+				sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
 				write_data_from_device(
 					d_lowerbounds,
 					dataset_size,
@@ -403,7 +432,16 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 		}
 
-
+		#if DEBUG_KMEANSPP 
+			char filename[100];
+			sprintf(filename,"./out/chosen_centroids.txt",d_chosen_centroids);
+			write_data_from_device(
+				(int*)d_chosen_centroids,
+				k,
+				1,
+				filename
+			);
+		#endif
 		label_last_centroid_kmeanspp<<<nblocks,nthreads>>>(
 			d_dataset,dataset_size,
 			d_centroids,k,
@@ -546,12 +584,12 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 				write_data_from_device(
 					d_group_centroids,
 					t_groups,
-					2,
+					logic_dim,
 					filename
 				);
 			#endif
 		}
-		organize_group_filter<<<1,MAX_THREADS,(t_groups*3+1)*sizeof(uint)>>>( 
+		organize_group_filter<<<1,max_threads,(t_groups*3+1)*sizeof(uint)>>>( 
 			d_group_centroids, k, logic_dim, 
 			t_groups,
 			d_group_filter_labels, 
@@ -672,7 +710,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		write_data_from_device(
 			d_centroids,
 			k,
-			2,
+			logic_dim,
 			"./out/centroids-it-000.txt"
 		);
 
@@ -789,7 +827,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 			write_data_from_device(
 				d_centroids,
 				k,
-				2,
+				logic_dim,
 				filename
 			);
 
@@ -991,14 +1029,14 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		write_data_from_device(
 			d_centroids,
 			k,
-			2,
+			logic_dim,
 			"./out/centroids-final.txt"
 		);
 
 		write_data_from_device(
 			d_dataset,
 			dataset_size,
-			2,
+			dim,
 			"./out/points.txt"
 		);
 

@@ -216,7 +216,10 @@ TreeInfo create_bucket_from_kmeansyy(
     if(current_count > max_bucket_size){
         max_bucket_size = current_count;
     }
-    // std::cout << "Max bucket size: " << max_bucket_size << std::endl;
+    std::cout << "Max bucket size: " << max_bucket_size << std::endl;
+    if(max_bucket_size > 1024){
+        std::cout << "Warning: max bucket size is greater than 1024 (limit for rsfk)!" << std::endl;
+    }
     
     // Create padded bucket array (each cluster with max_bucket_size)
     thrust::host_vector<int> h_nodes_bucket(total_buckets * max_bucket_size, -1);
@@ -234,16 +237,16 @@ TreeInfo create_bucket_from_kmeansyy(
     thrust::device_vector<int> d_bucket_size(total_buckets, 0);    
 
     // Print padded buckets
-    #define DEBUG_BUCKETS 1
-    #ifdef DEBUG_BUCKETS
+    // #define DEBUG_BUCKETS 1
     for(int i = 0; i < total_buckets; i++){
         std::cout << "Bucket " << i << " (size " << h_bucket_size[i] << "): ";
+    #ifdef DEBUG_BUCKETS
         for(int j = 0; j < max_bucket_size; j++){
             std::cout << h_nodes_bucket[i * max_bucket_size + j] << " ";
         }
+    #endif
         std::cout << std::endl;
     }
-    #endif
 
     // Update ForestInfo for max_bucket_size
     
