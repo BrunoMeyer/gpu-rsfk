@@ -24,7 +24,7 @@
 #include "kernel-functions/kmeanspp.cu"
 
 
-#define DEBUG_KMEANSPP 1 //DEBUG !!!!!!!!!!!!!!!!!
+// #define DEBUG_KMEANSPP 1 //DEBUG !!!!!!!!!!!!!!!!!
 
 
 void write_data_from_device(float* d_data, uint n, uint d, char* filename) {

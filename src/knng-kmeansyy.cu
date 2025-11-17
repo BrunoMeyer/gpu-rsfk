@@ -120,9 +120,9 @@ TreeInfo create_bucket_from_kmeansyy(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
-    int total_buckets=64,
-    int max_iter = 30,
-    int check_method = 2,
+    int total_buckets=32,
+    int max_iter = 32,
+    int check_method = 0,
     // printf("check_method: 0 -> until max it\n"),
     // printf("              1 -> by squared norm error\n"),
     // printf("              2 -> by number of reassingments (default)\n"),
@@ -131,6 +131,7 @@ TreeInfo create_bucket_from_kmeansyy(
     int t_groups = 32
     )
 {
+    total_buckets = N / 64;
     forest_log.count_tree += 1;
     
     int devUsed = 0;
@@ -216,10 +217,10 @@ TreeInfo create_bucket_from_kmeansyy(
     if(current_count > max_bucket_size){
         max_bucket_size = current_count;
     }
-    std::cout << "Max bucket size: " << max_bucket_size << std::endl;
-    if(max_bucket_size > 1024){
-        std::cout << "Warning: max bucket size is greater than 1024 (limit for rsfk)!" << std::endl;
-    }
+    // std::cout << "Max bucket size: " << max_bucket_size << std::endl;
+    // if(max_bucket_size > 1024){
+    //     std::cout << "Warning: max bucket size is greater than 1024 (limit for rsfk)!" << std::endl;
+    // }
     
     // Create padded bucket array (each cluster with max_bucket_size)
     thrust::host_vector<int> h_nodes_bucket(total_buckets * max_bucket_size, -1);
@@ -238,54 +239,47 @@ TreeInfo create_bucket_from_kmeansyy(
 
     // Print padded buckets
     // #define DEBUG_BUCKETS 1
+    // #define DEBUG_BUCKETS_CONTENT 1
+    #ifdef DEBUG_BUCKETS
     for(int i = 0; i < total_buckets; i++){
         std::cout << "Bucket " << i << " (size " << h_bucket_size[i] << "): ";
-    #ifdef DEBUG_BUCKETS
-        for(int j = 0; j < max_bucket_size; j++){
-            std::cout << h_nodes_bucket[i * max_bucket_size + j] << " ";
-        }
-    #endif
+        #ifdef DEBUG_BUCKETS_CONTENT
+            for(int j = 0; j < max_bucket_size; j++){
+                std::cout << h_nodes_bucket[i * max_bucket_size + j] << " ";
+            }
+        #endif
         std::cout << std::endl;
     }
+    #endif
+
+    // Move to device
+    cudaMemcpy(thrust::raw_pointer_cast(d_nodes_bucket.data()), h_nodes_bucket.data(),
+                sizeof(int)*total_buckets*max_bucket_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(thrust::raw_pointer_cast(d_bucket_size.data()), h_bucket_size.data(),
+                sizeof(int)*total_buckets, cudaMemcpyHostToDevice);
 
     // Update ForestInfo for max_bucket_size
-    
-
-    // exit(0);
-
-    // const thrust::device_vector< int > v{std::cbegin(init), std::cend(init)};
-
-    // // optimization to avoid unnecessary initialization of index to zero
-    // auto const seq_iter =
-    //     thrust::make_counting_iterator(
-    //         static_cast< std::intptr_t >(0));
-
-    // thrust::device_vector< std::intptr_t > index{seq_iter,
-    //                                              thrust::next(seq_iter, v.size())};
-    
-    // auto const v_ptr = v.data();
-
-    // thrust::sort(
-    //     index.begin(), index.end(),
-    //     [v_ptr] __host__ __device__ (std::intptr_t left_idx, std::intptr_t right_idx)
-    //     {
-    //         return v_ptr[left_idx] < v_ptr[right_idx];
-    //     });
-
-    // thrust::copy(
-    //     index.cbegin(), index.cend(),
-    //     std::ostream_iterator< std::intptr_t >(std::cout, ", "));
-    // std::cout << std::endl;
 
     err = cudaFree(d_labels);
     if (err != cudaSuccess){
         fprintf(stderr, "Failed to free device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
-    
+
+    // Health check and debug prints
+    // thrust::host_vector<int> h_test_bucket_size = d_bucket_size;
+    // int total_leaves = 0;
+    // for(int i = 0; i < total_buckets; i++){
+    //     if(h_test_bucket_size[i] > 0){
+    //         total_leaves++;
+    //     }
+    // }
+    // if(VERBOSE > 0){
+        // std::cout << "KMeans created " << total_leaves << " non-empty buckets out of " << total_buckets << " total buckets." << std::endl;
+        // std::cout << "Maximum bucket size is " << max_bucket_size << std::endl;
+    // }
 
     
-
 
     
     TreeInfo tinfo = TreeInfo(total_buckets, max_bucket_size,

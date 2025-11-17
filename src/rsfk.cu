@@ -2140,8 +2140,8 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
 
         // tinfo.device_nodes_buckets
         // tinfo.device_bucket_sizes
-        
-        
+
+
         // tinfo.print_buckets();
         // exit(0);
 
@@ -2386,12 +2386,12 @@ int main(int argc,char* argv[])
         labels[i] = (l>N/2);
     }
 
-    write_points_to_file(
-        points,
-        N,
-        D,
-        "dataset_rsfk.txt"
-    );
+    // write_points_to_file(
+    //     points,
+    //     N,
+    //     D,
+    //     "dataset_rsfk.txt"
+    // );
 
     int nn_exploring_factor = 0;
     float* forest_log_output = (float*)malloc(sizeof(float)*5*16+2);

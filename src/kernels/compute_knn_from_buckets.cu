@@ -1039,8 +1039,6 @@ void compute_knn_from_buckets_predist_nolock(
         p1 = nodes_bucket[bid*max_bucket_size + i];
         sm_leaf_bucket[i] = p1;
 
-        // Print test
-        printf("test update knn\n");
 
         knn_id = p1*K; //mc: linha da matriz de knn
         
