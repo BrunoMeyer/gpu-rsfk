@@ -49,6 +49,427 @@ void write_data_from_device(int* d_data, uint n, uint d, char* filename) {
 		thrust::raw_pointer_cast(h_data.data()));
 }
 
+/////////////////////////
+//      K-MEANS++      //
+/////////////////////////
+void kmeanspp(float* d_dataset, uint dataset_size, 
+        uint dim, uint k, 
+		uint verbosity,
+		//OUTPUTS
+		float* d_centroids,
+        uint* d_labels
+){
+
+	// ALLOC MEMORY
+	cudaError_t err = cudaSuccess;
+	int devUsed = 0;
+	cudaSetDevice(devUsed);
+	cudaDeviceProp deviceProp;
+	cudaGetDeviceProperties(&deviceProp, devUsed);
+
+	int max_threads = deviceProp.maxThreadsPerBlock;
+	if(max_threads > MAX_THREADS && verbosity){
+		printf("WA in %s %d: The macro MAX_THREADS (%d) is lower than the device max threads per block (%d). \n", __FILE__,__LINE__, MAX_THREADS,max_threads);
+		max_threads = MAX_THREADS;
+	}
+	int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
+	if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
+	int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
+	int nwarps = nthreads / WARP_SIZE;
+
+	float *d_lowerbounds = NULL;
+	err = cudaMalloc((void **)&d_lowerbounds, sizeof(float)*dataset_size);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+
+	float *d_upperbounds = NULL;
+	err = cudaMalloc((void **)&d_upperbounds, sizeof(float)*dataset_size);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+
+	uint *d_chosen_centroids = NULL;
+	err = cudaMalloc((void **)&d_chosen_centroids, sizeof(uint)*k);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	float *d_max_min_cent_dist = NULL; 
+	err = cudaMalloc((void **)&d_max_min_cent_dist, sizeof(float)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	uint *d_candidates_to_nextcent = NULL; 
+	err = cudaMalloc((void **)&d_candidates_to_nextcent, sizeof(uint)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	//---
+	//initialize first centroid at random and set bounds as max float
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_upperbounds,dataset_size);
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
+	
+	// RANDOM FIRST CENTROID 
+	static unsigned long long seed = 0;
+	initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+		d_dataset,dataset_size,dim,
+		d_centroids, d_chosen_centroids, seed);
+	seed+=1;
+
+	// GET FIRST POINT TO BE THE FIRST CENTROID
+	// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+	// 	d_dataset,dataset_size,logic_dim,
+	// 	d_centroids, d_chosen_centroids);
+	
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
+		find_new_centroid_kmeanspp<<<nblocks,nthreads>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_labels,
+			d_upperbounds,d_lowerbounds,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist
+		);
+		cudaDeviceSynchronize();
+		gpuErrchk( cudaPeekAtLastError() );
+
+		//WARNING: max_threads has to be power of 2
+		append_centroid_kmeanspp<<<1,max_threads>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist, nblocks*nwarps
+		);
+		cudaDeviceSynchronize();
+		gpuErrchk( cudaPeekAtLastError() );
+
+		#if DEBUG_KMEANSPP 
+			char filename[100];
+			sprintf(filename,"./out/centroids-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_centroids,
+				n_chosen_centroids+1,
+				dim,
+				filename
+			);
+
+			sprintf(filename,"./out/labels-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/upperbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/lowerbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_lowerbounds,
+				dataset_size,
+				1,
+				filename
+			);
+		#endif
+
+
+	}
+
+	#if DEBUG_KMEANSPP 
+		char filename[100];
+		sprintf(filename,"./out/gr-chosen_centroids.txt",d_chosen_centroids);
+		write_data_from_device(
+			(int*)d_chosen_centroids,
+			k,
+			1,
+			filename
+		);
+	#endif
+	label_last_centroid_kmeanspp<<<nblocks,nthreads>>>(
+		d_dataset,dataset_size,
+		d_centroids,k,
+		dim,
+		d_labels,
+		d_upperbounds,d_lowerbounds
+	);
+
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	err = cudaFree(d_lowerbounds);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_upperbounds);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+
+	err = cudaFree(d_chosen_centroids);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_max_min_cent_dist);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_candidates_to_nextcent);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+}
+
+void kmeansppAndBoundsInitialization(float* d_dataset, uint dataset_size, 
+        uint dim, uint k, 
+		uint max_it, 
+		uint verbosity,
+		//OUTPUTS
+		float* d_centroids,
+        uint* d_labels,
+		float* d_upperbounds,
+		float* d_lowerbounds,
+		int* d_labels_change_count,
+		float* d_new_centroids,
+		uint* d_old_labels_count,
+		float* d_centroid_shift,
+		float* d_max_centroid_shift
+){
+
+	if(verbosity > 1){
+		printf("/////////////////////////\n");
+		printf("//      K-MEANS++      //\n");
+		printf("/////////////////////////\n");
+	}
+	// ALLOC MEMORY
+	cudaError_t err = cudaSuccess;
+	int devUsed = 0;
+	cudaSetDevice(devUsed);
+	cudaDeviceProp deviceProp;
+	cudaGetDeviceProperties(&deviceProp, devUsed);
+
+	int max_threads = deviceProp.maxThreadsPerBlock;
+	if(max_threads > MAX_THREADS){
+		printf("WA in %s %d: The macro MAX_THREADS (%d) is lower than the device max threads per block (%d). \n", __FILE__,__LINE__, MAX_THREADS,max_threads);
+		max_threads = MAX_THREADS;
+	}
+	int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
+	if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
+	int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
+	int nwarps = nthreads / WARP_SIZE;
+
+
+	uint *d_chosen_centroids = NULL;
+	err = cudaMalloc((void **)&d_chosen_centroids, sizeof(uint)*k);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	float *d_max_min_cent_dist = NULL; 
+	err = cudaMalloc((void **)&d_max_min_cent_dist, sizeof(float)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	uint *d_candidates_to_nextcent = NULL; 
+	err = cudaMalloc((void **)&d_candidates_to_nextcent, sizeof(uint)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	//---
+	//initialize first centroid at random and set bounds as max float
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_upperbounds,dataset_size);
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
+	
+	// RANDOM FIRST CENTROID 
+	static unsigned long long seed = 0;
+	initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+		d_dataset,dataset_size,dim,
+		d_centroids, d_chosen_centroids, seed);
+	seed+=1;
+
+	// GET FIRST POINT TO BE THE FIRST CENTROID
+	// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+	// 	d_dataset,dataset_size,logic_dim,
+	// 	d_centroids, d_chosen_centroids);
+	
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
+		find_new_centroid_kmeanspp<<<nblocks,nthreads>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_labels,
+			d_upperbounds,d_lowerbounds,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist
+		);
+		cudaDeviceSynchronize();
+		gpuErrchk( cudaPeekAtLastError() );
+
+		//WARNING: max_threads has to be power of 2
+		append_centroid_kmeanspp<<<1,max_threads>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist, nblocks*nwarps
+		);
+		cudaDeviceSynchronize();
+		gpuErrchk( cudaPeekAtLastError() );
+
+		#if DEBUG_KMEANSPP 
+			char filename[100];
+			sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_centroids,
+				n_chosen_centroids+1,
+				dim,
+				filename
+			);
+
+			sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_lowerbounds,
+				dataset_size,
+				1,
+				filename
+			);
+		#endif
+
+
+	}
+
+	#if DEBUG_KMEANSPP 
+		char filename[100];
+		sprintf(filename,"./out/chosen_centroids.txt",d_chosen_centroids);
+		write_data_from_device(
+			(int*)d_chosen_centroids,
+			k,
+			1,
+			filename
+		);
+	#endif
+	
+	label_last_centroid_kmeanspp<<<nblocks,nthreads>>>(
+		d_dataset,dataset_size,
+		d_centroids,k,
+		dim,
+		d_labels,
+		d_upperbounds,d_lowerbounds
+	);
+
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	cudaMemset(d_labels_change_count, 0, sizeof(uint)*k*nblocks);	
+	cudaMemset(d_new_centroids, 0, sizeof(float)*k*dim);	
+	sum_all_points_to_centroid<<<ceil(dataset_size*dim/(float)nthreads),nthreads>>>(
+		d_dataset,dataset_size,
+		d_centroids,k,
+		dim,
+		d_labels,
+		d_labels_change_count,
+		d_new_centroids
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	divide_sum_by_count<<<ceil(k*dim/(float)nthreads),nthreads>>>(
+		d_new_centroids, k, dim,
+		d_labels_change_count,
+		d_old_labels_count
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	uint n_threads_calculate_shift = nthreads;
+	if(dim/4 < nthreads){
+		if(dim/4 < 32)
+			n_threads_calculate_shift = 32;
+		else
+			n_threads_calculate_shift = dim/4;
+	}
+	cudaMemset(d_max_centroid_shift, 0, sizeof(float));	
+	calculate_centroid_shift<<<k,n_threads_calculate_shift>>>(
+		d_centroids,
+		d_new_centroids, 
+		dim,k,
+		d_centroid_shift,d_max_centroid_shift
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	update_global_bounds<<<nblocks,nthreads>>>(
+		d_labels,
+		dataset_size,
+		d_lowerbounds,d_upperbounds,
+		d_centroid_shift,d_max_centroid_shift
+	);      
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	err = cudaFree(d_chosen_centroids);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_max_min_cent_dist);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_candidates_to_nextcent);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+}
+
+
 void kmeansGpu(float* d_dataset, uint dataset_size, 
         uint dim, uint k, 
 		uint max_it, 
@@ -307,219 +728,41 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 
 	chrono_start(&ch_init);
+	float* d_old_centroids = d_centroids;
 	if( initialization_method == 0){
 		if(verbosity > 1){
 			printf("//////////////////////\n");
 			printf("//      RANDOM      //\n");
 			printf("//////////////////////\n");
 		} 
+		printf("ERROR: Random Initialization of centroids is outdated. Use KMeans++ initialization.\n");
+		exit(EXIT_FAILURE);
 
-			initialize<<<k,nthreads>>>(
-				d_dataset,dataset_size,logic_dim,
-				d_centroids);
-			cudaDeviceSynchronize();
+		// initialize<<<k,nthreads>>>(
+		// 	d_dataset,dataset_size,logic_dim,
+		// 	d_centroids);
+		// cudaDeviceSynchronize();
 		
 	}
 	else if( initialization_method == 1){
-		/////////////////////////
-		//      K-MEANS++      //
-		/////////////////////////
-		if(verbosity > 1){
-			printf("/////////////////////////\n");
-			printf("//      K-MEANS++      //\n");
-			printf("/////////////////////////\n");
-		}
-		// ALLOC MEMORY
-		uint *d_chosen_centroids = NULL; 
-		err = cudaMalloc((void **)&d_chosen_centroids, sizeof(uint)*k);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to allocate device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
-		float *d_max_min_cent_dist = NULL; 
-		err = cudaMalloc((void **)&d_max_min_cent_dist, sizeof(float)*nblocks*nwarps);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to allocate device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
-		uint *d_candidates_to_nextcent = NULL; 
-		err = cudaMalloc((void **)&d_candidates_to_nextcent, sizeof(uint)*nblocks*nwarps);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to allocate device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
-		//---
-		//initialize first centroid at random and set bounds as max float
-		setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_upperbounds,dataset_size);
-		setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
-		
-		// RANDOM FIRST CENTROID 
-		static unsigned long long seed = 0;
-		initialize_first_cent_kmeanspp<<<1,max_threads>>>(
-			d_dataset,dataset_size,logic_dim,
-			d_centroids, d_chosen_centroids, seed);
-		seed+=1;
-
-		// GET FIRST POINT TO BE THE FIRST CENTROID
-		// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
-		// 	d_dataset,dataset_size,logic_dim,
-		// 	d_centroids, d_chosen_centroids);
-		
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
-			find_new_centroid_kmeanspp<<<nblocks,nthreads>>>(
-				d_dataset,dataset_size,
-				d_centroids,n_chosen_centroids,
-				logic_dim,
-				d_labels,
-				d_upperbounds,d_lowerbounds,
-				d_chosen_centroids,
-				d_candidates_to_nextcent, d_max_min_cent_dist
-			);
-			cudaDeviceSynchronize();
-			gpuErrchk( cudaPeekAtLastError() );
-
-			//WARNING: max_threads has to be power of 2
-			append_centroid_kmeanspp<<<1,max_threads>>>(
-				d_dataset,dataset_size,
-				d_centroids,n_chosen_centroids,
-				logic_dim,
-				d_chosen_centroids,
-				d_candidates_to_nextcent, d_max_min_cent_dist, nblocks*nwarps
-			);
-			cudaDeviceSynchronize();
-			gpuErrchk( cudaPeekAtLastError() );
-
-			#if DEBUG_KMEANSPP 
-				char filename[100];
-				sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
-				write_data_from_device(
-					d_centroids,
-					n_chosen_centroids+1,
-					logic_dim,
-					filename
-				);
-
-				sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
-				write_data_from_device(
-					(int*)d_labels,
-					dataset_size,
-					1,
-					filename
-				);
-
-
-				sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
-				write_data_from_device(
-					d_upperbounds,
-					dataset_size,
-					1,
-					filename
-				);
-
-
-				sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
-				write_data_from_device(
-					d_lowerbounds,
-					dataset_size,
-					1,
-					filename
-				);
-			#endif
-
-
-		}
-
-		#if DEBUG_KMEANSPP 
-			char filename[100];
-			sprintf(filename,"./out/chosen_centroids.txt",d_chosen_centroids);
-			write_data_from_device(
-				(int*)d_chosen_centroids,
-				k,
-				1,
-				filename
-			);
-		#endif
-		label_last_centroid_kmeanspp<<<nblocks,nthreads>>>(
-			d_dataset,dataset_size,
-			d_centroids,k,
-			logic_dim,
-			d_labels,
-			d_upperbounds,d_lowerbounds
-		);
-
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		cudaMemset(d_labels_change_count, 0, sizeof(uint)*k*nblocks);	
-		cudaMemset(d_new_centroids, 0, sizeof(float)*k*logic_dim);	
-		sum_all_points_to_centroid<<<ceil(dataset_size*logic_dim/(float)nthreads),nthreads>>>(
-			d_dataset,dataset_size,
-			d_centroids,k,
-			logic_dim,
-			d_labels,
-			d_labels_change_count,
-			d_new_centroids
-		);
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		divide_sum_by_count<<<ceil(k*logic_dim/(float)nthreads),nthreads>>>(
-			d_new_centroids, k, logic_dim,
-			d_labels_change_count,
-			d_old_labels_count
-		);
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		uint n_threads_calculate_shift = nthreads;
-		if(logic_dim/4 < nthreads){
-			if(logic_dim/4 < 32)
-				n_threads_calculate_shift = 32;
-			else
-				n_threads_calculate_shift = logic_dim/4;
-		}
-		cudaMemset(d_max_centroid_shift, 0, sizeof(float));	
-		calculate_centroid_shift<<<k,n_threads_calculate_shift>>>(
+		kmeansppAndBoundsInitialization(
+			d_dataset, dataset_size,
+			logic_dim, k,
+			max_it,
+			verbosity,
+			//OUTPUTS
 			d_centroids,
-			d_new_centroids, 
-			logic_dim,k,
-			d_centroid_shift,d_max_centroid_shift
-		);
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		update_global_bounds<<<nblocks,nthreads>>>(
 			d_labels,
-			dataset_size,
-			d_lowerbounds,d_upperbounds,
-			d_centroid_shift,d_max_centroid_shift
-		);      
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		cudaMemset(d_group_lowerbounds,0, sizeof(float)*t_groups*dataset_size);
-		float* d_old_centroids = d_centroids;
+			d_upperbounds,
+			d_lowerbounds,
+			d_labels_change_count,
+			d_new_centroids,
+			d_old_labels_count,
+			d_centroid_shift,
+			d_max_centroid_shift
+		);
 		d_centroids = d_new_centroids;
 		d_new_centroids = d_old_centroids;
-
-		err = cudaFree(d_chosen_centroids);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to free device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
-		err = cudaFree(d_max_min_cent_dist);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to free device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
-		err = cudaFree(d_candidates_to_nextcent);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to free device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
 	}
 	// else{
 	// 	cudaMemcpy(d_new_centroids, centroids,  sizeof(float)*dim*k, cudaMemcpyHostToDevice);	
@@ -531,11 +774,38 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 	// }
 	chrono_stop(&ch_init);
 
+
+
+
+	#if DEBUG_KMEANSPP 
+		write_data_from_device(
+			d_centroids,
+			k,
+			logic_dim,
+			"./out/centroids-it-000.txt"
+		);
+
+		write_data_from_device(
+			(int*)d_labels,
+			dataset_size,
+			1,
+			"./out/labels-it-000.txt"
+		);
+	#endif
+
+
+
+
+
+
+
+
+
 	////////////////////////////
 	//      GROUP FILTER      //
 	////////////////////////////
 	//init group filter
-
+	cudaMemset(d_group_lowerbounds,0, sizeof(float)*t_groups*dataset_size);
 
 	// ALLOC MEMORY
 	float *d_group_centroids = NULL; 
@@ -552,68 +822,18 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
     chronometer_t ch_creating_group_filter;
     chrono_reset(&ch_creating_group_filter);
     chrono_start(&ch_creating_group_filter);
-	do {
-		// cudaMemcpy(d_group_centroids, d_centroids, sizeof(float)*t_groups*dim,cudaMemcpyDeviceToDevice);
-		if(verbosity > 2)
-			printf("Group filter size = %d\n",t_groups);
-		for(uint i = 0; i < 5; i++){
-			group_filter_assignment<<<nblocks,nthreads>>>(d_centroids, k, 
-				logic_dim, t_groups, 
-				d_group_centroids, d_group_filter_labels);
-			cudaDeviceSynchronize();
-			gpuErrchk( cudaPeekAtLastError() );
 
-			group_filter_update<<<t_groups,nthreads,logic_dim*sizeof(float)>>>(d_centroids, k, 
-					logic_dim,
-					d_group_centroids, d_group_filter_labels);
-			cudaDeviceSynchronize();
-			gpuErrchk( cudaPeekAtLastError() );
+	//////////////////////////////////////////
+	// CREATING GROUP FILTER USING KMEANS++ //
+	//////////////////////////////////////////
+	if(verbosity > 2)
+		printf("Group filter size = %d\n",t_groups);
+	kmeanspp(d_centroids, k, logic_dim, t_groups, 0, d_group_centroids, d_group_filter_labels);
+
+	chrono_stop(&ch_creating_group_filter);
+	//////////////////////////////////////////
 
 
-			#if DEBUG_KMEANSPP 
-				char filename[100];
-				sprintf(filename,"./out/d_group_filter_labels-it-%03u.txt",i);
-				write_data_from_device(
-					(int*)d_group_filter_labels,
-					t_groups,
-					1,
-					filename
-				);
-
-				sprintf(filename,"./out/d_group_centroids-it-%03u.txt",i);
-				write_data_from_device(
-					d_group_centroids,
-					t_groups,
-					logic_dim,
-					filename
-				);
-			#endif
-		}
-		organize_group_filter<<<1,max_threads,(t_groups*3+1)*sizeof(uint)>>>( 
-			d_group_centroids, k, logic_dim, 
-			t_groups,
-			d_group_filter_labels, 
-			d_group_filter_cents, d_group_filter_locs,
-			d_groups_with_only_one_element
-			// ,(uint*)d_new_centroids
-		);
-		cudaDeviceSynchronize();
-		gpuErrchk( cudaPeekAtLastError() );
-
-		removed_groups = 0;
-		cudaMemcpy(&removed_groups, d_groups_with_only_one_element, sizeof(uint),cudaMemcpyDeviceToHost);
-		if(removed_groups)
-			printf("WA in %s %d: invalid groups = %d)\n",__FILE__, __LINE__,removed_groups);
-		t_groups-=removed_groups;
-	} while(removed_groups);
-    chrono_stop(&ch_creating_group_filter);
-
-	err = cudaFree(d_group_centroids);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device vector d_dataset (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
-	// printf("Group filter size = %d\n",t_groups);
 
 
 
@@ -704,23 +924,6 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		d_new_centroids = d_old_centroids;
 
 	}
-
-
-	#if DEBUG_KMEANSPP 
-		write_data_from_device(
-			d_centroids,
-			k,
-			logic_dim,
-			"./out/centroids-it-000.txt"
-		);
-
-		write_data_from_device(
-			(int*)d_labels,
-			dataset_size,
-			1,
-			"./out/labels-it-000.txt"
-		);
-	#endif
 
     uint n_it = 0;
 	float sqrdNormError = MAX_FLOAT;

@@ -159,7 +159,7 @@ void append_centroid_kmeanspp(float* dataset, uint dataset_size,
     }
     uint new_cent = sh_next_cent[0];
     if(threadIdx.x == 0){
-        printf("new cent == %u dist == %f\n",sh_next_cent[0],sh_max_dist[0]);
+        // printf("new cent == %u dist == %f\n",sh_next_cent[0],sh_max_dist[0]);
         chosen_centroids[n_chosen_centroids] = new_cent;
     }
     for(int i = threadIdx.x; i < dim; i+=blockDim.x){
@@ -180,7 +180,9 @@ void label_last_centroid_kmeanspp(float* dataset, uint dataset_size,
     uint laneIdx = threadIdx.x % WARP_SIZE;
     uint cent = k-1;
 
-    for(uint i = warpIdx+blockIdx.x*N_WARPS; i < dataset_size; i += N_WARPS*N_BLOCKS){
+    uint nwarps = blockDim.x / WARP_SIZE;
+
+    for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
         ////////////////////////
         // CALCULATE DISTANCE //
         ////////////////////////
