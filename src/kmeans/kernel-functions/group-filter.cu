@@ -1,6 +1,46 @@
 #include "gpu-utils.cu"
 
 __global__
+void organize_group_filter( 
+		uint* group_filter_labels,
+        uint k,        
+        uint t_groups,
+        uint* group_filter_location, 
+        uint* group_filter_cents
+    ){
+    __shared__ uint group_size;
+
+    if(threadIdx.x == 0){
+        group_filter_location[0] = 0;
+    }
+    for(int i = 0; i < t_groups; i++){
+        if(threadIdx.x == 0){
+            group_size = 0;
+        }
+        __syncthreads();
+
+        for(uint j = threadIdx.x; j < k; j+=blockDim.x){
+            if(group_filter_labels[j] == i){
+                uint pos = atomicAdd(&group_size,1) + group_filter_location[i]; 
+                group_filter_cents[pos] = j;
+            }
+        }
+        __syncthreads();
+        if(threadIdx.x == 0){
+            group_filter_location[i+1] = group_filter_location[i] + group_size;
+        }
+    }
+}
+
+/////////////////////////
+//// ICPADS24 VERSION ///
+/////////////////////////
+
+//////////////////////////
+/// !!!! OUTDATED !!!! ///
+//////////////////////////
+
+__global__
 void group_filter_assignment(float* centroids, uint k, 
         uint dim, uint t_groups, 
         float* group_centroid, uint* labels){

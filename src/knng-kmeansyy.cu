@@ -120,12 +120,12 @@ TreeInfo create_bucket_from_kmeansyy(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
-    int total_buckets=32,
+    int total_buckets=128,
     int max_iter = 32,
-    int check_method = 0,
-    // printf("check_method: 0 -> until max it\n"),
-    // printf("              1 -> by squared norm error\n"),
-    // printf("              2 -> by number of reassingments (default)\n"),
+    int check_method = 2,
+    // 0 -> until max it
+    // 1 -> by squared norm error
+    // 2 -> by number of reassingments (default)
     int tolerance = 0.01,
     int init_method = 1, //0 -> random, 1 -> kmeans++
     int t_groups = 32

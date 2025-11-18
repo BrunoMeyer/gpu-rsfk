@@ -231,7 +231,7 @@ void sum_all_points_to_centroid(
         float* dataset, uint dataset_size, 
         float* centroids, uint k, uint dim, 
         uint* labels,
-        int* label_count,
+        uint* label_count,
         float* new_centroids
     ){
     uint tid = threadIdx.x + blockDim.x*blockIdx.x;
@@ -249,18 +249,13 @@ void sum_all_points_to_centroid(
 __global__
 void divide_sum_by_count(
         float* new_centroids, uint k, uint dim,
-        int* label_count,
-        uint* old_label_count
+        uint* label_count
     ){
     uint tid = threadIdx.x + blockDim.x*blockIdx.x;
     if(tid < k*dim){
         uint c = tid / dim;
         uint d = label_count[c];
         new_centroids[tid]=new_centroids[tid]/d;
-
-        //save the value to the next iteration
-        if(tid % dim == 0)
-            old_label_count[c]=d; 
     }
 }
 

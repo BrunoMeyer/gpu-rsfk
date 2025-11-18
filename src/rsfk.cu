@@ -2024,19 +2024,23 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
     for(int i=0; i < n_trees; ++i){
-        // tinfo = create_bucket_from_sample_tree(device_points,
-        //                                        N, D, VERBOSE-1,
-        //                                        forest_log,
-        //                                        run_name+"_"+std::to_string(i)+".png",
-        //                                        true, nullptr);
+        tinfo = create_bucket_from_sample_tree(device_points,
+                                               N, D, VERBOSE-1,
+                                               forest_log,
+                                               run_name+"_"+std::to_string(i)+".png",
+                                               true, nullptr);
 
-        tinfo = create_bucket_from_kmeansyy(device_points,
-                                               N, D, VERBOSE-1, forest_log);
+        // tinfo = create_bucket_from_kmeansyy(
+        //     device_points,
+        //     N,
+        //     D,
+        //     VERBOSE-1,
+        //     forest_log);
         
         // DEBUG: Move to device and print all tinfo data
         // thrust::device_vector<float> device_tinfo_data(tinfo.data(), tinfo.data() + tinfo.size());
         
-        if (VERBOSE >= 1){
+        if (VERBOSE > 1){
             printf("Partition %d/%d created with %d buckets\n", i+1, n_trees, tinfo.total_leaves);
             printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
         }
@@ -2046,7 +2050,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                        K, N, D, VERBOSE-1, tinfo,
                                        forest_log,
                                        run_name+"_"+std::to_string(i)+".png");
-        if (VERBOSE >= 1){
+        if (VERBOSE > 1){
             printf("Bucket %d/%d processed\n", i+1, n_trees);
         }
 

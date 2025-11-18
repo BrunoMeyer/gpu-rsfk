@@ -3,7 +3,7 @@
 #define GPUUTILS
 
 __device__
-inline
+static inline
 float euclidean_distance_sqr(
 		float* p0,
 		float* p1,
