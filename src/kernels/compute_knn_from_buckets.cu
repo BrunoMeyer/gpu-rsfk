@@ -1029,14 +1029,18 @@ void compute_knn_from_buckets_predist_nolock(
 
     // Non persistent kernel seems to be more efficient
     bid=blockIdx.x;
+    // if(threadIdx.x == 0 && bid == 0)
+    //     printf("Processing bucket %d of size %d with max bucket size %d\n", bid, cbs, max_bucket_size);
+    // for(i=threadIdx.x; i < cbs; i+=blockDim.x){ //TODO: Parallel per warp
     __syncthreads();
     cbs = bucket_size[bid];
-    // for(i=threadIdx.x; i < cbs; i+=blockDim.x){ //TODO: Parallel per warp
+
     for(i=wid; i < cbs; i+=blockDim.x/32){
         p1 = nodes_bucket[bid*max_bucket_size + i];
         sm_leaf_bucket[i] = p1;
 
-        knn_id = p1*K;
+
+        knn_id = p1*K; //mc: linha da matriz de knn
         
         /*
         max_position[i] = knn_id;
@@ -1118,6 +1122,7 @@ void compute_knn_from_buckets_predist_nolock(
     }
     */
 
+//    printf("Warp %d processing bucket %d of size %d\n", wid, bid, cbs);
     for(_p1=0; _p1 < cbs; ++_p1){ // TODO Invert order
         // printf("%d %d\n", lane, i);
         // real_p1 = sm_leaf_bucket[p1];
@@ -1381,7 +1386,8 @@ void compute_knn_from_buckets_predist_nolock(
 // The optimization consists use and communicate idle threads during lock system
 __global__ void
 // __launch_bounds__(1024, 1)
-__launch_bounds__(512, 2)
+// __launch_bounds__(512, 2)
+__launch_bounds__(128, 2)
 compute_knn_from_buckets_pertile(
                               RSFK_typepoints* points,
                               int* nodes_bucket,

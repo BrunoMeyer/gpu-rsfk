@@ -32,53 +32,23 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef __COMMON_RSFK__H
-#define __COMMON_RSFK__H
+#ifndef __KMEANSYY__H
+#define __KMEANSYY__H
 
-#define RSFK_typepoints float
+#include "./knng-kmeansyy.cu"
 
-// Lines per column
-#define RSFK_N_D 0
-
-// Columns 
-#define RSFK_D_N 1
-
-#define RSFK_POINTS_STRUCTURE RSFK_N_D
-#define RSFK_TREE_STRUCTURE RSFK_N_D
-
-#if   RSFK_POINTS_STRUCTURE == RSFK_D_N
-    #define get_point_idx(point,dimension,N,D) (dimension*N+point)
-#elif RSFK_POINTS_STRUCTURE == RSFK_N_D
-    // #define get_point_idx(point,dimension,N,D) (point*(D+20)+dimension)
-    #define get_point_idx(point,dimension,N,D) (point*D+dimension)
-#endif
-
-#if   RSFK_TREE_STRUCTURE == RSFK_D_N
-    #define get_tree_idx(nidx,dimension,N,D) (dimension*N+nidx)
-#elif RSFK_TREE_STRUCTURE == RSFK_N_D
-    // #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+19+1)+dimension)
-    #define get_tree_idx(nidx,dimension,N,D) (nidx*(D+1)+dimension)
-#endif
-
-
-// EDV = EUCLIDIEAN DISTANCE VERSION
-#define RSFK_EDV_ATOMIC_OK               0
-#define RSFK_EDV_ATOMIC_CSE              1   // common subexpression elimination
-#define RSFK_EDV_NOATOMIC                2
-#define RSFK_EDV_NOATOMIC_NOSHM          3   // value returned in register (NO SHM)
-#define RSFK_EDV_WARP_REDUCE_XOR         4
-#define RSFK_EDV_WARP_REDUCE_XOR_NOSHM   5   // value returned in register (NO SHM)
-
-#define RSFK_EUCLIDEAN_DISTANCE_VERSION RSFK_EDV_WARP_REDUCE_XOR_NOSHM
-
-
-#define RSFK_RELEASE 0
-#define RSFK_DEBUG 1
-// #define RSFK_COMPILE_TYPE RSFK_DEBUG
-#define RSFK_COMPILE_TYPE RSFK_RELEASE
-
-
-#define RSFK_WarpSize 32
-#define RSFK_TILE_SIZE 32
+// TreeInfo create_bucket_from_kmeansyy(
+//     thrust::device_vector<RSFK_typepoints> &device_points,
+//     int N, int D, int VERBOSE,
+//     std::string run_name="out.png",
+//     int total_buckets=128,
+//     int max_iter = 30,
+//     int check_method = 2,
+//     // printf("check_method: 0 -> until max it\n"),
+//     // printf("              1 -> by squared norm error\n"),
+//     // printf("              2 -> by number of reassingments (default)\n"),
+//     int tolerance = 0.01,
+//     int t_groups = 64
+   //  );
 
 #endif

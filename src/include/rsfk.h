@@ -268,6 +268,27 @@ public:
         device_bucket_sizes.clear();
         device_bucket_sizes.shrink_to_fit();
     }
+
+    void print_info(){
+        std::cout << "TreeInfo: total_leaves=" << total_leaves << " max_child=" << max_child << std::endl;
+    }
+
+    void print_buckets(){
+        thrust::host_vector<int> host_bucket_sizes = device_bucket_sizes;
+        thrust::host_vector<int> host_nodes_buckets = device_nodes_buckets;
+
+        int offset = 0;
+        for(int i=0; i < total_leaves; ++i){
+            int bsize = host_bucket_sizes[i];
+            std::cout << "Bucket " << i << " size " << bsize << ": ";
+            for(int j=0; j < bsize; ++j){
+                std::cout << host_nodes_buckets[offset + j] << " ";
+            }
+            std::cout << std::endl;
+            offset += bsize;
+        }
+    }
+
 };
 
 
