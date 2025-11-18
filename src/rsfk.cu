@@ -181,17 +181,6 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     tree_bucket_construction.stop();
 
     allocate_structures_query_traversal.start();
-    // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()), rsfkindextree->reached_max_depth);
-    // err = cudaGetLastError();
-    // if ( err != cudaSuccess )
-    // {
-    //     printf("CUDA Error: %s\n", cudaGetErrorString(err));
-    //     // Possibly: exit(-1) if program cannot continue....
-    // }
-    // cudaDeviceSynchronize();
-    
-
-    
     
     // DEBUG Variables
     #if RSFK_COMPILE_TYPE == RSFK_DEBUG
@@ -267,7 +256,6 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     
     count_total_nodes = 1;
     count_new_nodes = 1;
-
     
     for(depth=1; depth < rsfkindextree->reached_max_depth; depth++){
         check_active_points_cron.start();
@@ -358,36 +346,6 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
         }
     }
     total_tree_build_cron.stop();
-
-    // print_float_array<<<1,1>>>(thrust::raw_pointer_cast(device_points_parent.data()), NQ);
-    // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(device_points_parent.data()), NQ);
-    // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(device_points_depth.data()), NQ);
-    
-    // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(rsfkindextree->device_accumulated_nodes_count->data()), rsfkindextree->reached_max_depth);
-    // err = cudaGetLastError();
-    // if ( err != cudaSuccess )
-    // {
-    //     printf("CUDA Error: %s\n", cudaGetErrorString(err));
-    //     // Possibly: exit(-1) if program cannot continue....
-    // }
-    // cudaDeviceSynchronize();
-
-    // for(int i=0; i < rsfkindextree->reached_max_depth; ++i){
-    //     check_points_is_leaf<<<NB,NT>>>(
-    //         thrust::raw_pointer_cast(device_points_parent.data()),
-    //         thrust::raw_pointer_cast(device_points_depth.data()),
-    //         thrust::raw_pointer_cast(rsfkindextree->device_is_leaf[i]->data()),
-    //         i,
-    //         NQ
-    //     );
-    //     err = cudaGetLastError();
-    //     if ( err != cudaSuccess )
-    //     {
-    //         printf("CUDA Error: %s\n", cudaGetErrorString(err));
-    //         // Possibly: exit(-1) if program cannot continue....
-    //     }
-    //     cudaDeviceSynchronize();
-    // }
     
     thrust::device_vector<int> device_query_to_bucket_id(NQ, -1);
 
@@ -461,14 +419,6 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
         std::cout << "Allocate query structures takes: " << (float)(allocate_structures_query_traversal.t_total/1000) << " seconds" << std::endl;
         std::cout << "Update KNN of query points takes: " << (float)(knn_ann.t_total/1000) << " seconds" << std::endl;
     }
-        // do 
-    // {
-    // std::cout << '\n' << "Press a key to continue...";
-    // } while (std::cin.get() != '\n');
-
-    // print_int_array<<<1,1>>>(thrust::raw_pointer_cast(device_query_to_bucket_id.data()), NQ);
-    // cudaDeviceSynchronize();
-    // CudaTest((char *)"build_tree_utils Kernel failed!");
     
     rsfkindextree->free();
 
@@ -2000,16 +1950,28 @@ void RSFK::update_knn_indice_with_buckets(
     Cron cron_knn;
     cron_knn.start();
 
-    fprintf(stderr, "Calling compute_knn_from_buckets kernel with %d blocks of %d threads\n",
-            total_leaves, NT);
     
     // Print parameters
-    printf("KNN from buckets parameters:\n");
-    printf("  N: %d\n", N);
-    printf("  D: %d\n", D);
-    printf("  K: %d\n", K);
-    printf("  total_leaves: %d\n", total_leaves);
-    printf("  max_child: %d\n", max_child);
+    if(VERBOSE >= 2){
+        printf("Calling compute_knn_from_buckets kernel with %d blocks of %d threads\n",
+                total_leaves, NT);
+        printf("KNN from buckets parameters:\n");
+        printf("  N: %d\n", N);
+        printf("  D: %d\n", D);
+        printf("  K: %d\n", K);
+        printf("  total_leaves: %d\n", total_leaves);
+        printf("  max_child: %d\n", max_child);
+    }
+
+    // Before calling, ensure that max_child is < 1024
+    if(max_child > 1024){
+        printf("%s:%d: Error: max_child (%d) is greater than 1024,"
+               " which is not supported by the current KNN bucket"
+               " computation kernel implementation.\n",
+               __FILE__, __LINE__, max_child);
+        exit(1);
+    }
+
     // TODO: Check if it is viable to use shared memory 
     cudaDeviceSynchronize();
     gpuErrchk( cudaPeekAtLastError() );
@@ -2047,43 +2009,6 @@ void RSFK::update_knn_indice_with_buckets(
     // MAS COMO O KMEANS É USADO, ELE NUNCA É INCREMENTADO. 
 }
 
-// void RSFK::print_treeinfo_data_host(float* host_tinfo_data,
-//                                  int size,
-//                                  std::string filename="treeinfo.png")
-// {
-//     thrust::host_vector<float> host_data_vec(size);
-//     thrust::copy(host_tinfo_data,
-//                  host_tinfo_data + size,
-//                  host_data_vec.begin());
-
-//     RSFKPlot::plot_treeinfo_data(
-//         thrust::raw_pointer_cast(host_data_vec.data()),
-//         size,
-//         filename);
-// }
-
-// void RSFK::print_treeinfo_data_device(float* device_tinfo_data,
-//                                    int size,
-//                                    std::string filename="treeinfo.png")
-// {
-//     thrust::device_vector<float> device_data_vec(size);
-//     thrust::copy(thrust::device,
-//                  device_tinfo_data,
-//                  device_tinfo_data + size,
-//                  device_data_vec.begin());
-//     cudaDeviceSynchronize();
-
-//     thrust::host_vector<float> host_data_vec(size);
-//     thrust::copy(device_data_vec.begin(),
-//                  device_data_vec.end(),
-//                  host_data_vec.begin());
-//     cudaDeviceSynchronize();
-
-//     print_treeinfo_data_host(thrust::raw_pointer_cast(host_data_vec.data()),
-//                              size,
-//                              filename);
-// }
-
 void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
                                std::string run_name="tree")
@@ -2092,36 +2017,10 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     forest_total_cron.start();
     thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
     
-    // thrust::device_vector<RSFK_typepoints> device_points(4096);
-    // cudaDeviceSynchronize();
-
-    /*
-    thrust::host_vector<int> H(points, points+N*D);
-
-    thrust::device_vector<RSFK_typepoints> device_points(N*D);
-    std::cout << "1 ############# " << N << " " << D <<  std::endl;
-
-    thrust::copy(H.begin(), H.end(), device_points.begin());
-
-    cudaDeviceSynchronize();
-    */
-    
-    // thrust::device_vector<RSFK_typepoints> device_points(N*(D+20), 0.0f);
-    // for(int i=0; i < N; ++i){
-    //     thrust::copy(points+i*D, points+(i+1)*D, device_points.begin()+i*(D+20));
-    // }
-        
-    // std::cout << "2 #############" << std::endl;
-    // cudaDeviceSynchronize();
-
     thrust::device_vector<int> device_knn_indices(knn_indices, knn_indices+N*K);
-    
-    // std::cout << "3 #############" << std::endl;
     
     thrust::device_vector<RSFK_typepoints> device_knn_sqr_distances(knn_sqr_distances, knn_sqr_distances+N*K);
     
-    // std::cout << "4 #############" << std::endl;
-
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
     for(int i=0; i < n_trees; ++i){
@@ -2134,36 +2033,33 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         tinfo = create_bucket_from_kmeansyy(device_points,
                                                N, D, VERBOSE-1, forest_log);
         
-        printf("kmeans runned\n");
         // DEBUG: Move to device and print all tinfo data
         // thrust::device_vector<float> device_tinfo_data(tinfo.data(), tinfo.data() + tinfo.size());
-
-        // tinfo.device_nodes_buckets
-        // tinfo.device_bucket_sizes
-
-
-        // tinfo.print_buckets();
-        // exit(0);
-
-        printf("Tree %d/%d created with %d leaves\n", i+1, n_trees, tinfo.total_leaves);
-        printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
+        
+        if (VERBOSE >= 1){
+            printf("Partition %d/%d created with %d buckets\n", i+1, n_trees, tinfo.total_leaves);
+            printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
+        }
         update_knn_indice_with_buckets(device_points,
                                        device_knn_indices,
                                        device_knn_sqr_distances,
                                        K, N, D, VERBOSE-1, tinfo,
                                        forest_log,
                                        run_name+"_"+std::to_string(i)+".png");
-        printf("Tree %d/%d processed\n", i+1, n_trees);
+        if (VERBOSE >= 1){
+            printf("Bucket %d/%d processed\n", i+1, n_trees);
+        }
 
         RANDOM_SEED++;
     }
 
     forest_total_cron.stop();
-    if(VERBOSE >= 1){
+    if(VERBOSE >= 2){
         printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
-
-    printf("Starting Nearest Neighbors Exploring with factor %d\n", nn_exploring_factor);
+    if(VERBOSE >= 1){
+        printf("Starting Nearest Neighbors Exploring with factor %d\n", nn_exploring_factor);
+    }
     Cron cron_nearest_neighbors_exploring;
     cron_nearest_neighbors_exploring.start();
     
@@ -2183,7 +2079,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if(VERBOSE >= 2){
             for(int i=0; i < 80*4; ++i) std::cout<<" ";
             std::cout << std::endl;
-            std::cout << "\e[ANearest Neighbor Exploring: " << "0/" << nn_exploring_factor << std::endl;
+            std::cout << "\e[Nearest Neighbor Exploring: " << "0/" << nn_exploring_factor << std::endl;
         }
         for(int i=0; i < nn_exploring_factor; ++i){
             thrust::copy(device_knn_indices.begin(), device_knn_indices.begin() + K*N, device_old_knn_indices.begin());
@@ -2385,13 +2281,6 @@ int main(int argc,char* argv[])
         }
         labels[i] = (l>N/2);
     }
-
-    // write_points_to_file(
-    //     points,
-    //     N,
-    //     D,
-    //     "dataset_rsfk.txt"
-    // );
 
     int nn_exploring_factor = 0;
     float* forest_log_output = (float*)malloc(sizeof(float)*5*16+2);
