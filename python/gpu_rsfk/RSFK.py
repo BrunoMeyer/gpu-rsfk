@@ -129,7 +129,7 @@ class RSFK(object):
             np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
             np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
             np.ctypeslib.ndpointer(np.float32, ndim=1, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # log_forest
-            # TODO: run name - Char pointer?
+            ctypes.c_char_p, # partition_method
             ]
         self._lib.pymodule_rsfk_knn_ann.argtypes = [ 
             ctypes.c_int, # number of trees
@@ -214,7 +214,8 @@ class RSFK(object):
                                add_bit_random_motion=False,
                                random_motion_force=1.0,
                                nn_exploring_factor=-1,
-                               point_in_self_neigh=True):
+                               point_in_self_neigh=True,
+                               partition_method="random"):
         """Creation of the K-NNG from a set of points.
 
         Parameters
@@ -266,6 +267,12 @@ class RSFK(object):
             If it is 0, then the neighborhood exploration will not be used
         point_in_self_neigh : bool, optional
             If True, the index of a point will be considered in its self neighborhood
+        partition_method : str, optional
+            The method used to create partitions at each iteration.
+            Must be one of: "random", "kmeans", or "random+kmeans".
+            - "random": use sample tree for partition creation (default)
+            - "kmeans": use k-means algorithm for partition creation
+            - "random+kmeans": alternate between sample tree and k-means methods
         
         Returns
         -------
@@ -276,6 +283,10 @@ class RSFK(object):
             For each neighbor in `knn_indices`, the `knn_squared_dist`
             contains the squared distance computed
         """
+        # Validate partition_method parameter
+        if partition_method not in ["random", "kmeans", "random+kmeans"]:
+            raise ValueError('partition_method must be one of "random", "kmeans", or "random+kmeans"')
+        
         points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
 
         max_tree_depth = int(max_tree_depth)
@@ -343,7 +354,8 @@ class RSFK(object):
                 points,
                 knn_indices,
                 knn_squared_dist,
-                log_forest)
+                log_forest,
+                partition_method.encode('utf-8'))
 
         self.log_forest = ForestLog(log_forest)
 
@@ -363,7 +375,8 @@ class RSFK(object):
                     points,
                     knn_indices,
                     knn_squared_dist,
-                    log_forest)
+                    log_forest,
+                    partition_method.encode('utf-8'))
         
         self._last_search_time = time.time() - t_init
         return knn_indices, knn_squared_dist

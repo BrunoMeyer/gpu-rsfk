@@ -2011,7 +2011,8 @@ void RSFK::update_knn_indice_with_buckets(
 
 void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
-                               std::string run_name="tree")
+                               std::string run_name="tree",
+                               std::string partition_method="random")
 {
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -2024,24 +2025,36 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
     for(int i=0; i < n_trees; ++i){
-        tinfo = create_bucket_from_sample_tree(device_points,
-                                               N, D, VERBOSE-1,
-                                               forest_log,
-                                               run_name+"_"+std::to_string(i)+".png",
-                                               true, nullptr);
-
-        // tinfo = create_bucket_from_kmeansyy(
-        //     device_points,
-        //     N,
-        //     D,
-        //     VERBOSE-1,
-        //     forest_log);
+        // Select partition method based on parameter
+        bool use_kmeans = false;
+        if (partition_method == "kmeans") {
+            use_kmeans = true;
+        } else if (partition_method == "random+kmeans") {
+            use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
+        }
+        // else partition_method == "random" or default, use_kmeans stays false
+        
+        if (use_kmeans) {
+            tinfo = create_bucket_from_kmeansyy(
+                device_points,
+                N,
+                D,
+                VERBOSE-1,
+                forest_log);
+        } else {
+            tinfo = create_bucket_from_sample_tree(device_points,
+                                                   N, D, VERBOSE-1,
+                                                   forest_log,
+                                                   run_name+"_"+std::to_string(i)+".png",
+                                                   true, nullptr);
+        }
         
         // DEBUG: Move to device and print all tinfo data
         // thrust::device_vector<float> device_tinfo_data(tinfo.data(), tinfo.data() + tinfo.size());
         
         if (VERBOSE > 1){
-            printf("Partition %d/%d created with %d buckets\n", i+1, n_trees, tinfo.total_leaves);
+            printf("Partition %d/%d created with %d buckets using %s method\n", 
+                   i+1, n_trees, tinfo.total_leaves, use_kmeans ? "kmeans" : "random");
             printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
         }
         update_knn_indice_with_buckets(device_points,
