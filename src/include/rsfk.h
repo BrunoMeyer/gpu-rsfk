@@ -507,7 +507,7 @@ public:
     void knn_gpu_rsfk_forest(int n_trees,
                              int K, int N, int D, int VERBOSE,
                              std::string run_name,
-                             std::string partition_method="random");
+                             std::string partition_method);
 
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary

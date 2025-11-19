@@ -36,7 +36,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define __RSFK__CU
 
 #include "include/rsfk.h"
-#include "knng-kmeansyy.h"
+#include "knng-yykmeans.h"
 // #include "kmeans/cpu-utils.c"
 
 static void CudaTest(char* msg)
@@ -2035,7 +2035,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         // else partition_method == "random" or default, use_kmeans stays false
         
         if (use_kmeans) {
-            tinfo = create_bucket_from_kmeansyy(
+            tinfo = create_bucket_from_yykmeans(
                 device_points,
                 N,
                 D,
@@ -2074,7 +2074,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     if(VERBOSE >= 2){
         printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
-    if(VERBOSE >= 1){
+    if(VERBOSE >= 1 && nn_exploring_factor > 0){
         printf("Starting Nearest Neighbors Exploring with factor %d\n", nn_exploring_factor);
     }
     Cron cron_nearest_neighbors_exploring;
@@ -2305,7 +2305,7 @@ int main(int argc,char* argv[])
     RSFK rsfk_knn(points, nullptr, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
                   RANDOM_SEED, nn_exploring_factor, forest_log_output);
     // rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
-    rsfk_knn.knn_gpu_rsfk_forest(1, K, N, D, VERBOSE, "tree");
+    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
 
     return 0;
 }

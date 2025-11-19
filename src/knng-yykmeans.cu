@@ -116,7 +116,7 @@ __global__ void count_points_per_cluster(
     }
 }
 
-TreeInfo create_bucket_from_kmeansyy(
+TreeInfo create_bucket_from_yykmeans(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
     ForestLog& forest_log,

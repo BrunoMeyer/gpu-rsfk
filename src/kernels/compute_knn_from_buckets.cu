@@ -1035,12 +1035,14 @@ void compute_knn_from_buckets_predist_nolock(
     __syncthreads();
     cbs = bucket_size[bid];
 
+    // -----------------------------------------
+    // step 1: find farthest candidate to knn graph for each point in the bucket
     for(i=wid; i < cbs; i+=blockDim.x/32){
         p1 = nodes_bucket[bid*max_bucket_size + i];
         sm_leaf_bucket[i] = p1;
 
 
-        knn_id = p1*K; //mc: linha da matriz de knn
+        knn_id = p1*K; 
         
         /*
         max_position[i] = knn_id;
@@ -1123,6 +1125,9 @@ void compute_knn_from_buckets_predist_nolock(
     */
 
 //    printf("Warp %d processing bucket %d of size %d\n", wid, bid, cbs);
+    // ---------------------------------------------------
+    // MAIN LOOP: calculate distances for each pair of points in the bucket
+    // and update knn graph
     for(_p1=0; _p1 < cbs; ++_p1){ // TODO Invert order
         // printf("%d %d\n", lane, i);
         // real_p1 = sm_leaf_bucket[p1];
@@ -1144,6 +1149,8 @@ void compute_knn_from_buckets_predist_nolock(
         */
         // /*
         // for(p2=wid; p2 < p1; p2+=blockDim.x/32){
+        // ----------------------------------------------------------------
+        // main loop step 1: calculate the distances and store them in shared memory
         for(_p2=wid+1; _p2 < cbs-_p1; _p2+=blockDim.x/32){
             // k = (cbs*(cbs-1)/2) - (cbs-p1)*((cbs-p1)-1)/2 + p2 - p1 - 1;
             p1 = _p2 -1;
@@ -1199,7 +1206,9 @@ void compute_knn_from_buckets_predist_nolock(
 
         __syncthreads();
         // for(p2=wid; p2 < p1; p2+=blockDim.x/32){
-        
+
+        // ----------------------------------------------------------------
+        // main loop step 2: update knn graph of point p1 with the calculated distances
         for(_p2=wid+1; _p2 < cbs-_p1; _p2+=blockDim.x/32){
             // __syncthreads();
             p1 = _p2 -1;
@@ -1291,6 +1300,8 @@ void compute_knn_from_buckets_predist_nolock(
         }
         __syncthreads();
 
+        // ----------------------------------------------------------------
+        // main loop step 3: update knn graph of point p2 with the calculated distances
         for(_p2=wid+1; _p2 < cbs-_p1; _p2+=blockDim.x/32){
 
             p1 = _p2 -1;
