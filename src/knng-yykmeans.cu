@@ -32,11 +32,16 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+
 #ifndef __KMEANSYY__CU
 #define __KMEANSYY__CU
 
 #include "include/rsfk.h"
 #include "kmeans/kmeans.h"
+
+#include <vector>
+#include <cassert>
+#include <iostream>
 
 __global__
 void count_labels_mt(uint* labels, int N, int* label_counts, int K){
@@ -70,7 +75,7 @@ void find_max_bucket_size(int* label_counts, int K, int* max_bucket_size){
 }
 
 __global__
-void create_buckets_mt(    RSFK_typepoints* points,
+void create_buckets_mt( RSFK_typepoints* points,
                         uint* labels,
                         int* nodes_bucket,
                         int* bucket_size,
@@ -94,10 +99,8 @@ __global__ void create_contiguous_array(
     int* array
 )
 {
-    // Set array with 0, 1, 2, ..., N-1
     int tid = blockDim.x*blockIdx.x + threadIdx.x;
     array[tid] = tid;
-
     __syncthreads();
 }
 
@@ -107,7 +110,6 @@ __global__ void count_points_per_cluster(
     int* label_counts
 )
 {
-    //Find the transition of values in sorted_labels to count how many points per cluster
     int tid = blockDim.x*blockIdx.x + threadIdx.x;
     if(tid < N-1){
         if(sorted_labels[tid] != sorted_labels[tid+1]){
@@ -116,21 +118,134 @@ __global__ void count_points_per_cluster(
     }
 }
 
+// ============================================================================
+// HOST HELPER: Enforce bucket size limit on *sorted* labels (host side)
+// ============================================================================
+
+struct BucketSplitResult {
+    int max_bucket_size;  // largest bucket after all splits
+    int total_buckets;    // final number of labels (max_label + 1)
+};
+
+// h_labels must be sorted by label
+BucketSplitResult enforce_bucket_size_limit_host(
+    thrust::host_vector<uint>& h_labels,
+    int N,
+    int bucket_size_limit)
+{
+    assert(N >= 0);
+    assert(bucket_size_limit > 0);
+
+    if (N == 0) {
+        return {0, 0};
+    }
+
+    // 1. Find current max label so we can assign new unique labels
+    uint max_label = 0;
+    for (int i = 0; i < N; ++i) {
+        if (h_labels[i] > max_label) {
+            max_label = h_labels[i];
+        }
+    }
+
+    struct Bucket {
+        int start;      // inclusive
+        int len;        // length of bucket
+        uint label;     // label value
+    };
+
+    bool need_split = true;
+    int max_bucket_size = 0;
+
+    while (need_split) {
+        need_split = false;
+
+        std::vector<Bucket> buckets;
+        buckets.reserve(N); // upper bound
+        max_bucket_size = 0;
+
+        // 2. Build buckets from contiguous equal labels
+        int i = 0;
+        while (i < N) {
+            int  start = i;
+            uint label = h_labels[start];
+            int  j     = start + 1;
+
+            while (j < N && h_labels[j] == label) {
+                ++j;
+            }
+            int len = j - start;
+
+            assert(len > 0);
+            assert(start >= 0 && start + len <= N);
+
+            buckets.push_back(Bucket{start, len, label});
+            if (len > max_bucket_size) {
+                max_bucket_size = len;
+            }
+
+            i = j;
+        }
+
+        // All buckets within the limit? We are done.
+        if (max_bucket_size <= bucket_size_limit) {
+            break;
+        }
+
+        // 3. Split every oversized bucket:
+        //    move the last half of the bucket to a new label.
+        for (const auto& b : buckets) {
+            if (b.len <= bucket_size_limit) {
+                continue;
+            }
+
+            need_split = true;
+
+            int half = b.len / 2;
+            if (half <= 0) {
+                continue; // paranoia guard
+            }
+
+            uint new_label = ++max_label; // new unique label
+
+            int start_second_half = b.start + (b.len - half);
+            assert(start_second_half >= b.start);
+            assert(start_second_half <  b.start + b.len);
+            assert(b.start + b.len <= N);
+
+            for (int idx = start_second_half; idx < b.start + b.len; ++idx) {
+                h_labels[idx] = new_label;
+            }
+        }
+        // Loop again if needed: now h_labels has more labels, but is still
+        // grouped contiguously by label (old_label or new_label).
+    }
+
+    BucketSplitResult res;
+    res.max_bucket_size = max_bucket_size;
+    res.total_buckets   = static_cast<int>(max_label) + 1; // labels assumed 0..max_label
+
+    return res;
+}
+
+// ============================================================================
+// MAIN FUNCTION: create_bucket_from_yykmeans
+// ============================================================================
+
 TreeInfo create_bucket_from_yykmeans(
     thrust::device_vector<RSFK_typepoints> &device_points,
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
-    int total_buckets=128,
-    int max_iter = 32,
-    int check_method = 2,
-    // 0 -> until max it
-    // 1 -> by squared norm error
-    // 2 -> by number of reassingments (default)
-    int tolerance = 0.01,
-    int init_method = 1, //0 -> random, 1 -> kmeans++
-    int t_groups = 32
+    int total_buckets =128,
+    int max_iter =100,
+    int check_method =2,
+    int tolerance =0.01,
+    int init_method =1, //0 -> random, 1 -> kmeans++
+    int t_groups =32,
+    int bucket_size_limit =1024
     )
 {
+    // Initial number of clusters for k-means
     total_buckets = N / 64;
     forest_log.count_tree += 1;
     
@@ -152,6 +267,7 @@ TreeInfo create_bucket_from_yykmeans(
 		exit(EXIT_FAILURE);
 	}
 
+    // Run k-means on GPU, labels are written into d_labels (0..total_buckets-1)
     kmeansGpu(
             thrust::raw_pointer_cast(device_points.data()), 
             N, D, total_buckets,
@@ -164,129 +280,133 @@ TreeInfo create_bucket_from_yykmeans(
             d_labels
     );
 
-
-    // Pass d_labels to thrust
+    // ------------------------------------------------------------------------
+    // Step 1: copy device labels to thrust device_vector and argsort by label
+    // ------------------------------------------------------------------------
     thrust::device_vector<uint> device_labels(N);
-    cudaMemcpy(thrust::raw_pointer_cast(device_labels.data()), d_labels, sizeof(uint)*N, cudaMemcpyDeviceToDevice);
+    
+    err = cudaMemcpy(
+        thrust::raw_pointer_cast(device_labels.data()),
+        d_labels,
+        static_cast<size_t>(N) * sizeof(uint),
+        cudaMemcpyDeviceToDevice
+    );
+    assert(err == cudaSuccess);
 
-    // Argsort to create bucket indexes
-    // thrust::device_vector<std::intptr_t> indices(N);
+    // Argsort: indices = [0, 1, ..., N-1], then sort labels and permute indices
     thrust::device_vector<int> indices(N);
     thrust::sequence(indices.begin(), indices.end());
+
     thrust::sort_by_key(
         device_labels.begin(), device_labels.end(),
         indices.begin()
     );
 
-    // 
+    // Move sorted labels & indices to host
+    thrust::host_vector<uint> h_labels  = device_labels;
+    thrust::host_vector<int>  h_indices = indices;
 
-    thrust::host_vector<uint> h_labels = device_labels;
-    thrust::host_vector<int> h_indices = indices;
+    // ------------------------------------------------------------------------
+    // Step 2: Enforce bucket size limit on sorted labels (host side)
+    // ------------------------------------------------------------------------
+    BucketSplitResult split_res = enforce_bucket_size_limit_host(
+        h_labels,
+        N,
+        bucket_size_limit
+    );
 
-    // for(int i = 0; i < N; i++){
-    //     std::cout << "Point " << i << " label: " << h_labels[i] << std::endl;
-    // }
-    // for(int i = 0; i < N; i++){
-    //     std::cout << "Point " << i << " index: " << h_indices[i] << std::endl;
-    // }
+    int max_bucket_size = split_res.max_bucket_size;
+    total_buckets       = split_res.total_buckets;  // IMPORTANT: update with new label count
 
-    // // Print sorted labels
-    // std::cout << "Sorted labels: " << std::endl;
-    // for(int i = 0; i < N; i++){
-    //     std::cout << h_labels[i] << " ";
-    // }
-    // std::cout << std::endl;
-
-    // Iterate over sorted labels and count the maximum bucket size
-    int max_bucket_size = 0;
-    int current_label = -1;
-    int current_count = 0;
-    for(int i = 0; i < N; i++){
-        if(h_labels[i] != current_label){
-            if(current_count > max_bucket_size){
-                max_bucket_size = current_count;
-            }
-            current_label = h_labels[i];
-            current_count = 1;
-        }
-        else{
-            current_count++;
-        }
-    }
-    // Check last bucket
-    if(current_count > max_bucket_size){
-        max_bucket_size = current_count;
-    }
-    // std::cout << "Max bucket size: " << max_bucket_size << std::endl;
-    // if(max_bucket_size > 1024){
-    //     std::cout << "Warning: max bucket size is greater than 1024 (limit for rsfk)!" << std::endl;
-    // }
-    
-    // Create padded bucket array (each cluster with max_bucket_size)
-    thrust::host_vector<int> h_nodes_bucket(total_buckets * max_bucket_size, -1);
-    thrust::host_vector<int> h_bucket_size(total_buckets, 0);
-    
-    // Fill the buckets in host
-    for(int i = 0; i < N; i++){
-        int label = h_labels[i];
-        int index = h_indices[i];
-        int pos = h_bucket_size[label];
-        h_nodes_bucket[label * max_bucket_size + pos] = index;
-        h_bucket_size[label]++;
-    }
-    thrust::device_vector<int> d_nodes_bucket(total_buckets * max_bucket_size, -1);
-    thrust::device_vector<int> d_bucket_size(total_buckets, 0);    
-
-    // Print padded buckets
-    // #define DEBUG_BUCKETS 1
-    // #define DEBUG_BUCKETS_CONTENT 1
+    // Basic sanity: labels must be < total_buckets
     #ifdef DEBUG_BUCKETS
-    for(int i = 0; i < total_buckets; i++){
-        std::cout << "Bucket " << i << " (size " << h_bucket_size[i] << "): ";
-        #ifdef DEBUG_BUCKETS_CONTENT
-            for(int j = 0; j < max_bucket_size; j++){
-                std::cout << h_nodes_bucket[i * max_bucket_size + j] << " ";
-            }
-        #endif
-        std::cout << std::endl;
+    {
+        uint max_label_check = 0;
+        for (int i = 0; i < N; ++i) {
+            if (h_labels[i] > max_label_check) max_label_check = h_labels[i];
+        }
+        if (static_cast<int>(max_label_check) + 1 != total_buckets) {
+            std::cerr << "[WARNING] Inconsistent labels: max_label=" 
+                      << max_label_check << " total_buckets=" << total_buckets << std::endl;
+        }
     }
     #endif
 
-    // Move to device
+    // Optional: if you want to update d_labels too (in original, you didn't
+    // actually need the unsorted labels anymore, so we can skip it safely).
+    // If someday you DO need the updated labels on device in original order,
+    // just uncomment this block:
+
+    /*
+    // Copy modified sorted labels back to device
+    device_labels = h_labels;
+
+    // Unsort: scatter back to original order using indices
+    thrust::device_vector<uint> device_labels_unsorted(N);
+    thrust::scatter(
+        device_labels.begin(), device_labels.end(),
+        indices.begin(),
+        device_labels_unsorted.begin()
+    );
+
+    // Copy back to original device memory
+    err = cudaMemcpy(
+        d_labels,
+        thrust::raw_pointer_cast(device_labels_unsorted.data()),
+        static_cast<size_t>(N) * sizeof(uint),
+        cudaMemcpyDeviceToDevice
+    );
+    assert(err == cudaSuccess);
+    */
+
+    // ------------------------------------------------------------------------
+    // Step 3: Build padded bucket array on HOST
+    //         (size: total_buckets x max_bucket_size)
+    // ------------------------------------------------------------------------
+    thrust::host_vector<int> h_nodes_bucket(total_buckets * max_bucket_size, -1);
+    thrust::host_vector<int> h_bucket_size(total_buckets, 0);
+
+    for (int i = 0; i < N; ++i) {
+        int label = static_cast<int>(h_labels[i]);
+        int index = h_indices[i];
+
+        // Safety checks
+        assert(label >= 0 && label < total_buckets);
+
+        int pos = h_bucket_size[label];
+        assert(pos >= 0 && pos < max_bucket_size); // enforce_bucket_size_limit guarantees this
+
+        h_nodes_bucket[label * max_bucket_size + pos] = index;
+        h_bucket_size[label]++;
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 4: Copy buckets to DEVICE
+    // ------------------------------------------------------------------------
+    thrust::device_vector<int> d_nodes_bucket(total_buckets * max_bucket_size, -1);
+    thrust::device_vector<int> d_bucket_size(total_buckets, 0);    
+
     cudaMemcpy(thrust::raw_pointer_cast(d_nodes_bucket.data()), h_nodes_bucket.data(),
                 sizeof(int)*total_buckets*max_bucket_size, cudaMemcpyHostToDevice);
     cudaMemcpy(thrust::raw_pointer_cast(d_bucket_size.data()), h_bucket_size.data(),
                 sizeof(int)*total_buckets, cudaMemcpyHostToDevice);
 
-    // Update ForestInfo for max_bucket_size
-
+    // ------------------------------------------------------------------------
+    // Cleanup
+    // ------------------------------------------------------------------------
     err = cudaFree(d_labels);
     if (err != cudaSuccess){
         fprintf(stderr, "Failed to free device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
         exit(EXIT_FAILURE);
     }
 
-    // Health check and debug prints
-    // thrust::host_vector<int> h_test_bucket_size = d_bucket_size;
-    // int total_leaves = 0;
-    // for(int i = 0; i < total_buckets; i++){
-    //     if(h_test_bucket_size[i] > 0){
-    //         total_leaves++;
-    //     }
-    // }
-    // if(VERBOSE > 0){
-        // std::cout << "KMeans created " << total_leaves << " non-empty buckets out of " << total_buckets << " total buckets." << std::endl;
-        // std::cout << "Maximum bucket size is " << max_bucket_size << std::endl;
-    // }
-
-    
-
-    
+    // ------------------------------------------------------------------------
+    // Build TreeInfo with final total_buckets and max_bucket_size
+    // ------------------------------------------------------------------------
     TreeInfo tinfo = TreeInfo(total_buckets, max_bucket_size,
                               d_nodes_bucket, d_bucket_size);
 
     return tinfo;
-
 }
 
 #endif
