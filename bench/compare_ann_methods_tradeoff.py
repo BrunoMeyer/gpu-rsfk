@@ -1,5 +1,4 @@
 # Load MNIST from Scikit-learn
-from sklearn.datasets import fetch_openml
 import numpy as np
 # argparse
 import argparse
@@ -24,6 +23,9 @@ def get_gpu_rsfk_results(options):
     # parameter_list = [1, 5, 10, 20, 30, 100, 200]
     parameter_list = [1, 5, 10, 20, 30, 40, 50]
     # parameter_list = [1, 5, 10]
+    # parameter_list = [1, 2, 4]
+    # parameter_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 40, 50]
+    # parameter_list = [1, 2, 4, 8, 16, 32, 64, 128]
     # parameter_list = [1]
     # parameter_list = [4]
     knn_method_name = "ANN-RSFK"
@@ -45,7 +47,8 @@ def get_gpu_rsfk_results(options):
             max_tree_children=1024,
             # max_tree_depth=5000,
 
-            # random_motion_force=0.1,
+            random_motion_force=0.1,
+            # random_motion_force=0.01,
             # nn_exploring_factor=2,
             nn_exploring_factor=False,
 
@@ -60,14 +63,14 @@ def get_gpu_rsfk_results(options):
     
     kr.evaluate_parameter_list(
         parameter_list,
-        partition_method='random',
-        model_name=knn_method_name +" (Random Partitioning)"
+        partition_method='kmeans',
+        model_name=knn_method_name +" (KMeans Partitioning)"
         ).clean()
 
     kr.evaluate_parameter_list(
         parameter_list,
-        partition_method='kmeans',
-        model_name=knn_method_name +" (KMeans Partitioning)"
+        partition_method='random',
+        model_name=knn_method_name +" (Random Partitioning)"
         ).clean()
 
     kr.evaluate_parameter_list(
@@ -87,7 +90,7 @@ def get_gpu_rsfk_results(options):
 def main():
     parser = argparse.ArgumentParser(description="Load MNIST or artificial dataset")
     parser.add_argument('--dataset', type=str, default='MNIST',
-                        help='Dataset to load (default: MNIST). Supported: MNIST, ARTIFICIAL_UNIFORM', choices=['MNIST', 'ARTIFICIAL_UNIFORM'])
+                        help='Dataset to load (default: MNIST). Supported: MNIST, ARTIFICIAL_UNIFORM', choices=['MNIST', 'KDDCUP99', 'ARTIFICIAL_UNIFORM',])
     parser.add_argument('--n_samples', type=int, default=10000,
                         help='Number of samples for artificial dataset (default: 10000)')
     parser.add_argument('--n_features', type=int, default=128,

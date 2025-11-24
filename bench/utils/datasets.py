@@ -3,6 +3,7 @@ import numpy as np
 from sklearn.datasets import load_digits, load_iris
 import os
 from sklearn.neighbors import NearestNeighbors
+from sklearn.datasets import fetch_openml
 import faiss
 
 import time
@@ -28,10 +29,31 @@ def load_dataset(
     ndim=0,
     ):
     if name == 'MNIST':
+        cache_path = os.path.join(
+            f"./.cache/mnist.pickle"
+        )
+        if os.path.isfile(cache_path):
+            with open(cache_path, "rb") as fo:
+                X = pickle.load(fo)
+            logger.info(f"Loaded MNIST dataset from cache with {X.shape[0]} samples and {X.shape[1]} features.")
+            return X, None
         mnist = fetch_openml('mnist_784', version=1)
         X = mnist.data
         y = mnist.target
         logger.info(f"Loaded MNIST dataset with {X.shape[0]} samples and {X.shape[1]} features.")
+    elif name == 'KDDCUP99':
+        cache_path = os.path.join(
+            f"./.cache/kddcup99.pickle"
+        )
+        if os.path.isfile(cache_path):
+            with open(cache_path, "rb") as fo:
+                X = pickle.load(fo)
+            logger.info(f"Loaded KDDCUP99 dataset from cache with {X.shape[0]} samples and {X.shape[1]} features.")
+            return X, None
+        kddcup99 = fetch_openml('KDDCup99', version=1)
+        X = kddcup99.data.select_dtypes(include=[np.number]).fillna(0).astype('float32').to_numpy()
+        y = kddcup99.target
+        logger.info(f"Loaded KDDCUP99 dataset with {X.shape[0]} samples and {X.shape[1]} features.")
     elif name == 'ARTIFICIAL_UNIFORM':
         cache_path = os.path.join(
             ARTIFICIAL_DATASET_DIR_CACHE,
@@ -56,6 +78,22 @@ def load_dataset(
     else:
         logger.warning(f"Dataset {name} is not supported.")
 
+    # Ensure that there isn't no duplicates nor NaNs
+    # Remove them if any
+    X = np.nan_to_num(X)
+    _, unique_indices = np.unique(X, axis=0, return_index=True)
+    X = X[unique_indices]
+    if y is not None:
+        y = y[unique_indices]
+
+    # NaN check
+    if np.isnan(X).any():
+        logger.error("Dataset contains NaN values after cleaning. Replacing NaNs with zeros.")
+        X = np.nan_to_num(X)
+
+    with open(cache_path, "wb") as fo:
+        pickle.dump(X, fo)
+    
     return X, y
 
 def load_dataset_knn(
