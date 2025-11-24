@@ -24,9 +24,6 @@
 #include "kernel-functions/kmeanspp.cu"
 
 
-// #define DEBUG_KMEANSPP_WRITE_FILES 1 //DEBUG !!!!!!!!!!!!!!!!!
-
-
 void write_data_from_device(float* d_data, uint n, uint d, char* filename) {
 
 	thrust::host_vector<float> h_data(d*n);
@@ -154,54 +151,54 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 		gpuErrchk( cudaPeekAtLastError() );
 
 		#if DEBUG_KMEANSPP_WRITE_FILES 
-			// char filename[100];
-			// sprintf(filename,"./out/centroids-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	d_centroids,
-			// 	n_chosen_centroids+1,
-			// 	dim,
-			// 	filename
-			// );
+			char filename[100];
+			sprintf(filename,"./out/centroids-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_centroids,
+				n_chosen_centroids+1,
+				dim,
+				filename
+			);
 
-			// sprintf(filename,"./out/labels-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	(int*)d_labels,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
-
-
-			// sprintf(filename,"./out/upperbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	d_upperbounds,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
+			sprintf(filename,"./out/labels-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
 
 
-			// sprintf(filename,"./out/lowerbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	d_lowerbounds,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
+			sprintf(filename,"./out/upperbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/lowerbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_lowerbounds,
+				dataset_size,
+				1,
+				filename
+			);
 		#endif
 
 
 	}
 
 	#if DEBUG_KMEANSPP_WRITE_FILES 
-		// char filename[100];
-		// sprintf(filename,"./out/gr-chosen_centroids.txt",d_chosen_centroids);
-		// write_data_from_device(
-		// 	(int*)d_chosen_centroids,
-		// 	k,
-		// 	1,
-		// 	filename
-		// );
+		char filename[100];
+		sprintf(filename,"./out/gr-chosen_centroids.txt",d_chosen_centroids);
+		write_data_from_device(
+			(int*)d_chosen_centroids,
+			k,
+			1,
+			filename
+		);
 	#endif
 	label_last_centroid_kmeanspp<<<nblocks,nthreads>>>(
 		d_dataset,dataset_size,
@@ -343,54 +340,54 @@ void kmeansppAndBoundsInitialization(float* d_dataset, uint dataset_size,
 		gpuErrchk( cudaPeekAtLastError() );
 
 		#if DEBUG_KMEANSPP_WRITE_FILES 
-			// char filename[100];
-			// sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	d_centroids,
-			// 	n_chosen_centroids+1,
-			// 	dim,
-			// 	filename
-			// );
+			char filename[100];
+			sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_centroids,
+				n_chosen_centroids+1,
+				dim,
+				filename
+			);
 
-			// sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	(int*)d_labels,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
-
-
-			// sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	d_upperbounds,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
+			sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
 
 
-			// sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
-			// write_data_from_device(
-			// 	d_lowerbounds,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
+			sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_lowerbounds,
+				dataset_size,
+				1,
+				filename
+			);
 		#endif
 
 
 	}
 
 	#if DEBUG_KMEANSPP_WRITE_FILES 
-		// char filename[100];
-		// sprintf(filename,"./out/chosen_centroids.txt",d_chosen_centroids);
-		// write_data_from_device(
-		// 	(int*)d_chosen_centroids,
-		// 	k,
-		// 	1,
-		// 	filename
-		// );
+		char filename[100];
+		sprintf(filename,"./out/chosen_centroids.txt",d_chosen_centroids);
+		write_data_from_device(
+			(int*)d_chosen_centroids,
+			k,
+			1,
+			filename
+		);
 	#endif
 	
 	label_last_centroid_kmeanspp<<<nblocks,nthreads>>>(
@@ -460,6 +457,15 @@ void kmeansppAndBoundsInitialization(float* d_dataset, uint dataset_size,
 	}
 }
 
+//////////////////////////////////
+//////////////////////////////////
+//////////////////////////////////
+//////                      //////
+//////      K-MEANS GPU     //////
+//////                      //////
+//////////////////////////////////
+//////////////////////////////////
+//////////////////////////////////
 
 void kmeansGpu(float* d_dataset, uint dataset_size, 
         uint dim, uint k, 
@@ -468,7 +474,13 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		uint initialization_method, //0 - random, 1 - kmeans++
 		uint t_groups,
 		uint verbosity,
-        uint* d_labels // <-- outputs
+		// outputs
+        uint* d_labels, 
+		// optional outputs
+		float* d_output_centroids = NULL,
+		float* d_upperbounds = NULL,
+		float* d_aligned_dataset = NULL
+
     ) {
 
     int devUsed = 0;
@@ -505,7 +517,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 	// cudaFuncSetCacheConfig(assign_label, cudaFuncCachePreferL1);
 
 	// dim must be a multiple of 4
-	uint logic_dim = dim + dim%4; 
+	uint logic_dim = ((dim+3)/4)*4; 
 
 	// t is the number of group filters
 	// uint t_groups = ceil(k/(float)10);
@@ -560,11 +572,13 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 
 
-	float *d_centroids = NULL;
-	err = cudaMalloc((void **)&d_centroids, sizeof(float)*k*logic_dim);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device vector d_centroids (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+	float *d_centroids = d_output_centroids;
+	if(d_centroids == NULL){
+		err = cudaMalloc((void **)&d_centroids, sizeof(float)*k*logic_dim);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to allocate device vector d_centroids (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	uint *d_labels_count = NULL;
@@ -579,12 +593,15 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		fprintf(stderr, "Failed to allocate device vector d_labels_change_count (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
+
 	float *d_new_centroids = NULL;
 	err = cudaMalloc((void **)&d_new_centroids, sizeof(float)*k*logic_dim);
 	if (err != cudaSuccess){
 		fprintf(stderr, "Failed to allocate device vector d_new_centroids (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
+
+
 	float *d_centroids_change = NULL;
 	err = cudaMalloc((void **)&d_centroids_change, sizeof(float)*k*logic_dim);
 	if (err != cudaSuccess){
@@ -597,17 +614,26 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		fprintf(stderr, "Failed to allocate device vector d_sqrdNormError (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-	float *d_upperbounds = NULL;
-	err = cudaMalloc((void **)&d_upperbounds, sizeof(float)*dataset_size);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+
+	// float *d_upperbounds = NULL;
+	int allocated_upperbounds = 0;
+	if(d_upperbounds == NULL){
+		allocated_upperbounds = 1;
+		err = cudaMalloc((void **)&d_upperbounds, sizeof(float)*dataset_size);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to allocate device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 	float *d_lowerbounds = NULL;
-	err = cudaMalloc((void **)&d_lowerbounds, sizeof(float)*dataset_size);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+	int allocated_lowerbounds = 0;
+	if(d_lowerbounds == NULL){
+		allocated_lowerbounds = 1;
+		err = cudaMalloc((void **)&d_lowerbounds, sizeof(float)*dataset_size);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to allocate device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 	float *d_inter_cent_dist = NULL;
 	err = cudaMalloc((void **)&d_inter_cent_dist, sizeof(float)*k);
@@ -687,14 +713,22 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
     chrono_reset(&ch_align_mem);
     chrono_start(&ch_align_mem);
 
-	float *d_aligned_dataset = NULL; 
+	// float *d_aligned_dataset = NULL; 	
 	float *d_original_dataset = d_dataset;
+	// #define DEBUG_PYTHON 1
+	// #if DEBUG_PYTHON
+		// fprintf(stderr, "KMeansGpu: Aligning dataset from dim %d to logic_dim %d\n",dim,logic_dim);
+	// #endif
+	int allocated_aligned_dataset = 0;
 	if(dim != logic_dim){
 
-		err = cudaMalloc((void **)&d_aligned_dataset, sizeof(float)*logic_dim*dataset_size);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to allocate device vector d_aligned_dataset (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
+		if(d_aligned_dataset == NULL){
+			allocated_aligned_dataset = 1;
+			err = cudaMalloc((void **)&d_aligned_dataset, sizeof(float)*logic_dim*dataset_size);
+			if (err != cudaSuccess){
+				fprintf(stderr, "Failed to allocate device vector d_aligned_dataset (error code %s)!\n", cudaGetErrorString(err));
+				exit(EXIT_FAILURE);
+			}
 		}
 
 		align_memory<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_dataset,d_aligned_dataset, dataset_size,dim,logic_dim);
@@ -772,7 +806,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 
 
-	#if DEBUG_KMEANSPP_WRITE_FILES 
+	#if DEBUG_KMEANS_WRITE_FILES 
 		write_data_from_device(
 			d_centroids,
 			k,
@@ -785,6 +819,13 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 			dataset_size,
 			1,
 			"./out/labels-it-000.txt"
+		);
+
+		write_data_from_device(
+			d_upperbounds,
+			dataset_size,
+			1,
+			"./out/upperbounds-it-000.txt"
 		);
 	#endif
 
@@ -866,33 +907,33 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 
 
-	#ifdef ORGANIZE_CENTS_IN_MEMORY
-		chronometer_t ch_organize_cents;
-		chrono_reset(&ch_organize_cents);
-		chrono_start(&ch_organize_cents);
+	// #ifdef ORGANIZE_CENTS_IN_MEMORY
+	// 	chronometer_t ch_organize_cents;
+	// 	chrono_reset(&ch_organize_cents);
+	// 	chrono_start(&ch_organize_cents);
 
-		float *d_organized_centroids = NULL; 
-		err = cudaMalloc((void **)&d_organized_centroids, sizeof(float)*logic_dim*dataset_size);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to allocate device vector d_organized_centroids (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
+	// 	float *d_organized_centroids = NULL; 
+	// 	err = cudaMalloc((void **)&d_organized_centroids, sizeof(float)*logic_dim*dataset_size);
+	// 	if (err != cudaSuccess){
+	// 		fprintf(stderr, "Failed to allocate device vector d_organized_centroids (error code %s)!\n", cudaGetErrorString(err));
+	// 		exit(EXIT_FAILURE);
+	// 	}
 
-		organize_cents_in_memory<<<nblocks,nthreads>>>(d_centroids, d_organized_centroids, k, logic_dim,
-			d_group_filter_labels, 
-			d_group_filter_cent_ids, d_group_filter_locs);
+	// 	organize_cents_in_memory<<<nblocks,nthreads>>>(d_centroids, d_organized_centroids, k, logic_dim,
+	// 		d_group_filter_labels, 
+	// 		d_group_filter_cent_ids, d_group_filter_locs);
 
-		err = cudaFree(d_centroids);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to free device vector d_dataset (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
-		}
-		d_centroids = d_organized_centroids;
+	// 	err = cudaFree(d_centroids);
+	// 	if (err != cudaSuccess){
+	// 		fprintf(stderr, "Failed to free device vector d_dataset (error code %s)!\n", cudaGetErrorString(err));
+	// 		exit(EXIT_FAILURE);
+	// 	}
+	// 	d_centroids = d_organized_centroids;
 
-		chrono_stop(&ch_organize_cents);
-		if(verbosity > 2)
-			printf("ch_organize_cents time: %.3f milliseconds.\n",((chrono_gettotal(&ch_organize_cents))/1000)/1000.0);
-	#endif
+	// 	chrono_stop(&ch_organize_cents);
+	// 	if(verbosity > 2)
+	// 		printf("ch_organize_cents time: %.3f milliseconds.\n",((chrono_gettotal(&ch_organize_cents))/1000)/1000.0);
+	// #endif
 	// if( initialization_method == 0){
 
 
@@ -1071,29 +1112,37 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 			break;
 
 
-		#if DEBUG_KMEANSPP_WRITE_FILES 
-			// char filename[100];
-			// sprintf(filename,"./out/centroids-it-%03u.txt",n_it);
-			// write_data_from_device(
-			// 	d_centroids,
-			// 	k,
-			// 	logic_dim,
-			// 	filename
-			// );
+		#if DEBUG_KMEANS_WRITE_FILES 
+			char filename[100];
+			sprintf(filename,"./out/centroids-it-%03u.txt",n_it);
+			write_data_from_device(
+				d_centroids,
+				k,
+				logic_dim,
+				filename
+			);
 
-			// sprintf(filename,"./out/labels-it-%03u.txt",n_it);
-			// write_data_from_device(
-			// 	(int*)d_labels,
-			// 	dataset_size,
-			// 	1,
-			// 	filename
-			// );
+			sprintf(filename,"./out/labels-it-%03u.txt",n_it);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
+
+			sprintf(filename,"./out/upperbounds-it-%03u.txt",n_it);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
 		#endif
 
     }
 
-	unalign_memory<<<ceil((float)k/(float)nthreads),nthreads>>>(d_centroids,d_new_centroids, k,dim,logic_dim);
-	cudaDeviceSynchronize();
+	// unalign_memory<<<ceil((float)k/(float)nthreads),nthreads>>>(d_centroids,d_new_centroids, k,dim,logic_dim);
+	// cudaDeviceSynchronize();
 
     //==================
 	//  DEALLOC MEMORY
@@ -1101,12 +1150,6 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
     chronometer_t ch_dealloc_mem;
     chrono_reset(&ch_dealloc_mem);
     chrono_start(&ch_dealloc_mem);
-
-	err = cudaFree(d_new_centroids);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device vector d_new_centroids (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
 
 	err = cudaFree(d_labels_change_count);
 	if (err != cudaSuccess){
@@ -1131,16 +1174,20 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		exit(EXIT_FAILURE);
 	}
 
-	err = cudaFree(d_upperbounds);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+	if(allocated_upperbounds){
+		err = cudaFree(d_upperbounds);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to free device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 
-	err = cudaFree(d_lowerbounds);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+	if(allocated_lowerbounds){
+		err = cudaFree(d_lowerbounds);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to free device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	err = cudaFree(d_inter_cent_dist);
@@ -1214,10 +1261,12 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 	if(dim != logic_dim){
 
 		d_dataset = d_original_dataset;
-		err = cudaFree(d_aligned_dataset);
-		if (err != cudaSuccess){
-			fprintf(stderr, "Failed to free device vector d_dataset (error code %s)!\n", cudaGetErrorString(err));
-			exit(EXIT_FAILURE);
+		if(allocated_aligned_dataset){
+			err = cudaFree(d_aligned_dataset);
+			if (err != cudaSuccess){
+				fprintf(stderr, "Failed to free device vector d_dataset (error code %s)!\n", cudaGetErrorString(err));
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 
@@ -1274,7 +1323,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 	}
 
 
-	#if DEBUG_KMEANSPP_WRITE_FILES 
+	#if DEBUG_KMEANS_WRITE_FILES 
 		write_data_from_device(
 			d_centroids,
 			k,
@@ -1295,12 +1344,45 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 			1,
 			"./out/labels-final.txt"
 		);
+
+		write_data_from_device(
+			d_upperbounds,
+			dataset_size,
+			1,
+			"./out/upperbounds-final.txt"
+		);
 	#endif
 
-	err = cudaFree(d_centroids);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device vector d_centroids (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+	if(d_output_centroids == NULL){
+		err = cudaFree(d_centroids);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to free device vector d_centroids (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
+
+		err = cudaFree(d_new_centroids);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to free device vector d_new_centroids (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
+	} else {
+		if(d_output_centroids != d_centroids){
+			cudaMemcpy(d_output_centroids, d_centroids, sizeof(float)*k*logic_dim, cudaMemcpyDeviceToDevice);
+
+			err = cudaFree(d_centroids);
+			if (err != cudaSuccess){
+				fprintf(stderr, "Failed to free device vector d_centroids (error code %s)!\n", cudaGetErrorString(err));
+				exit(EXIT_FAILURE);
+			}
+		} else {
+			err = cudaFree(d_new_centroids);
+			if (err != cudaSuccess){
+				fprintf(stderr, "Failed to free device vector d_new_centroids (error code %s)!\n", cudaGetErrorString(err));
+				exit(EXIT_FAILURE);
+			}
+		}
+
 	}
 
+	return;
 }

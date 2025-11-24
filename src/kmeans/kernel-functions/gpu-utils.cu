@@ -60,5 +60,96 @@ __device__ static float atomicMaxFloat(float* address, float val){
     return __int_as_float(old);
 }
 
+__global__
+void setMaxFloat(float* mem, uint size){
+    uint i = blockIdx.x*blockDim.x+threadIdx.x;
+    if(i < size)
+        mem[i]=MAX_FLOAT;
+}
 
+template <typename T>
+__inline__ __device__
+void warp_find_max(
+        const T* __restrict__ arr,
+        int K,
+		int lane,
+        T &max_val,
+        int &max_pos)
+{
+
+    T local_val = -FLT_MAX;
+    int local_pos = -1;
+
+	// 1) Each thread finds its local max
+    for(int j = lane; j < K; j += 32){   // warpSize=32
+        T v = arr[j];
+        if (v > local_val){
+            local_val = v;
+            local_pos = j;
+        }
+    }
+
+    // 2) Warp reduction
+    for (int offset = 16; offset > 0; offset /= 2){
+        T v = __shfl_down_sync(0xffffffff, local_val, offset);
+        int p = __shfl_down_sync(0xffffffff, local_pos, offset);
+
+        if (v > local_val){
+            local_val = v;
+            local_pos = p;
+        }
+    }
+
+    // return the result
+    max_val = local_val;
+    max_pos = local_pos;
+}
+
+template <typename T>
+__inline__ __device__
+T warp_find_max(
+        const T* __restrict__ arr,
+        int K,
+		int lane)
+{
+
+    T local_val = -FLT_MAX;
+ 
+	// 1) Each thread finds its local max
+    for(int j = lane; j < K; j += 32){   // warpSize=32
+        T v = arr[j];
+        if (v > local_val){
+            local_val = v;
+        }
+    }
+
+    // 2) Warp reduction
+    for (int offset = 16; offset > 0; offset /= 2){
+        T v = __shfl_down_sync(0xffffffff, local_val, offset);
+ 
+        if (v > local_val){
+            local_val = v;
+        }
+    }
+
+    // return the result
+	return local_val;
+}
+
+template <typename T>
+__inline__ __device__
+T warp_reduction(
+        const T local_val)
+{
+    for (int offset = 16; offset > 0; offset /= 2){
+        T v = __shfl_down_sync(0xffffffff, local_val, offset);
+ 
+        if (v > local_val){
+            local_val = v;
+        }
+    }
+
+    // return the result
+	return local_val;
+}
 #endif

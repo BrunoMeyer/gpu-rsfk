@@ -117,10 +117,11 @@ __global__ void count_points_per_cluster(
 }
 
 TreeInfo create_bucket_from_yykmeans(
-    thrust::device_vector<RSFK_typepoints> &device_points,
+    thrust::device_vector<RSFK_typepoints> device_points,
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
     int total_buckets=128,
+    KMeansInfo* kinfo = nullptr,
     int max_iter = 32,
     int check_method = 2,
     // 0 -> until max it
@@ -131,7 +132,8 @@ TreeInfo create_bucket_from_yykmeans(
     int t_groups = 32
     )
 {
-    total_buckets = N / 64;
+
+	cudaError_t err;
     forest_log.count_tree += 1;
     
     int devUsed = 0;
@@ -144,16 +146,14 @@ TreeInfo create_bucket_from_yykmeans(
     if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
     int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
 
-    // These vectors don't need to be initialized, will be outputs
-	uint *d_labels = NULL;
-	cudaError_t err = cudaMalloc((void **)&d_labels, sizeof(uint)*N);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
-	}
+    bool own_kinfo = false;
+    if(kinfo == nullptr){
+        bool own_kinfo = true;
+        kinfo = new KMeansInfo(thrust::raw_pointer_cast(device_points.data()), N, D, total_buckets);
+    }
 
     kmeansGpu(
-            thrust::raw_pointer_cast(device_points.data()), 
+            thrust::raw_pointer_cast(device_points.data()),
             N, D, total_buckets,
             max_iter,
             check_method,
@@ -161,9 +161,14 @@ TreeInfo create_bucket_from_yykmeans(
             init_method,
             t_groups,
             VERBOSE,
-            d_labels
+            kinfo->labels.ptr(),
+            kinfo->centroids.ptr(),
+            kinfo->dist_to_centroids.ptr(),
+            kinfo->points.ptr()
     );
 
+    // Get labels
+    uint* d_labels = kinfo->labels.ptr();
 
     // Pass d_labels to thrust
     thrust::device_vector<uint> device_labels(N);
@@ -260,12 +265,6 @@ TreeInfo create_bucket_from_yykmeans(
 
     // Update ForestInfo for max_bucket_size
 
-    err = cudaFree(d_labels);
-    if (err != cudaSuccess){
-        fprintf(stderr, "Failed to free device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-
     // Health check and debug prints
     // thrust::host_vector<int> h_test_bucket_size = d_bucket_size;
     // int total_leaves = 0;
@@ -279,7 +278,9 @@ TreeInfo create_bucket_from_yykmeans(
         // std::cout << "Maximum bucket size is " << max_bucket_size << std::endl;
     // }
 
-    
+    if(own_kinfo){
+        delete kinfo;
+    }
 
     
     TreeInfo tinfo = TreeInfo(total_buckets, max_bucket_size,
