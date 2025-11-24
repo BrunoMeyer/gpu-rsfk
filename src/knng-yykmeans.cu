@@ -294,7 +294,7 @@ TreeInfo create_bucket_from_yykmeans(
     // ------------------------------------------------------------------------
     thrust::device_vector<uint> device_labels(N);
     
-    err = cudaMemcpy(
+    cudaError_t err = cudaMemcpy(
         thrust::raw_pointer_cast(device_labels.data()),
         d_labels,
         static_cast<size_t>(N) * sizeof(uint),
