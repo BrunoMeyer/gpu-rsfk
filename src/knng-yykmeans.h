@@ -35,9 +35,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef __KMEANSYY__H
 #define __KMEANSYY__H
 
-#include "./knng-kmeansyy.cu"
+#include "./knng-yykmeans.cu"
 
-// TreeInfo create_bucket_from_kmeansyy(
+// TreeInfo create_bucket_from_yykmeans(
 //     thrust::device_vector<RSFK_typepoints> &device_points,
 //     int N, int D, int VERBOSE,
 //     std::string run_name="out.png",

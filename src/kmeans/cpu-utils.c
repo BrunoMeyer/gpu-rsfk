@@ -1,7 +1,14 @@
+#ifndef CPU_UTILS_C
+#define CPU_UTILS_C
+
 #include <stdio.h>
 #include <string.h>
 
 #define CREATEDATA_RAND_MAX 10000000
+
+bool isPowerOf2(unsigned int x) {
+    return x != 0 && (x & (x - 1)) == 0;
+}
 
 void create_data(float* dataset, uint dataset_size){
 	for (int i = 0; i < dataset_size; ++i){
@@ -192,3 +199,4 @@ void shuffle_data(float* data, int totalsize, int d, int nshuffle){
 		}
 	}
 }
+#endif // CPU_UTILS_C

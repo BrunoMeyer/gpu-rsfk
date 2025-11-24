@@ -1,4 +1,5 @@
 #include "gpu-utils.cu"
+#define SUPER_DEBUG 1
 
 __global__
 void assign_label(float* dataset, uint dataset_size, 
@@ -28,14 +29,22 @@ void assign_label(float* dataset, uint dataset_size,
     for(uint ii = (warpIdx+blockIdx.x*nwarps)*warpSize; ii < dataset_size; ii += nwarps*gridDim.x*warpSize){
         // GLOBAL FILTER
         uint to_be_updated = 33;
-        if(lower_bound[ii+laneIdx] < upper_bound[ii+laneIdx]){
-            to_be_updated=laneIdx;
+        if(ii < dataset_size){
+            if(lower_bound[ii+laneIdx] < upper_bound[ii+laneIdx]){
+                to_be_updated=laneIdx;
+            }
         }
         uint next_update = __reduce_min_sync(0xffffffff, to_be_updated);
         while(next_update < 33){
             uint i = ii+next_update;
 
-            uint cent=labels[i];
+            uint near_cent=labels[i];
+            #if SUPER_DEBUG
+            if(near_cent >= k){
+                printf("Error: point %d has invalid label %d\n", i, near_cent);
+                return;
+            }
+            #endif
             ////////////////////////
             // CALCULATE DISTANCE //
             ////////////////////////
@@ -44,7 +53,7 @@ void assign_label(float* dataset, uint dataset_size,
             uint nf = dim/4;
             for(uint d=laneIdx; d < nf; d+=warpSize){
                 a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-                b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
+                b = reinterpret_cast<float4*>(centroids)[near_cent*nf+d];
                 float4 diff;
                 diff.x = a.x - b.x;
                 diff.y = a.y - b.y;
@@ -69,9 +78,6 @@ void assign_label(float* dataset, uint dataset_size,
                 //continue to group filter
                 // uint min_update_count = 0;
 
-                uint near_cent = labels[i];
-
-                // #define SUPER_DEBUG 1
                 #if SUPER_DEBUG
                 if(near_cent >= k){
                     printf("Error: point %d has invalid label %d\n", i, near_cent);
@@ -95,16 +101,22 @@ void assign_label(float* dataset, uint dataset_size,
                     float group_min_dist = MAX_FLOAT;
                     float group_sec_min_dist = MAX_FLOAT;
                         
-                    for(uint j = group_filter_location[g]; j < group_filter_location[g+1]; j++){
-                        uint cent = group_filter_cents[j];
-
+                    for(int j = group_filter_location[g]; j < group_filter_location[g+1]; j++){
                         #if SUPER_DEBUG
-                        if(cent >= k || j >= k || j < 0){
-                            printf("Error: group filter centroid %d at location %d is invalid in group %d\n", cent, j, g);
+                        if(j >= k || j < 0){
+                            printf("Error: group filter at location %d is invalid in group %d\n", j, g);
                             return;
                         }
-                        
                         #endif
+                        uint cent_from_group = group_filter_cents[j];
+                        #if SUPER_DEBUG
+                        if(cent_from_group >= k){
+                            printf("Error: group filter centroid %d at location %d is invalid in group %d\n", cent_from_group, j, g);
+                            return;
+                        }
+                        #endif
+
+                        
 
                         //LOCAL FILTER
                         // if(group_lowerbounds[i*t_groups+g] > secmin_dist)
@@ -118,7 +130,7 @@ void assign_label(float* dataset, uint dataset_size,
                         uint nf = dim/4;
                         for(uint d=laneIdx; d < nf; d+=warpSize){
                             a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-                            b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
+                            b = reinterpret_cast<float4*>(centroids)[cent_from_group*nf+d];
                             float4 diff;
                             diff.x = a.x - b.x;
                             diff.y = a.y - b.y;
@@ -142,11 +154,11 @@ void assign_label(float* dataset, uint dataset_size,
                             if(new_dist < min_dist){
                                 secmin_dist = min_dist;
                                 min_dist = new_dist;
-                                near_cent=cent;
+                                near_cent=cent_from_group;
                                 near_cent_group=g;
                             }
                             else{
-                                if(near_cent!=cent){
+                                if(near_cent!=cent_from_group){
                                     secmin_dist = new_dist;
                                 }
                             }

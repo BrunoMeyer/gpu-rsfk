@@ -35,9 +35,19 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef __RSFK__CU
 #define __RSFK__CU
 
+// #define DEBUG_PYTHON 1
+// #define DEBUG_KMEANSPP_WRITE_FILES 1 
+// #define DEBUG_KMEANS_WRITE_FILES 1 
+// #define DEBUG_BUCKET_EXPLORING2 1
+// #define DEBUG_BUCKET_EXPLORING 1
+// #define COUNT_FILTER_EFFECTIVENESS 1
+
+
 #include "include/rsfk.h"
-#include "knng-kmeansyy.h"
+#include "knng-yykmeans.h"
 // #include "kmeans/cpu-utils.c"
+#include "kmeans/gpu_ptr.h"
+#include "bucket-exploring.cu"
 
 static void CudaTest(char* msg)
 {
@@ -2011,7 +2021,8 @@ void RSFK::update_knn_indice_with_buckets(
 
 void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
-                               std::string run_name="tree")
+                               std::string run_name="tree",
+                               std::string partition_method="random")
 {
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -2024,24 +2035,51 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
     for(int i=0; i < n_trees; ++i){
-        tinfo = create_bucket_from_sample_tree(device_points,
-                                               N, D, VERBOSE-1,
-                                               forest_log,
-                                               run_name+"_"+std::to_string(i)+".png",
-                                               true, nullptr);
+        // Select partition method based on parameter
+        bool use_kmeans = false;
+        if (partition_method == "kmeans") {
+            use_kmeans = true;
+        } else if (partition_method == "random+kmeans") {
+            use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
+        }
+        // else partition_method == "random" or default, use_kmeans stays false
+        
+        #if USE_KMEANS_BUCKET_EXPLORING
+            KMeansInfo kmeans_info(
+                thrust::raw_pointer_cast(device_points.data()), 
+                N, 
+                D, 
+                total_buckets);
+        #endif
 
-        // tinfo = create_bucket_from_kmeansyy(
-        //     device_points,
-        //     N,
-        //     D,
-        //     VERBOSE-1,
-        //     forest_log);
+        if (use_kmeans) {
+            int total_buckets = N / 256;
+            tinfo = create_bucket_from_yykmeans(
+                device_points,
+                N,
+                D,
+                VERBOSE-1,
+                forest_log,
+                total_buckets
+                #if USE_KMEANS_BUCKET_EXPLORING
+                    ,&kmeans_info
+                #endif
+                );
+
+        } else {
+            tinfo = create_bucket_from_sample_tree(device_points,
+                                                   N, D, VERBOSE-1,
+                                                   forest_log,
+                                                   run_name+"_"+std::to_string(i)+".png",
+                                                   true, nullptr);
+        }
         
         // DEBUG: Move to device and print all tinfo data
         // thrust::device_vector<float> device_tinfo_data(tinfo.data(), tinfo.data() + tinfo.size());
         
         if (VERBOSE > 1){
-            printf("Partition %d/%d created with %d buckets\n", i+1, n_trees, tinfo.total_leaves);
+            printf("Partition %d/%d created with %d buckets using %s method\n", 
+                   i+1, n_trees, tinfo.total_leaves, use_kmeans ? "kmeans" : "random");
             printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
         }
         update_knn_indice_with_buckets(device_points,
@@ -2054,6 +2092,29 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
             printf("Bucket %d/%d processed\n", i+1, n_trees);
         }
 
+        if(use_kmeans){
+            if (VERBOSE > 1){
+                printf("Starting Bucket Exploring for tree %d/%d\n", i+1, n_trees);
+            }  
+
+            #if USE_KMEANS_BUCKET_EXPLORING
+                bucket_exploring(
+                    kmeans_info.points.ptr(),
+                    device_knn_indices,
+                    device_knn_sqr_distances,
+                    kmeans_info.labels.ptr(),
+                    kmeans_info.centroids.ptr(),
+                    kmeans_info.dist_to_centroids.ptr(),
+                    K, N, 
+                    kmeans_info.logic_dim, VERBOSE-1, tinfo);
+            #endif
+
+            if (VERBOSE > 1){
+                printf("Bucket Exploring for tree %d/%d done\n", i+1, n_trees);
+            }
+
+        }
+
         RANDOM_SEED++;
     }
 
@@ -2061,7 +2122,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     if(VERBOSE >= 2){
         printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);
     }
-    if(VERBOSE >= 1){
+    if(VERBOSE >= 1 && nn_exploring_factor > 0){
         printf("Starting Nearest Neighbors Exploring with factor %d\n", nn_exploring_factor);
     }
     Cron cron_nearest_neighbors_exploring;
@@ -2292,7 +2353,7 @@ int main(int argc,char* argv[])
     RSFK rsfk_knn(points, nullptr, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
                   RANDOM_SEED, nn_exploring_factor, forest_log_output);
     // rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
-    rsfk_knn.knn_gpu_rsfk_forest(1, K, N, D, VERBOSE, "tree");
+    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree", "kmeans");
 
     return 0;
 }

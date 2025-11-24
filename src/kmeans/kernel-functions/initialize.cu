@@ -28,9 +28,3 @@ void initialize(float* dataset, uint dataset_size,
 }
         // printf("bid = %i, r = %u, dim=%u\n",blockIdx.x,r,dim);
 
-__global__
-void setMaxFloat(float* mem, uint size){
-    uint i = blockIdx.x*blockDim.x+threadIdx.x;
-    if(i < size)
-        mem[i]=MAX_FLOAT;
-}
