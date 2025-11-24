@@ -281,8 +281,8 @@ TreeInfo create_bucket_from_yykmeans(
             VERBOSE,
             kinfo->labels.ptr(),
             kinfo->centroids.ptr(),
-            kinfo->dist_to_centroids.ptr(),
-            kinfo->points.ptr()
+            kinfo->dist_to_centroids.ptr()
+            ,kinfo->points.ptr()
     );
 
     // Get labels

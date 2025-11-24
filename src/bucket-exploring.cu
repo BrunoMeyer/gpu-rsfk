@@ -307,7 +307,7 @@ void bucket_exploring_kernel(
                         p1_pb_centroid_dist = SQRT_FUNC(p1_pb_centroid_dist);
                         #if DEBUG_BUCKET_EXPLORING
                             if(lane == 0 && blockIdx.x == CHECK_BID){
-                                printf("DEBUG_BUCKET_EXPLORING in %s %d: Point %d distance to probe bucket %d centroid: %f, pb_radius: %f, max_dist_pte: %f, filter: (p1_pb_centroid_dist > pb_radius + max_dist_pte)\n", 
+                                printf("DEBUG_BUCKET_EXPLORING in %s %d: Point %d distance to probe bucket %d centroid: %f, pb_radius: %f, max_dist_pte: %f, filter (p1_pb_centroid_dist > pb_radius + max_dist_pte)\n", 
                                     __FILE__,__LINE__, 
                                     real_p1, pb, p1_pb_centroid_dist, pb_radius, max_dist_pte);
                             }
@@ -608,7 +608,7 @@ void bucket_exploring(
             #if DEBUG_PYTHON
             fprintf(stderr,"Shared memory per block (%d bytes) is less than required (%d bytes). Using non-persistent kernel.\n",
             #endif
-                deviceProp.sharedMemPerBlock, shared_mem_size);
+       //  deviceProp.sharedMemPerBlock, shared_mem_size);
         compute_bucket_radii_not_persistent<<<total_buckets,nthreads,shared_mem_size>>>(
             d_distances_to_centroids,
             d_kmeans_labels,

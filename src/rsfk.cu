@@ -35,12 +35,12 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef __RSFK__CU
 #define __RSFK__CU
 
-#define DEBUG_PYTHON 1
+// #define DEBUG_PYTHON 1
 // #define DEBUG_KMEANSPP_WRITE_FILES 1 
-#define DEBUG_KMEANS_WRITE_FILES 1 
+// #define DEBUG_KMEANS_WRITE_FILES 1 
 // #define DEBUG_BUCKET_EXPLORING2 1
-#define DEBUG_BUCKET_EXPLORING 1
-#define COUNT_FILTER_EFFECTIVENESS 1
+// #define DEBUG_BUCKET_EXPLORING 1
+// #define COUNT_FILTER_EFFECTIVENESS 1
 
 
 #include "include/rsfk.h"
@@ -2044,22 +2044,27 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         }
         // else partition_method == "random" or default, use_kmeans stays false
         
-        int total_buckets = N / 128;
-        KMeansInfo kmeans_info(
-            thrust::raw_pointer_cast(device_points.data()), 
-            N, 
-            D, 
-            total_buckets);
+        #if USE_KMEANS_BUCKET_EXPLORING
+            KMeansInfo kmeans_info(
+                thrust::raw_pointer_cast(device_points.data()), 
+                N, 
+                D, 
+                total_buckets);
+        #endif
 
         if (use_kmeans) {
+            int total_buckets = N / 256;
             tinfo = create_bucket_from_yykmeans(
                 device_points,
                 N,
                 D,
                 VERBOSE-1,
                 forest_log,
-                total_buckets,
-                &kmeans_info);
+                total_buckets
+                #if USE_KMEANS_BUCKET_EXPLORING
+                    ,&kmeans_info
+                #endif
+                );
 
         } else {
             tinfo = create_bucket_from_sample_tree(device_points,
@@ -2090,38 +2095,23 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if(use_kmeans){
             if (VERBOSE > 1){
                 printf("Starting Bucket Exploring for tree %d/%d\n", i+1, n_trees);
-            }
+            }  
 
-            #if DEBUG_PYTHON
-            fprintf(stderr, "DEBUG_PYTHON in %s %d: Starting Bucket Exploring for tree %d/%d\n",__FILE__,__LINE__, i+1, n_trees);
-            #endif
-
-            #if DEBUG_KMEANS_WRITE_FILES 
-                write_data_from_device(
+            #if USE_KMEANS_BUCKET_EXPLORING
+                bucket_exploring(
+                    kmeans_info.points.ptr(),
+                    device_knn_indices,
+                    device_knn_sqr_distances,
+                    kmeans_info.labels.ptr(),
                     kmeans_info.centroids.ptr(),
-                    kmeans_info.n_clusters,
-                    kmeans_info.logic_dim,
-                    "./out/kmeans_info-centroids.txt"
-                );
+                    kmeans_info.dist_to_centroids.ptr(),
+                    K, N, 
+                    kmeans_info.logic_dim, VERBOSE-1, tinfo);
             #endif
-
-            bucket_exploring(
-                kmeans_info.points.ptr(),
-                device_knn_indices,
-                device_knn_sqr_distances,
-                kmeans_info.labels.ptr(),
-                kmeans_info.centroids.ptr(),
-                kmeans_info.dist_to_centroids.ptr(),
-                K, N, 
-                kmeans_info.logic_dim, VERBOSE-1, tinfo);
 
             if (VERBOSE > 1){
                 printf("Bucket Exploring for tree %d/%d done\n", i+1, n_trees);
             }
-
-            #if DEBUG_PYTHON
-            fprintf(stderr, "DEBUG_PYTHON in %s %d: Bucket Exploring for tree %d/%d done\n",__FILE__,__LINE__, i+1, n_trees);
-            #endif
 
         }
 
