@@ -1,3 +1,6 @@
+#ifndef KMEANSPP_CU
+#define KMEANSPP_CU
+
 __global__
 void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size, 
         uint dim,
@@ -331,3 +334,5 @@ void update_global_bounds(
 
     // if(threadIdx.x == 0)
     //     atomicAdd(sqrdNormError,local_sqrdNormError);
+
+#endif // KMEANSPP_CU

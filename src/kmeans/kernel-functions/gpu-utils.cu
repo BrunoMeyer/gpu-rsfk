@@ -35,6 +35,32 @@ float euclidean_distance_sqr(
 	return s;
 }
 
+
+__device__
+static inline
+float euclidean_distance_sqrd(
+		float* p0,
+		float* p1,
+		uint dim,
+		uint lane
+){
+	float4 a,b;
+	float s = 0.0f;
+
+	for(uint i=lane; i < dim; i+=WARP_SIZE){
+        float diff = p0[i] - p1[i];
+        s+=diff*diff;
+	}
+	s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+	s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+	s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+	s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+	s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32		
+	
+	// all lanes have the value, just return it
+	return s;
+}
+
 __device__
 inline
 void add_points(

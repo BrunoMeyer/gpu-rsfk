@@ -54,7 +54,8 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 		uint verbosity,
 		//OUTPUTS
 		float* d_centroids,
-        uint* d_labels
+        uint* d_labels,
+		float* d_upperbounds_out = NULL
 ){
 
 	// ALLOC MEMORY
@@ -82,10 +83,15 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 	}
 
 	float *d_upperbounds = NULL;
-	err = cudaMalloc((void **)&d_upperbounds, sizeof(float)*dataset_size);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to allocate device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+	if(d_upperbounds_out != NULL){
+		d_upperbounds = d_upperbounds_out;
+	}
+	else{
+		err = cudaMalloc((void **)&d_upperbounds, sizeof(float)*dataset_size);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to allocate device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	uint *d_chosen_centroids = NULL;
@@ -112,7 +118,7 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
 	
 	// RANDOM FIRST CENTROID 
-	static unsigned long long seed = 0;
+	static unsigned long long seed = time(NULL);
 	initialize_first_cent_kmeanspp<<<1,max_threads>>>(
 		d_dataset,dataset_size,dim,
 		d_centroids, d_chosen_centroids, seed);
@@ -216,10 +222,13 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 		fprintf(stderr, "Failed to free device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-	err = cudaFree(d_upperbounds);
-	if (err != cudaSuccess){
-		fprintf(stderr, "Failed to free device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
-		exit(EXIT_FAILURE);
+
+	if(d_upperbounds_out == NULL){
+		err = cudaFree(d_upperbounds);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to free device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
 	}
 
 	err = cudaFree(d_chosen_centroids);
@@ -301,7 +310,7 @@ void kmeansppAndBoundsInitialization(float* d_dataset, uint dataset_size,
 	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
 	
 	// RANDOM FIRST CENTROID 
-	static unsigned long long seed = 0;
+	static unsigned long long seed = time(NULL);
 	initialize_first_cent_kmeanspp<<<1,max_threads>>>(
 		d_dataset,dataset_size,dim,
 		d_centroids, d_chosen_centroids, seed);
@@ -765,10 +774,10 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		printf("ERROR: Random Initialization of centroids is outdated. Use KMeans++ initialization.\n");
 		exit(EXIT_FAILURE);
 
-		// initialize<<<k,nthreads>>>(
-		// 	d_dataset,dataset_size,logic_dim,
-		// 	d_centroids);
-		// cudaDeviceSynchronize();
+		initialize<<<k,nthreads>>>(
+			d_dataset,dataset_size,logic_dim,
+			d_centroids);
+		cudaDeviceSynchronize();
 		
 	}
 	else if( initialization_method == 1){

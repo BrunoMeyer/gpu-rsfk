@@ -2044,27 +2044,32 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         }
         // else partition_method == "random" or default, use_kmeans stays false
         
-        #if USE_KMEANS_BUCKET_EXPLORING
-            KMeansInfo kmeans_info(
-                thrust::raw_pointer_cast(device_points.data()), 
-                N, 
-                D, 
-                total_buckets);
-        #endif
+
+        //measure time to create tree
+        chronometer_t ch_createtree;
+        chrono_reset(&ch_createtree);
+        chrono_start(&ch_createtree);
+
+        int total_buckets = N / 768;
+        int bucket_size_limit = 1024;
+        // KMeansInfo kmeans_info(
+        //     thrust::raw_pointer_cast(device_points.data()), 
+        //     N, 
+        //     D, 
+        //     total_buckets);
 
         if (use_kmeans) {
-            int total_buckets = N / 256;
             tinfo = create_bucket_from_yykmeans(
                 device_points,
                 N,
                 D,
                 VERBOSE-1,
                 forest_log,
-                total_buckets
-                #if USE_KMEANS_BUCKET_EXPLORING
-                    ,&kmeans_info
-                #endif
-                );
+                total_buckets,
+                bucket_size_limit
+                // ,
+                // &kmeans_info
+            );
 
         } else {
             tinfo = create_bucket_from_sample_tree(device_points,
@@ -2076,12 +2081,25 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         
         // DEBUG: Move to device and print all tinfo data
         // thrust::device_vector<float> device_tinfo_data(tinfo.data(), tinfo.data() + tinfo.size());
-        
+
+
+        chrono_stop(&ch_createtree);
+        double create_tree_sec = (double)chrono_gettotal(&ch_createtree)/(1000*1000*1000);
+        // if(VERBOSE > 2)
+            printf("Create tree time: %.6f sec\n", create_tree_sec);
+
         if (VERBOSE > 1){
             printf("Partition %d/%d created with %d buckets using %s method\n", 
                    i+1, n_trees, tinfo.total_leaves, use_kmeans ? "kmeans" : "random");
             printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
         }
+
+
+        //measure time to update knn
+        chronometer_t ch_updateknn; 
+        chrono_reset(&ch_updateknn);
+        chrono_start(&ch_updateknn);
+
         update_knn_indice_with_buckets(device_points,
                                        device_knn_indices,
                                        device_knn_sqr_distances,
@@ -2092,12 +2110,19 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
             printf("Bucket %d/%d processed\n", i+1, n_trees);
         }
 
-        if(use_kmeans){
-            if (VERBOSE > 1){
-                printf("Starting Bucket Exploring for tree %d/%d\n", i+1, n_trees);
-            }  
+        chrono_stop(&ch_updateknn);
+        double update_knn_sec = (double)chrono_gettotal(&ch_updateknn)/(1000*1000*1000);
+        // if(VERBOSE > 2){
+            printf("Update KNN time:  %.6f sec\n", update_knn_sec);
+            printf("-------------------------------\n");
+        // }
 
-            #if USE_KMEANS_BUCKET_EXPLORING
+        #if USE_KMEANS_BUCKET_EXPLORING
+            if(use_kmeans){
+                if (VERBOSE > 1){
+                    printf("Starting Bucket Exploring for tree %d/%d\n", i+1, n_trees);
+                }  
+
                 bucket_exploring(
                     kmeans_info.points.ptr(),
                     device_knn_indices,
@@ -2107,13 +2132,13 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                     kmeans_info.dist_to_centroids.ptr(),
                     K, N, 
                     kmeans_info.logic_dim, VERBOSE-1, tinfo);
-            #endif
 
-            if (VERBOSE > 1){
-                printf("Bucket Exploring for tree %d/%d done\n", i+1, n_trees);
+                if (VERBOSE > 1){
+                    printf("Bucket Exploring for tree %d/%d done\n", i+1, n_trees);
+                }
+
             }
-
-        }
+        #endif
 
         RANDOM_SEED++;
     }

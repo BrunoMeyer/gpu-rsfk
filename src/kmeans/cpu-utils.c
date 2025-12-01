@@ -10,6 +10,11 @@ bool isPowerOf2(unsigned int x) {
     return x != 0 && (x & (x - 1)) == 0;
 }
 
+template <typename T>
+inline bool is_power_of_2(T x) {
+    return x != 0 && (x & (x - 1)) == 0;
+}
+
 void create_data(float* dataset, uint dataset_size){
 	for (int i = 0; i < dataset_size; ++i){
 		uint r = rand()%CREATEDATA_RAND_MAX;

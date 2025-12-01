@@ -38,6 +38,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "include/rsfk.h"
 #include "kmeans/kmeans.h"
+#include "kmeans/chrono.c"
+#include "kmeans/kmeanspp_logc.cu"
 
 #include <vector>
 #include <cassert>
@@ -237,6 +239,7 @@ TreeInfo create_bucket_from_yykmeans(
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
     int total_buckets=128,
+    int bucket_size_limit =1024,
     KMeansInfo* kinfo = nullptr,
     int max_iter = 32,
     int check_method = 2,
@@ -245,8 +248,7 @@ TreeInfo create_bucket_from_yykmeans(
     // 2 -> by number of reassingments (default)
     int tolerance = 0.01,
     int init_method = 1, //0 -> random, 1 -> kmeans++
-    int t_groups = 32,
-    int bucket_size_limit =1024
+    int t_groups = 32
     )
 {
     // Initial number of clusters for k-means
@@ -269,21 +271,62 @@ TreeInfo create_bucket_from_yykmeans(
         kinfo = new KMeansInfo(thrust::raw_pointer_cast(device_points.data()), N, D, total_buckets);
     }
 
-    // Run k-means on GPU, labels are written into d_labels (0..total_buckets-1)
-    kmeansGpu(
+    // ------------------------------------------------------------------------
+    //mesure time
+
+    chronometer_t ch_kmeans;
+    chrono_reset(&ch_kmeans);
+    chrono_start(&ch_kmeans);
+
+    #define FULL_KMEANS 0
+    #define KMEANSPP 1
+    #define KMEANSPP_LOGC 2
+
+    #define KMEANS_METHOD KMEANSPP 
+    #if KMEANS_METHOD == KMEANSPP_LOGC
+
+        int n_buckets = 0;
+        kmeanspp_logc(
             thrust::raw_pointer_cast(device_points.data()),
             N, D, total_buckets,
-            max_iter,
-            check_method,
-            tolerance,
-            init_method,
-            t_groups,
             VERBOSE,
-            kinfo->labels.ptr(),
             kinfo->centroids.ptr(),
-            kinfo->dist_to_centroids.ptr()
-            ,kinfo->points.ptr()
-    );
+            kinfo->labels.ptr(),
+            &n_buckets,
+            bucket_size_limit
+        );
+        total_buckets = n_buckets;
+    #elif KMEANS_METHOD == KMEANSPP
+        kmeanspp(
+            thrust::raw_pointer_cast(device_points.data()),
+            N, D, total_buckets,
+            VERBOSE,
+            kinfo->centroids.ptr(),
+            kinfo->labels.ptr()
+        );
+    #elif KMEANS_METHOD == FULL_KMEANS 
+        // Run k-means on GPU, labels are written into d_labels (0..total_buckets-1)
+        kmeansGpu(
+                thrust::raw_pointer_cast(device_points.data()),
+                N, D, total_buckets,
+                max_iter,
+                check_method,
+                tolerance,
+                init_method,
+                t_groups,
+                3,
+                kinfo->labels.ptr(),
+                kinfo->centroids.ptr(),
+                kinfo->dist_to_centroids.ptr()
+                ,kinfo->points.ptr()
+        );
+    #endif
+
+    chrono_stop(&ch_kmeans);
+    double kmeans_sec = (double)chrono_gettotal(&ch_kmeans)/(1000*1000*1000); 
+
+    if(VERBOSE > 2)
+        printf("KMeans time: %.6f sec\n", kmeans_sec);
 
     // Get labels
     uint* d_labels = kinfo->labels.ptr();
@@ -292,6 +335,10 @@ TreeInfo create_bucket_from_yykmeans(
     // ------------------------------------------------------------------------
     // Step 1: copy device labels to thrust device_vector and argsort by label
     // ------------------------------------------------------------------------
+    chronometer_t ch_argsort;
+    chrono_reset(&ch_argsort);
+    chrono_start(&ch_argsort);
+            
     thrust::device_vector<uint> device_labels(N);
     
     cudaError_t err = cudaMemcpy(
@@ -315,9 +362,18 @@ TreeInfo create_bucket_from_yykmeans(
     thrust::host_vector<uint> h_labels  = device_labels;
     thrust::host_vector<int>  h_indices = indices;
 
+    chrono_stop(&ch_argsort);
+    double argsort_sec = (double)chrono_gettotal(&ch_argsort)/(1000*1000*1000);
+    if(VERBOSE > 2)
+        printf("Argsort time: %.6f sec\n", argsort_sec);
+
     // ------------------------------------------------------------------------
     // Step 2: Enforce bucket size limit on sorted labels (host side)
     // ------------------------------------------------------------------------
+    chronometer_t ch_enforce;
+    chrono_reset(&ch_enforce);
+    chrono_start(&ch_enforce);
+
     BucketSplitResult split_res = enforce_bucket_size_limit_host(
         h_labels,
         N,
@@ -368,10 +424,19 @@ TreeInfo create_bucket_from_yykmeans(
     assert(err == cudaSuccess);
     */
 
+    chrono_stop(&ch_enforce);
+    double enforce_sec = (double)chrono_gettotal(&ch_enforce)/(1000*1000*1000);
+    if(VERBOSE > 2)
+        printf("Enforce bucket size time: %.6f sec\n", enforce_sec);
+
     // ------------------------------------------------------------------------
     // Step 3: Build padded bucket array on HOST
     //         (size: total_buckets x max_bucket_size)
     // ------------------------------------------------------------------------
+    chronometer_t ch_build_buckets;
+    chrono_reset(&ch_build_buckets);
+    chrono_start(&ch_build_buckets);
+
     thrust::host_vector<int> h_nodes_bucket(total_buckets * max_bucket_size, -1);
     thrust::host_vector<int> h_bucket_size(total_buckets, 0);
 
@@ -389,6 +454,7 @@ TreeInfo create_bucket_from_yykmeans(
         h_bucket_size[label]++;
     }
 
+
     // ------------------------------------------------------------------------
     // Step 4: Copy buckets to DEVICE
     // ------------------------------------------------------------------------
@@ -400,6 +466,9 @@ TreeInfo create_bucket_from_yykmeans(
     cudaMemcpy(thrust::raw_pointer_cast(d_bucket_size.data()), h_bucket_size.data(),
                 sizeof(int)*total_buckets, cudaMemcpyHostToDevice);
 
+
+    chrono_stop(&ch_build_buckets);
+    double build_buckets_sec = (double)chrono_gettotal(&ch_build_buckets)/(1000*1000*1000);
     // ------------------------------------------------------------------------
     // Cleanup
     // ------------------------------------------------------------------------
@@ -413,6 +482,12 @@ TreeInfo create_bucket_from_yykmeans(
 
     // Health check and debug prints
     // thrust::host_vector<int> h_test_bucket_size = d_bucket_size;
+    // //print bucket sizes
+    // for(int i = 0; i < total_buckets; i++){
+    //     std::cout << "Bucket " << i << " size: " << h_test_bucket_size[i] << std::endl;
+    // }
+
+
     // int total_leaves = 0;
     // for(int i = 0; i < total_buckets; i++){
     //     if(h_test_bucket_size[i] > 0){
@@ -420,10 +495,17 @@ TreeInfo create_bucket_from_yykmeans(
     //     }
     // }
     // if(VERBOSE > 0){
-        // std::cout << "KMeans created " << total_leaves << " non-empty buckets out of " << total_buckets << " total buckets." << std::endl;
-        // std::cout << "Maximum bucket size is " << max_bucket_size << std::endl;
+    //     std::cout << "KMeans created " << total_leaves << " non-empty buckets out of " << total_buckets << " total buckets." << std::endl;
+    //     std::cout << "Maximum bucket size is " << max_bucket_size << std::endl;
     // }
 
+    //TOTAL TIME
+    if(VERBOSE > 2){    
+        double total_sec = kmeans_sec + argsort_sec + enforce_sec + build_buckets_sec;
+        printf("-------------------------------------\n");
+        printf("Total bucket creation time: %.6f sec\n", total_sec);
+        printf("-------------------------------------\n");
+    }
     if(own_kinfo){
         delete kinfo;
     }

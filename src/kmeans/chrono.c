@@ -4,6 +4,9 @@
 //
 // by W.Zola (2017)
 
+#ifndef CHRONO_C
+#define CHRONO_C
+
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
@@ -85,3 +88,5 @@ void chrono_report_TimeInLoop( chronometer_t *chrono, char *s, int loop_count );
                   s, chrono->xtotal_ns, chrono->xn_events*loop_count, 
                                   chrono->xtotal_ns/(chrono->xn_events*loop_count) );
   }
+
+#endif
