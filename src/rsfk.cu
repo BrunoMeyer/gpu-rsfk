@@ -2040,7 +2040,8 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if (partition_method == "kmeans") {
             use_kmeans = true;
         } else if (partition_method == "random+kmeans") {
-            use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
+            // use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
+            use_kmeans = (i < 1); // First tree use kmeans, rest use random
         }
         // else partition_method == "random" or default, use_kmeans stays false
         
@@ -2050,13 +2051,13 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         chrono_reset(&ch_createtree);
         chrono_start(&ch_createtree);
 
-        int total_buckets = N / 768;
+        int total_buckets = N / 64;
         int bucket_size_limit = 1024;
-        // KMeansInfo kmeans_info(
-        //     thrust::raw_pointer_cast(device_points.data()), 
-        //     N, 
-        //     D, 
-        //     total_buckets);
+        KMeansInfo kmeans_info(
+            thrust::raw_pointer_cast(device_points.data()), 
+            N, 
+            D, 
+            total_buckets);
 
         if (use_kmeans) {
             tinfo = create_bucket_from_yykmeans(
@@ -2066,9 +2067,8 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                 VERBOSE-1,
                 forest_log,
                 total_buckets,
-                bucket_size_limit
-                // ,
-                // &kmeans_info
+                bucket_size_limit,
+                &kmeans_info
             );
 
         } else {

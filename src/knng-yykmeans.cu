@@ -282,7 +282,9 @@ TreeInfo create_bucket_from_yykmeans(
     #define KMEANSPP 1
     #define KMEANSPP_LOGC 2
 
-    #define KMEANS_METHOD KMEANSPP 
+    #define KMEANS_METHOD KMEANSPP
+
+
     #if KMEANS_METHOD == KMEANSPP_LOGC
 
         int n_buckets = 0;
@@ -298,7 +300,7 @@ TreeInfo create_bucket_from_yykmeans(
         total_buckets = n_buckets;
     #elif KMEANS_METHOD == KMEANSPP
         kmeanspp(
-            thrust::raw_pointer_cast(device_points.data()),
+            kinfo->points.ptr(),
             N, D, total_buckets,
             VERBOSE,
             kinfo->centroids.ptr(),
@@ -472,11 +474,12 @@ TreeInfo create_bucket_from_yykmeans(
     // ------------------------------------------------------------------------
     // Cleanup
     // ------------------------------------------------------------------------
-    err = cudaFree(d_labels);
-    if (err != cudaSuccess){
-        fprintf(stderr, "Failed to free device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
+    // DON'T need to free d_labels, it's managed by kinfo
+    // err = cudaFree(d_labels);
+    // if (err != cudaSuccess){
+    //     fprintf(stderr, "Failed to free device vector d_labels (error code %s)!\n", cudaGetErrorString(err));
+    //     exit(EXIT_FAILURE);
+    // }
 
     // Update ForestInfo for max_bucket_size
 
@@ -506,9 +509,9 @@ TreeInfo create_bucket_from_yykmeans(
         printf("Total bucket creation time: %.6f sec\n", total_sec);
         printf("-------------------------------------\n");
     }
-    if(own_kinfo){
-        delete kinfo;
-    }
+    // if(own_kinfo){
+    //     delete kinfo;
+    // }|
 
     // ------------------------------------------------------------------------
     // Build TreeInfo with final total_buckets and max_bucket_size

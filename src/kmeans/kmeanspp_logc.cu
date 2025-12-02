@@ -264,6 +264,7 @@ void initialize_with_given_cent(
 	}
 }
 
+int ___kmeanslogc__it = 0;
 void kmeanspp_logc(float* d_dataset, uint dataset_size, 
         uint dim, uint max_buckets,
 		uint verbosity,
@@ -369,7 +370,9 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 
 
 	// RANDOM FIRST CENTROID 
-	static unsigned long long seed = time(NULL);
+	// static unsigned long long seed = time(NULL);
+	static unsigned long long seed = 777+___kmeanslogc__it;
+	___kmeanslogc__it++;
 	int first_cent = rand_r((unsigned int*)&seed) % dataset_size;
 	// printf("K-means++ LOGC first centroid index: %d \n",first_cent);
 	initialize_with_given_cent<<<1,max_threads>>>(
@@ -482,7 +485,7 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 
 	cudaMemcpy(d_new_labels_count, d_labels_count, sizeof(uint)*k, cudaMemcpyDeviceToDevice);
 	while(h_n_chosen_centroids < k && h_n_finished_centroids < h_n_chosen_centroids){
-		// printf("Chosen centroids: %u / %u; Finished centroids: %u \n",h_n_chosen_centroids,k,h_n_finished_centroids);
+		printf("Chosen centroids: %u / %u; Finished centroids: %u \n",h_n_chosen_centroids,k,h_n_finished_centroids);
 
 			
 
@@ -580,7 +583,7 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 	}
 
 
-	// printf("K-means++ LOGC chose %u centroids, and %u finished centroids.\n",h_n_chosen_centroids,h_n_finished_centroids);
+	printf("K-means++ LOGC chose %u centroids, and %u finished centroids.\n",h_n_chosen_centroids,h_n_finished_centroids);
 	
 	label_last_centroids_kmeanspp_logc<<<nblocks,nthreads>>>(
 		d_dataset,dataset_size,

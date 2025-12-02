@@ -24,11 +24,10 @@ public:
         logic_dim((dim + 3) / 4 * 4),   // align to 4
         n_clusters(n_clusters)
     {
-        if(logic_dim != dim) {
-            points.alloc(n_points * logic_dim);
-        } else {
-            points.attach(raw_points, n_points * dim);
-        }
+        points.alloc(n_points * logic_dim);
+        if(logic_dim == dim) {
+            points.copyFromDevice(raw_points);
+        } // else, copy alined (not implemented yet)
         labels.alloc(n_points);
         centroids.alloc(n_clusters * logic_dim);
         dist_to_centroids.alloc(n_points);

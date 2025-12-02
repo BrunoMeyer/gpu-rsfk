@@ -51,7 +51,7 @@ public:
             cudaFree(raw_ptr);
         }
         count = n;
-        cudaMalloc(&raw_ptr, sizeof(T) * n);
+        allocate(n);
         owning = true;
     }
 
@@ -113,12 +113,12 @@ public:
     // -----------------------------
     // resize() — reallocates memory
     // -----------------------------
-    // void resize(size_t n) {
-    //     if (raw_ptr) cudaFree(raw_ptr);
-    //     raw_ptr = nullptr;
-    //     count = 0;
-    //     allocate(n);
-    // }
+    void resize(size_t n) {
+        if (raw_ptr) cudaFree(raw_ptr);
+        raw_ptr = nullptr;
+        count = 0;
+        allocate(n);
+    }
 
     // -----------------------------
     // Utility functions
@@ -138,6 +138,17 @@ public:
                 fprintf(stderr, "cudaMemset failed (%s)\n", cudaGetErrorString(err));
                 exit(EXIT_FAILURE);
             }
+        }
+    }
+
+    // -----------------------------
+    // Copying Device -> Device
+    // -----------------------------
+    void copyFromDevice(const T* d_data) {
+        cudaError_t err = cudaMemcpy(raw_ptr, d_data, count * sizeof(T), cudaMemcpyDeviceToDevice);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "cudaMemcpy D2D failed (%s)\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -168,10 +179,11 @@ public:
             cudaError_t err = cudaFree(raw_ptr);
             if (err != cudaSuccess) {
                 fprintf(stderr, "cudaFree failed: %s\n", cudaGetErrorString(err));
+                exit(EXIT_FAILURE);
             }
         }
 
-        // Sempre deixar em estado seguro
+        // Always leave in a safe state
         raw_ptr = nullptr;
         count = 0;
         owning = false;
