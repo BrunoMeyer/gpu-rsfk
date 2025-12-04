@@ -1,3 +1,4 @@
+import faiss
 import os
 import json
 import matplotlib.pyplot as plt
@@ -23,6 +24,7 @@ class KnnResult(object):
         model,
         dataset_name,
         k_neighbors,
+        dataset_id=None,
         n_points=0,
         ndim=0,
         dir_path=".",
@@ -35,8 +37,10 @@ class KnnResult(object):
 
         self.model = model
         self.dataset_name = dataset_name
+        self.dataset_id = dataset_id
         dataX, dataY = load_dataset(
             dataset_name,
+            dataset_id=dataset_id,
             npoints=n_points,
             ndim=ndim
         )
@@ -70,12 +74,17 @@ class KnnResult(object):
         self,
         parameter_value,
         model_init_parameter_values=None,
-        partition_method=None
+        partition_method=None,
+        requires_model_inst=True
     ):
         run_params = self.model_initial_params.copy()
-        if model_init_parameter_values is not None:
-            run_params.update(model_init_parameter_values)
-        model = self.model(**run_params)
+
+        if requires_model_inst:
+            if model_init_parameter_values is not None:
+                run_params.update(model_init_parameter_values)
+            model = self.model(**run_params)
+        else:
+            model = self.model
 
         find_params = self.model_find_params.copy()
         find_params[self.parameter_name] = parameter_value
@@ -83,24 +92,71 @@ class KnnResult(object):
         if partition_method is not None:
             find_params['partition_method'] = partition_method
 
-        t_start = time.time()
         # indices, dist = model.find_nearest_neighbors_ann(
-        indices, dist = model.find_nearest_neighbors(
-            self.dataX,
-            self.k_neighbors,
-            **find_params
-        )
+        if 'find_nearest_neighbors' in dir(model):
+            t_start = time.time()
+            indices, dist = model.find_nearest_neighbors(
+                self.dataX,
+                self.k_neighbors,
+                **find_params
+            )
+        if 'search' in dir(model):
+            # FAISS style
+            res = faiss.StandardGpuResources()  # use a single GPU
+            d = self.dataX.shape[1]
+            xb = np.require(self.dataX, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+            xq = np.require(self.dataX, np.float32, ['CONTIGUOUS', 'ALIGNED'])
+            
+            t_start = time.time()
+            
+            quantizer = faiss.IndexFlatL2(d)  # the other index
+            index = model(quantizer, d, 256, faiss.METRIC_L2)
+            # index = faiss.IndexIVFFlat(quantizer, d, nlist, faiss.METRIC_L2)
+            index = faiss.index_cpu_to_gpu(res, 0, index)
+            index.nprobe = parameter_value
+            index.train(xb)
+            index.add(xb)                  # add may be a bit slower as well
+            dist, indices = index.search(xq, self.k_neighbors)     # actual search
+
+
         t_end = time.time()
         elapsed_time = t_end - t_start
 
         quality = None
         if self.quality_metric == 'nnp_rate':
-            real_distances, real_indices = load_dataset_knn(
+            real_distances, real_indices, brute_force_time = load_dataset_knn(
                 self.dataset_name,
                 max_k=self.k_neighbors,
                 npoints=self.n_points,
                 ndim=self.ndim,
+                return_brute_force_time=True
             )
+
+            if brute_force_time is not None:
+                # Add to results
+                # Make copy of current state
+                s = self.save_state()
+                self.quality_list = []
+                self.time_list = []
+                self.parameter_list = [None, None]
+                brute_force_mock_quality = [1 for x in self.parameter_list]
+                # Make sure that it is a line
+                brute_force_mock_quality[0] = 0
+                
+                self.add_knn_result(
+                    self.dataset_name,
+                    self.k_neighbors,
+                    "Brute Force",
+                    self.parameter_name,
+                    [0 for x in self.parameter_list],
+                    self.quality_metric,
+                    brute_force_mock_quality,
+                    [brute_force_time for x in self.parameter_list]
+                )
+
+                self.save()
+                self.restore_state(s)
+
             quality = get_nne_rate(
                 real_indices,
                 indices,
@@ -118,7 +174,8 @@ class KnnResult(object):
         parameter_list,
         verbose=1,
         model_name=None,
-        partition_method=None
+        partition_method=None,
+        requires_model_inst=True
     ):
         for parameter_value in parameter_list:
             if verbose >=1:
@@ -128,7 +185,8 @@ class KnnResult(object):
                 ))
             quality, elapsed_time = self.evaluate(
                 parameter_value,
-                partition_method=partition_method
+                partition_method=partition_method,
+                requires_model_inst=requires_model_inst
             )
             if verbose >=1:
                 print("Quality: {:.4f} | Time: {:.4f} sec".format(
@@ -162,6 +220,19 @@ class KnnResult(object):
         self.quality_list = []
         self.time_list = []
     
+    def save_state(self):
+        # Ensure copies
+        parameter_list = [x for x in self.parameter_list]
+        quality_list = [x for x in self.quality_list]
+        time_list = [x for x in self.time_list]
+        return (parameter_list, quality_list, time_list)
+    
+    def restore_state(self, state):
+        self.clean()
+        self.parameter_list = state[0]
+        self.quality_list = state[1]
+        self.time_list = state[2]
+
     def add_knn_result(
         self,
         dataset_name,
@@ -336,6 +407,7 @@ class KnnResult(object):
             if dataX is None:
                 dataX, dataY = load_dataset(
                     dataset_name,
+                    dataset_id=self.dataset_id,
                     npoints=self.n_points,
                     ndim=self.ndim
                 )
@@ -353,7 +425,12 @@ class KnnResult(object):
                     method_list.remove("IVFFLAT")
                     method_list = ["IVFFLAT"]+method_list
             
-
+            # Sort methodlist and ensure that baseline is first if exist
+            method_list.sort()
+            if not baseline is None:
+                if baseline in method_list:
+                    method_list.remove(baseline)
+                    method_list = [baseline]+method_list
             for knn_method_name in method_list:
                 
                 for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
@@ -388,8 +465,6 @@ class KnnResult(object):
                     legend_namelist.append(legend_name)
 
                     data = self.data[dataset_name][str(K)][knn_method_name][parameter_name]
-                    if not quality_metric in data:
-                        continue
                     
                     parameter_list = data[quality_metric]["parameters"]
                     quality_list = np.array(data[quality_metric]["quality"])
@@ -443,12 +518,18 @@ class KnnResult(object):
             if (not baseline is None) and (not ivfflat_x is None):
                 # WORKAROUND
                 # ax.set_prop_cycle(cycler('color', plt_colors_cycle[non_baseline_count+1:]))
-
+                
+                method_list.sort()
+                if not baseline is None:
+                    if baseline in method_list:
+                        method_list.remove(baseline)
+                        method_list = [baseline]+method_list
                 curve_count = 0
                 for knn_method_name in method_list:
                     for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
-                        if knn_method_name =="IVFFLAT" or knn_method_name in dash_method:
-                            continue
+                        # if knn_method_name =="IVFFLAT" or knn_method_name in dash_method:
+                            # continue
+                        print(knn_method_name, parameter_name)
                         
                         # legend_name = str(knn_method_name)+" ({})".format(parameter_name)
                         legend_name = str(knn_method_name)
@@ -472,7 +553,6 @@ class KnnResult(object):
                         quality_list = np.array(data[quality_metric]["quality"])
                         time_list = np.array(data[quality_metric]["time"])
 
-                        
                         idx = np.argsort(quality_list)
 
                         '''
@@ -496,7 +576,7 @@ class KnnResult(object):
 
                             
                         # '''
-                        fill_quality = np.arange(0.2,min(np.max(curve_x),0.95),0.1)
+                        fill_quality = np.arange(min(min(curve_x), 0.2),max(min(np.max(curve_x),0.95),0.1),0.1)
 
                         if (max(curve_x) > max(ivfflat_x)):
                             fill_quality = np.concatenate((fill_quality,np.array([max(ivfflat_x)])))
@@ -571,9 +651,12 @@ class KnnResult(object):
 
             # legend_curveslist.append(ax.plot([], [], label=" ")[0])
             # legend_curveslist.append(ax.plot([], [], label="Speedups over FAISS")[0])
-            first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 11})
+            # first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 11})
+            first_legend = plt.legend(handles=legend_curveslist, bbox_to_anchor=(0, 1.0), loc='upper left', framealpha=0.5, prop={'size': 11}, ncols=3)
+
             # Add the legend manually to the current Axes.
             plt.gca().add_artist(first_legend)
+            plt.tight_layout()
 
             # ax = plt.gca().add_artist(first_legend)
             # WORKAROUND
@@ -625,6 +708,10 @@ class KnnResult(object):
         # ax.set_ylabel('Average of points treated per second')
         ax.set_xlabel('Acurácia')
         ax.set_ylabel('Média de pontos processados por segundo')
+
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+
         # ax1.set_title('a sine wave')
         fig_title  = "{}-Nearest Neighbors".format(K)
         ax.set_yscale('log')
@@ -656,7 +743,7 @@ class KnnResult(object):
         
         # ax.set_title(fig_title)
         
-        fig.savefig(fig_name)
+        fig.savefig(fig_name, bbox_inches='tight', bbox_extra_artists=(first_legend,))
 
     def export_time_accuracy_to_csv(self, dataset_list, K, quality_metric, dataX=None, 
              dash_method=[], fig_name=None, ignore_outliers=True, baseline=None, method_list=None, sheet_name="plot_data.xls"):
@@ -695,6 +782,7 @@ class KnnResult(object):
 
             dataX, dataY = load_dataset(
                 dataset_name,
+                dataset_id=self.dataset_id,
                 npoints=self.n_points,
                 ndim=self.ndim
             )

@@ -2051,13 +2051,14 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         chrono_reset(&ch_createtree);
         chrono_start(&ch_createtree);
 
-        int total_buckets = N / 64;
+        // int kmeans_total_buckets = N / ((MAX_TREE_CHILD-MIN_TREE_CHILD)/2);
+        int kmeans_total_buckets = N / MAX_TREE_CHILD;
         int bucket_size_limit = 1024;
         KMeansInfo kmeans_info(
             thrust::raw_pointer_cast(device_points.data()), 
             N, 
             D, 
-            total_buckets);
+            kmeans_total_buckets);
 
         if (use_kmeans) {
             tinfo = create_bucket_from_yykmeans(
@@ -2066,7 +2067,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                 D,
                 VERBOSE-1,
                 forest_log,
-                total_buckets,
+                kmeans_total_buckets,
                 bucket_size_limit,
                 &kmeans_info
             );
