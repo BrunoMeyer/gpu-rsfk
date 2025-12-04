@@ -36,9 +36,17 @@ void from_file(const char* filename,
 	uint i = 0;
 	while(i < size*d){
 		for (uint j = 0; i < size*d-1 && j < d-1; ++j){
-			fscanf(file, "%f,", &dset[i++]);
+			int ret = fscanf(file, "%f,", &dset[i++]);
+			if(ret == EOF){
+				printf("ERROR: not enough data in file '%s'.\n",filename);
+				exit(-1);
+			}
 		}
-		fscanf(file, "%f", &dset[i++]);
+		int ret = fscanf(file, "%f", &dset[i++]);
+		if(ret == EOF){
+			printf("ERROR: not enough data in file '%s'.\n",filename);
+			exit(-1);
+		}
 
 	}
 	fclose(file);

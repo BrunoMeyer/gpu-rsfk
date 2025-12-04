@@ -231,6 +231,31 @@ BucketSplitResult enforce_bucket_size_limit_host(
 }
 
 // ============================================================================
+// RECURSIVE KMEANS
+// ============================================================================
+// void rec_kmeans(
+//     KmeansInfo& kinfo,
+//     int K, //                               number of clusters per call
+//     int n_calls,
+//     int max_calls,
+//     int bucket_size_limit,
+//     int& out_max_bucket_size,
+//     int VERBOSE
+// ){
+//     kmeanspp(
+//         kinfo.points.ptr(),
+//         N, D, K,
+//         VERBOSE,
+//         kinfo.centroids.ptr(),
+//         kinfo.labels.ptr(),
+//         kinfo.dist_to_centroids.ptr()
+//     );
+//     // Count labels
+//     kinfo.countLabels();
+    
+// }
+
+// ============================================================================
 // MAIN FUNCTION: create_bucket_from_yykmeans
 // ============================================================================
 
@@ -255,19 +280,19 @@ TreeInfo create_bucket_from_yykmeans(
 
     forest_log.count_tree += 1;
     
-    int devUsed = 0;
-    cudaSetDevice(devUsed);
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, devUsed);
+    // int devUsed = 0;
+    // cudaSetDevice(devUsed);
+    // cudaDeviceProp deviceProp;
+    // cudaGetDeviceProperties(&deviceProp, devUsed);
 
-    // Tries to ensure that there are at least two blocks per multiprocessor
-    int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
-    if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
-    int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
+    // // Tries to ensure that there are at least two blocks per multiprocessor
+    // int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
+    // if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
+    // int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
 
     bool own_kinfo = false;
     if(kinfo == nullptr){
-        bool own_kinfo = true;
+        own_kinfo = true;
         kinfo = new KMeansInfo(thrust::raw_pointer_cast(device_points.data()), N, D, total_buckets);
     }
 
@@ -278,33 +303,41 @@ TreeInfo create_bucket_from_yykmeans(
     chrono_reset(&ch_kmeans);
     chrono_start(&ch_kmeans);
 
-    #define FULL_KMEANS 0
-    #define KMEANSPP 1
-    #define KMEANSPP_LOGC 2
-
-    #define KMEANS_METHOD KMEANSPP
-
 
     #if KMEANS_METHOD == KMEANSPP_LOGC
 
         int n_buckets = 0;
-        kmeanspp_logc(
-            thrust::raw_pointer_cast(device_points.data()),
-            N, D, total_buckets,
-            VERBOSE,
-            kinfo->centroids.ptr(),
-            kinfo->labels.ptr(),
-            &n_buckets,
-            bucket_size_limit
-        );
-        total_buckets = n_buckets;
+        if(D > 96){
+            kmeanspp_logc<true>( //true, because data is aligned and vetorized read is worthy
+                kinfo->points.ptr(),
+                N, kinfo->logic_dim, total_buckets,
+                VERBOSE,
+                kinfo->centroids.ptr(),
+                kinfo->labels.ptr(),
+                &n_buckets,
+                bucket_size_limit
+            );
+            total_buckets = n_buckets;
+        } else {
+            kmeanspp_logc<false>( //false, because data is not aligned or vetorized read is not worthy
+                thrust::raw_pointer_cast(device_points.data()),
+                N, D, total_buckets,
+                VERBOSE,
+                kinfo->centroids.ptr(),
+                kinfo->labels.ptr(),
+                &n_buckets,
+                bucket_size_limit
+            );
+            total_buckets = n_buckets;
+        }
     #elif KMEANS_METHOD == KMEANSPP
         kmeanspp(
             kinfo->points.ptr(),
-            N, D, total_buckets,
+            N, kinfo->logic_dim, total_buckets,
             VERBOSE,
             kinfo->centroids.ptr(),
-            kinfo->labels.ptr()
+            kinfo->labels.ptr(),
+            kinfo->dist_to_centroids.ptr()
         );
     #elif KMEANS_METHOD == FULL_KMEANS 
         // Run k-means on GPU, labels are written into d_labels (0..total_buckets-1)
@@ -322,6 +355,8 @@ TreeInfo create_bucket_from_yykmeans(
                 kinfo->dist_to_centroids.ptr()
                 ,kinfo->points.ptr()
         );
+    #elif KMEANS_METHOD == RECURSIVE_KMEANS
+        
     #endif
 
     chrono_stop(&ch_kmeans);
@@ -509,9 +544,9 @@ TreeInfo create_bucket_from_yykmeans(
         printf("Total bucket creation time: %.6f sec\n", total_sec);
         printf("-------------------------------------\n");
     }
-    // if(own_kinfo){
-    //     delete kinfo;
-    // }|
+    if(own_kinfo){
+        delete kinfo;
+    }
 
     // ------------------------------------------------------------------------
     // Build TreeInfo with final total_buckets and max_bucket_size

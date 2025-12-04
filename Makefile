@@ -42,7 +42,7 @@ main_arch86: src/rsfk.cu
 # nvcc -lnvgraph -O3 -gencode=arch=compute_86,code=sm_86 -std=c++11 src/rsfk.cu -o rsfk
 
 python_arch86: src/python/pymodule_ext.cu
-	nvcc -std=c++14 -lnvgraph -O3 -gencode=arch=compute_86,code=sm_86 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu
+	nvcc -std=c++14 -O3 -gencode=arch=compute_86,code=sm_86 -std=c++17 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu
 
 python_arch89: src/python/pymodule_ext.cu
 # 	nvcc -std=c++14 -lnvgraph -O3 -gencode=arch=compute_89,code=sm_89 -std=c++11 --compiler-options '-fPIC' -o python/gpu_rsfk/librsfk.so --shared src/python/pymodule_ext.cu

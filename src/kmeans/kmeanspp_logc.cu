@@ -13,12 +13,13 @@
 
 
 //FIRST ITERATION 
+template<bool IS_DATA_ALIGNED>
 __global__
 void label_first_centroid_kmeanspp_logc(float* dataset, uint dataset_size, 
         float* centroids, uint dim, 
         uint* labels, uint* labels_count,
         float* upperbounds, float* lowerbounds,
-		uint* candidates, float* max_near_cent_dist,
+		int* candidates, float* max_near_cent_dist,
 		uint* n_chosen_centroids
 ){
 
@@ -33,7 +34,15 @@ void label_first_centroid_kmeanspp_logc(float* dataset, uint dataset_size,
 	uint candidate_to_centroid = 0;
 
     for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
-		float new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
+		float new_dist;
+		if constexpr (IS_DATA_ALIGNED){
+			// aligned data
+			new_dist = euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
+		}
+		else{
+			// unaligned data
+			new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
+		}
 
         // upperbounds[i] == min dist
         // lowerbounds[i] == sec min dist
@@ -58,7 +67,7 @@ void label_first_centroid_kmeanspp_logc(float* dataset, uint dataset_size,
 	}
 }
 
-
+template<bool IS_DATA_ALIGNED>
 __global__
 void find_new_centroids_kmeanspp_logc(float* dataset, uint dataset_size, 
         float* centroids, 
@@ -69,7 +78,7 @@ void find_new_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
         float* upperbounds, float* lowerbounds,
         int* chosen_centroids,
 		uint* n_chosen_centroids,
-		uint* candidates, float* max_near_cent_dist,
+		int* candidates, float* max_near_cent_dist,
 		uint max_bucket_size
 ){
 
@@ -80,7 +89,7 @@ void find_new_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
 
 	int local_n_chosen_centroids = *n_chosen_centroids;
 
-    uint* candidate_to_centroid = &candidates[(blockIdx.x*nwarps+warpIdx)*local_n_chosen_centroids];
+    int* candidate_to_centroid = &candidates[(blockIdx.x*nwarps+warpIdx)*local_n_chosen_centroids];
     float* max_dist = &max_near_cent_dist[(blockIdx.x*nwarps+warpIdx)*local_n_chosen_centroids];
 	for(int c = 0; c < local_n_chosen_centroids; c++){
 		candidate_to_centroid[c] = -1;
@@ -93,7 +102,16 @@ void find_new_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
 		if(labels_count[cent] >= max_bucket_size){
 			int new_cent = chosen_centroids[cent];
 
-			float new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			// float new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			float new_dist;
+			if constexpr (IS_DATA_ALIGNED){
+				// aligned data
+				new_dist = euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			}
+			else{
+				// unaligned data
+				new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			}
 
 			// if(threadIdx.x == 0 && blockIdx.x == 0 ||
 			// 	threadIdx.x == 0 && blockIdx.x == 1)
@@ -138,14 +156,14 @@ void append_centroids_kmeanspp_logc(
         int* chosen_centroids,
 		uint* n_chosen_centroids, //pointer to number of chosen centroids (will be updated)
 		uint* finished_centroids, 
-        uint* candidates, float* max_min_cent_dist, int total_candidates,
+        int* candidates, float* max_min_cent_dist, int total_candidates,
 		int max_bucket_size, int max_centroids
 ){
     __shared__ float sh_max_dist[MAX_THREADS];
     __shared__ uint sh_next_cent[MAX_THREADS];
     
     float max = -1.0;
-    uint next_cent=0;
+    int next_cent=0;
 	uint local_finished_centroids = 0;
     for(int j = blockIdx.x; j < n_cents_so_far; j+=gridDim.x){
 		if(labels_count[j] < max_bucket_size){
@@ -189,12 +207,19 @@ void append_centroids_kmeanspp_logc(
 			if(new_cent_id < max_centroids){
 				chosen_centroids[j] = new_cent_id;
 				new_cent_id_sh = new_cent_id;
+			} else {
+				chosen_centroids[j] = -1;
+				new_cent_id_sh = max_centroids; //indicate there is no space for new centroids
 			}
 		}
 		__syncthreads();
 		uint new_cent_id = new_cent_id_sh;
 		if(new_cent_id >= max_centroids){
-			return; // there is no space for new centroids
+			//fill chosen_centroids with -1 for remaining centroids
+			for(int i = j; i < n_cents_so_far; i+=gridDim.x){
+				chosen_centroids[i] = -1;
+			}
+			break; //no space for new centroids
 		}
 		for(int i = threadIdx.x; i < dim; i+=blockDim.x){
 			centroids[i+new_cent_id*dim] = dataset[i+new_cent*dim];
@@ -206,7 +231,7 @@ void append_centroids_kmeanspp_logc(
 }
 
 
-
+template<bool IS_DATA_ALIGNED>
 __global__
 void label_last_centroids_kmeanspp_logc(float* dataset, uint dataset_size, 
         float* centroids, 
@@ -217,6 +242,7 @@ void label_last_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
         float* upperbounds, float* lowerbounds,
         int* chosen_centroids,
 		uint max_bucket_size
+		, int n_max_centroids
 ){
 
     // initialize variables
@@ -230,9 +256,24 @@ void label_last_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
 		if(labels_count[cent] < max_bucket_size)
 			continue;
 		int new_cent = chosen_centroids[cent];
+		if(new_cent == -1)
+			continue; //no new centroid assigned to this centroid
+		// if(new_cent > n_max_centroids)
+		// 	if(laneIdx == 0)
+		// 		printf("Error: point %u has label %d greater than n_max_centroids %d \n",i,new_cent,n_max_centroids);
 			
-        float new_dist = euclidean_distance_sqrd(&dataset[i*dim], 
-				&centroids[new_cent*dim], dim, laneIdx);
+        // float new_dist = euclidean_distance_sqrd(&dataset[i*dim], 
+				// &centroids[new_cent*dim], dim, laneIdx);
+		float new_dist;
+		if constexpr (IS_DATA_ALIGNED){
+			// aligned data
+			new_dist = euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+		}
+		else{
+			// unaligned data
+			new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+		}
+
 
         // upperbounds[i] is the distance from the point 'i' to its nearest centroid
         // lowerbounds[i] The lowerbound is the distance from the point 'i' to its second nearest centroid
@@ -265,6 +306,7 @@ void initialize_with_given_cent(
 }
 
 int ___kmeanslogc__it = 0;
+template<bool IS_DATA_ALIGNED=false> //default unaligned data (it can be used with both aligned and unaligned data)
 void kmeanspp_logc(float* d_dataset, uint dataset_size, 
         uint dim, uint max_buckets,
 		uint verbosity,
@@ -325,7 +367,7 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 		fprintf(stderr, "Failed to allocate device vector d_max_near_cent_dist (error code %s)!\n", cudaGetErrorString(err));
 		exit(EXIT_FAILURE);
 	}
-	uint *d_candidates_to_nextcent = NULL; 
+	int *d_candidates_to_nextcent = NULL; 
 	err = cudaMalloc((void **)&d_candidates_to_nextcent, sizeof(uint)*nblocks*nwarps*k);
 	if (err != cudaSuccess){
 		fprintf(stderr, "Failed to allocate device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
@@ -383,7 +425,8 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 	gpuErrchk( cudaPeekAtLastError() );
 
 
-	label_first_centroid_kmeanspp_logc<<<nblocks,nthreads>>>(
+	// label_first_centroid_kmeanspp_logc<<<nblocks,nthreads>>>(
+	label_first_centroid_kmeanspp_logc<IS_DATA_ALIGNED><<<nblocks,nthreads>>>(
 		d_dataset,dataset_size,
 		d_centroids,
 		dim,
@@ -485,12 +528,12 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 
 	cudaMemcpy(d_new_labels_count, d_labels_count, sizeof(uint)*k, cudaMemcpyDeviceToDevice);
 	while(h_n_chosen_centroids < k && h_n_finished_centroids < h_n_chosen_centroids){
-		printf("Chosen centroids: %u / %u; Finished centroids: %u \n",h_n_chosen_centroids,k,h_n_finished_centroids);
+		// printf("Chosen centroids: %u / %u; Finished centroids: %u \n",h_n_chosen_centroids,k,h_n_finished_centroids);
 
 			
 
 
-		find_new_centroids_kmeanspp_logc<<<nblocks,nthreads>>>(
+		find_new_centroids_kmeanspp_logc<IS_DATA_ALIGNED><<<nblocks,nthreads>>>(
 			d_dataset,dataset_size,
 			d_centroids,
 			dim,
@@ -583,9 +626,9 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 	}
 
 
-	printf("K-means++ LOGC chose %u centroids, and %u finished centroids.\n",h_n_chosen_centroids,h_n_finished_centroids);
+	// printf("K-means++ LOGC chose %u centroids, and %u finished centroids.\n",h_n_chosen_centroids,h_n_finished_centroids);
 	
-	label_last_centroids_kmeanspp_logc<<<nblocks,nthreads>>>(
+	label_last_centroids_kmeanspp_logc<IS_DATA_ALIGNED><<<nblocks,nthreads>>>(
 		d_dataset,dataset_size,
 		d_centroids,
 		dim,
@@ -595,10 +638,12 @@ void kmeanspp_logc(float* d_dataset, uint dataset_size,
 		d_upperbounds,d_lowerbounds,
 		d_chosen_centroids,
 		max_bucket_size
+		, k
 	);
 
 	cudaDeviceSynchronize();
 	gpuErrchk( cudaPeekAtLastError() );
+	cudaMemcpy(d_labels_count, d_new_labels_count, sizeof(uint)*k, cudaMemcpyDeviceToDevice);
 
 	err = cudaFree(d_lowerbounds);
 	if (err != cudaSuccess){

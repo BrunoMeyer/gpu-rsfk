@@ -158,7 +158,8 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 
 		#if DEBUG_KMEANSPP_WRITE_FILES 
 			char filename[100];
-			sprintf(filename,"./out/centroids-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			
+			sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
 			write_data_from_device(
 				d_centroids,
 				n_chosen_centroids+1,
@@ -166,7 +167,7 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 				filename
 			);
 
-			sprintf(filename,"./out/labels-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
 			write_data_from_device(
 				(int*)d_labels,
 				dataset_size,
@@ -175,7 +176,7 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 			);
 
 
-			sprintf(filename,"./out/upperbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
 			write_data_from_device(
 				d_upperbounds,
 				dataset_size,
@@ -184,7 +185,7 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 			);
 
 
-			sprintf(filename,"./out/lowerbound-gr-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
 			write_data_from_device(
 				d_lowerbounds,
 				dataset_size,
@@ -198,11 +199,19 @@ void kmeanspp(float* d_dataset, uint dataset_size,
 
 	#if DEBUG_KMEANSPP_WRITE_FILES 
 		char filename[100];
-		sprintf(filename,"./out/gr-chosen_centroids.txt",d_chosen_centroids);
+		sprintf(filename,"./out/kmeanspp-chosen_centroids.txt");
 		write_data_from_device(
 			(int*)d_chosen_centroids,
 			k,
 			1,
+			filename
+		);
+
+		sprintf(filename,"./out/points.txt");
+		write_data_from_device(
+			d_dataset,
+			dataset_size,
+			dim,
 			filename
 		);
 	#endif
@@ -506,7 +515,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
     int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
     if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
     int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
-	int nwarps = nthreads / WARP_SIZE;
+	// int nwarps = nthreads / WARP_SIZE;
 
 	if (verbosity > 1 ){
 		printf("K-Means GPU Implementation\n");
@@ -548,7 +557,7 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 		sm_size_assign_label = 0;
 	}
 	
-	uint use_shared_memory_update = 1;
+	// uint use_shared_memory_update = 1;
 	uint sm_size_update = sizeof(float)*logic_dim;
 	if(sm_size_update + sizeof(uint) > MAX_SM_PER_BLOCK){
 		use_shared_memory_assign_label = 0;
@@ -559,13 +568,13 @@ void kmeansGpu(float* d_dataset, uint dataset_size,
 
 
 
-	uint n_threads_update = nthreads;
-	if(logic_dim < nthreads){
-		if(logic_dim < 32)
-			n_threads_update = 32;
-		else
-			n_threads_update = logic_dim;
-	}
+	// uint n_threads_update = nthreads;
+	// if(logic_dim < nthreads){
+	// 	if(logic_dim < 32)
+	// 		n_threads_update = 32;
+	// 	else
+	// 		n_threads_update = logic_dim;
+	// }
 
 	uint n_threads_check = nthreads;
 	if(logic_dim < nthreads){

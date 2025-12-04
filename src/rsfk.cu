@@ -41,6 +41,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // #define DEBUG_BUCKET_EXPLORING2 1
 // #define DEBUG_BUCKET_EXPLORING 1
 // #define COUNT_FILTER_EFFECTIVENESS 1
+// #define USE_KMEANS_BUCKET_EXPLORING 1
+
+#define FULL_KMEANS 0
+#define KMEANSPP 1
+#define KMEANSPP_LOGC 2
+
+// #define KMEANS_METHOD FULL_KMEANS
+#define KMEANS_METHOD KMEANSPP
+// #define KMEANS_METHOD KMEANSPP_LOGC
 
 
 #include "include/rsfk.h"
@@ -2053,12 +2062,21 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
 
         // int kmeans_total_buckets = N / ((MAX_TREE_CHILD-MIN_TREE_CHILD)/2);
         int kmeans_total_buckets = N / MAX_TREE_CHILD;
+        #if KMEANS_METHOD==KMEANSPP
+            int total_buckets = N / 1024;
+        #elif KMEANS_METHOD==KMEANSPP_LOGC
+            int total_buckets = N / 128;
+        #else // FULL_KMEANS
+            int total_buckets = N / 1024; 
+        #endif
+
         int bucket_size_limit = 1024;
         KMeansInfo kmeans_info(
             thrust::raw_pointer_cast(device_points.data()), 
             N, 
             D, 
             kmeans_total_buckets);
+        kmeans_info.init();
 
         if (use_kmeans) {
             tinfo = create_bucket_from_yykmeans(
@@ -2086,7 +2104,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
 
         chrono_stop(&ch_createtree);
         double create_tree_sec = (double)chrono_gettotal(&ch_createtree)/(1000*1000*1000);
-        // if(VERBOSE > 2)
+        if(VERBOSE > 2)
             printf("Create tree time: %.6f sec\n", create_tree_sec);
 
         if (VERBOSE > 1){
@@ -2113,16 +2131,16 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
 
         chrono_stop(&ch_updateknn);
         double update_knn_sec = (double)chrono_gettotal(&ch_updateknn)/(1000*1000*1000);
-        // if(VERBOSE > 2){
+        if(VERBOSE > 2){
             printf("Update KNN time:  %.6f sec\n", update_knn_sec);
             printf("-------------------------------\n");
-        // }
+        }
 
         #if USE_KMEANS_BUCKET_EXPLORING
             if(use_kmeans){
-                if (VERBOSE > 1){
+                // if (VERBOSE > 1){
                     printf("Starting Bucket Exploring for tree %d/%d\n", i+1, n_trees);
-                }  
+                // }  
 
                 bucket_exploring(
                     kmeans_info.points.ptr(),
@@ -2134,10 +2152,10 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                     K, N, 
                     kmeans_info.logic_dim, VERBOSE-1, tinfo);
 
-                if (VERBOSE > 1){
+                // if (VERBOSE > 1){
                     printf("Bucket Exploring for tree %d/%d done\n", i+1, n_trees);
-                }
-
+                // }
+                break; // Only do bucket exploring for the first kmeans tree
             }
         #endif
 

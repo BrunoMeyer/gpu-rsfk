@@ -46,7 +46,6 @@ void compute_bucket_radii_not_persistent(
     int tid = threadIdx.x;
     float max_sqrd_radius = 0.0f;
 
-    // Each thread processes multiple points in the bucket
     for(int i = tid; i < N; i += blockDim.x){
         if(labels_buckets[i] == bucket_id){
             float dist = sqr_dist_to_cents[i];
@@ -465,8 +464,8 @@ void bucket_exploring_kernel(
                             __syncthreads();
 
                             // recompute max neighbor for p1
-                            RSFK_typepoints local_max_position = -1;
-                            RSFK_typepoints local_max_dist = -1.0f;
+                            // RSFK_typepoints local_max_position = -1;
+                            // RSFK_typepoints local_max_dist = -1.0f;
                             if(wid == 0){
                                 float local_max_dist;
                                 int local_max_position;
@@ -560,7 +559,7 @@ void bucket_exploring(
 ){
 
 	// ALLOC MEMORY
-	cudaError_t err = cudaSuccess;
+	// cudaError_t err = cudaSuccess;
 	int devUsed = 0;
 	cudaSetDevice(devUsed);
 	cudaDeviceProp deviceProp;
@@ -574,7 +573,7 @@ void bucket_exploring(
 	int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
 	if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
 	int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
-	int nwarps = nthreads / WARP_SIZE;
+	// int nwarps = nthreads / WARP_SIZE;
 
     int total_buckets = tinfo.total_leaves;
     int max_bucket_size = tinfo.max_child;
@@ -583,8 +582,7 @@ void bucket_exploring(
 
     // Print parameters
     if(VERBOSE >= 2){
-        printf("Calling bucket_exploring with parameters:\n",
-                total_buckets, nthreads);
+        printf("Calling bucket_exploring with parameters:\n");
         printf("KNN from buckets parameters:\n");
         printf("  N: %d\n", N);
         printf("  D: %d\n", D);
@@ -609,11 +607,14 @@ void bucket_exploring(
             fprintf(stderr,"Shared memory per block (%d bytes) is less than required (%d bytes). Using non-persistent kernel.\n",
             #endif
        //  deviceProp.sharedMemPerBlock, shared_mem_size);
+       shared_mem_size = nthreads * sizeof(float);
         compute_bucket_radii_not_persistent<<<total_buckets,nthreads,shared_mem_size>>>(
             d_distances_to_centroids,
             d_kmeans_labels,
             d_bucket_sqrd_radius.ptr(),
             N, total_buckets);
+            cudaDeviceSynchronize();
+            gpuErrchk( cudaPeekAtLastError() );
     } else {
             #if DEBUG_PYTHON
             fprintf(stderr,"Using persistent kernel for computing bucket squared radii.\n");
@@ -624,9 +625,9 @@ void bucket_exploring(
             d_kmeans_labels,
             d_bucket_sqrd_radius.ptr(),
             N, total_buckets);
+            cudaDeviceSynchronize();
+            gpuErrchk( cudaPeekAtLastError() );
     }
-    cudaDeviceSynchronize();
-    gpuErrchk( cudaPeekAtLastError() );
 
 
     #if COUNT_FILTER_EFFECTIVENESS

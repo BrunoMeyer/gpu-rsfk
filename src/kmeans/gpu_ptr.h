@@ -65,6 +65,20 @@ public:
         owning = false;  // <--- very important
     }
 
+    void realloc(size_t n) {
+        if (owning && raw_ptr) {
+            cudaError_t err = cudaFree(raw_ptr);
+            if (err != cudaSuccess) {
+                fprintf(stderr, "cudaFree failed (%s)\n", cudaGetErrorString(err));
+                exit(EXIT_FAILURE);
+            }
+        }
+        raw_ptr = nullptr;
+        count = 0;
+        allocate(n);
+        owning = true;
+    }
+
     // -----------------------------
     // DISABLE COPY (prevents double free)
     // -----------------------------
