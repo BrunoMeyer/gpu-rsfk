@@ -75,12 +75,15 @@ def get_gpu_rsfk_results(
         ),
         save_after_add=False)
     
-    mname = knn_method_name +f" (KMeans-(B{kr.model_find_params['max_tree_children']}) Partitioning)"
-    kr.evaluate_parameter_list(
-        parameter_list,
-        partition_method='kmeans',
-        model_name=mname,
-        ).clean()
+    for kmeans_method in ["kmeanspp_logc", "kmeanspp", "kmeans"]:
+        kr.model_find_params['kmeans_method'] = kmeans_method
+        mname = knn_method_name +f" ({kmeans_method}-(B{kr.model_find_params['max_tree_children']}) Partitioning)"
+        kr.evaluate_parameter_list(
+            parameter_list,
+            partition_method='kmeans',
+            model_name=mname,
+            ).clean()
+        kr.save()
 
     mname = knn_method_name +f" (Random Partitioning-(B{kr.model_find_params['max_tree_children']})"
     kr.evaluate_parameter_list(
@@ -88,6 +91,7 @@ def get_gpu_rsfk_results(
         partition_method='random',
         model_name=mname,
         ).clean()
+    kr.save()
 
     mname = knn_method_name +f" (Random+KMeans Partitioning-(B{kr.model_find_params['max_tree_children']})"
     kr.evaluate_parameter_list(
