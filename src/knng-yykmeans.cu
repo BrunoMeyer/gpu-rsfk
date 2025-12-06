@@ -285,7 +285,8 @@ TreeInfo create_bucket_from_yykmeans(
     // 2 -> by number of reassingments (default)
     int tolerance = 0.01,
     int init_method = 1, //0 -> random, 1 -> kmeans++
-    int t_groups = 32
+    int t_groups = 32,
+    std::string kmeans_method = "kmeanspp_logc"
     )
 {
     // Initial number of clusters for k-means
@@ -316,8 +317,10 @@ TreeInfo create_bucket_from_yykmeans(
     chrono_start(&ch_kmeans);
 
 
-    #if KMEANS_METHOD == KMEANSPP_LOGC
-
+    // Run the requested KMeans implementation at runtime based on the
+    // `kmeans_method` string. This replaces the old compile-time
+    // #if KMEANS_METHOD blocks so the method can be chosen from Python.
+    if(kmeans_method == "kmeanspp_logc"){
         int n_buckets = 0;
         if(D > 96){
             kmeanspp_logc<true>( //true, because data is aligned and vetorized read is worthy
@@ -342,7 +345,7 @@ TreeInfo create_bucket_from_yykmeans(
             );
             total_buckets = n_buckets;
         }
-    #elif KMEANS_METHOD == KMEANSPP
+    } else if(kmeans_method == "kmeanspp"){
         kmeanspp(
             kinfo->points.ptr(),
             N, kinfo->logic_dim, total_buckets,
@@ -351,7 +354,7 @@ TreeInfo create_bucket_from_yykmeans(
             kinfo->labels.ptr(),
             kinfo->dist_to_centroids.ptr()
         );
-    #elif KMEANS_METHOD == FULL_KMEANS 
+    } else if(kmeans_method == "full_kmeans" || kmeans_method == "kmeans"){
         // Run k-means on GPU, labels are written into d_labels (0..total_buckets-1)
         kmeansGpu(
                 thrust::raw_pointer_cast(device_points.data()),
@@ -367,9 +370,35 @@ TreeInfo create_bucket_from_yykmeans(
                 kinfo->dist_to_centroids.ptr()
                 ,kinfo->points.ptr()
         );
-    #elif KMEANS_METHOD == RECURSIVE_KMEANS
-        
-    #endif
+    } else if(kmeans_method == "recursive_kmeans"){
+        // placeholder for recursive kmeans if implemented in future
+    } else {
+        // fallback to default method (kmeanspp_logc)
+        int n_buckets = 0;
+        if(D > 96){
+            kmeanspp_logc<true>(
+                kinfo->points.ptr(),
+                N, kinfo->logic_dim, total_buckets,
+                VERBOSE,
+                kinfo->centroids.ptr(),
+                kinfo->labels.ptr(),
+                &n_buckets,
+                bucket_size_limit
+            );
+            total_buckets = n_buckets;
+        } else {
+            kmeanspp_logc<false>(
+                thrust::raw_pointer_cast(device_points.data()),
+                N, D, total_buckets,
+                VERBOSE,
+                kinfo->centroids.ptr(),
+                kinfo->labels.ptr(),
+                &n_buckets,
+                bucket_size_limit
+            );
+            total_buckets = n_buckets;
+        }
+    }
 
     chrono_stop(&ch_kmeans);
     double kmeans_sec = (double)chrono_gettotal(&ch_kmeans)/(1000*1000*1000); 

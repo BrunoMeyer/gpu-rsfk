@@ -508,7 +508,8 @@ public:
                              int K, int N, int D, int VERBOSE,
                              std::string run_name,
                              std::string partition_method,
-                             float alpha_partition_selection);
+                             float alpha_partition_selection,
+                             std::string kmeans_method);
 
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary

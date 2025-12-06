@@ -129,6 +129,7 @@ class RSFK(object):
             np.ctypeslib.ndpointer(np.int32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-indices
             np.ctypeslib.ndpointer(np.float32, ndim=2, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # knn-sqd-distances
             np.ctypeslib.ndpointer(np.float32, ndim=1, flags='ALIGNED, CONTIGUOUS, WRITEABLE'), # log_forest
+            ctypes.c_float, # alpha_partition_selection
             ctypes.c_char_p, # partition_method
             ]
         self._lib.pymodule_rsfk_knn_ann.argtypes = [ 
@@ -215,7 +216,9 @@ class RSFK(object):
                                random_motion_force=1.0,
                                nn_exploring_factor=-1,
                                point_in_self_neigh=True,
-                               partition_method="random"):
+                               partition_method="random",
+                               alpha_partition_selection=0.5,
+                               kmeans_method="kmeanspp_logc"):
         """Creation of the K-NNG from a set of points.
 
         Parameters
@@ -284,8 +287,13 @@ class RSFK(object):
             contains the squared distance computed
         """
         # Validate partition_method parameter
-        if partition_method not in ["random", "kmeans", "random+kmeans"]:
-            raise ValueError('partition_method must be one of "random", "kmeans", or "random+kmeans"')
+        if partition_method not in ["random", "kmeans", "random+kmeans", "random_kmeans_prob"]:
+            raise ValueError('partition_method must be one of "random", "kmeans", "random+kmeans", or "random_kmeans_prob"')
+        # Validate kmeans_method parameter
+        if kmeans_method not in ["kmeanspp_logc", "kmeanspp", "full_kmeans", "kmeans", "recursive_kmeans"]:
+            raise ValueError('kmeans_method must be one of "kmeanspp_logc", "kmeanspp", "full_kmeans", "kmeans", or "recursive_kmeans"')
+        if not (0.0 <= float(alpha_partition_selection) <= 1.0):
+            raise ValueError('alpha_partition_selection must be a float between 0 and 1')
         
         points = np.require(points, np.float32, ['CONTIGUOUS', 'ALIGNED'])
 
@@ -355,13 +363,15 @@ class RSFK(object):
                 knn_indices,
                 knn_squared_dist,
                 log_forest,
-                partition_method.encode('utf-8'))
+            ctypes.c_float(alpha_partition_selection),
+            partition_method.encode('utf-8'),
+            kmeans_method.encode('utf-8'))
 
         self.log_forest = ForestLog(log_forest)
 
         log_forest = np.require(np.zeros(n_trees*16+2), np.float32, ['CONTIGUOUS', 'ALIGNED', 'WRITEABLE'])
         if ensure_valid_indices and min_tree_children < K+1:
-            self._lib.pymodule_rsfk_knn(
+                self._lib.pymodule_rsfk_knn(
                     ctypes.c_int(1), # number of trees
                     ctypes.c_int(K), # number of nearest neighbors
                     ctypes.c_int(N), # total of points
@@ -376,7 +386,9 @@ class RSFK(object):
                     knn_indices,
                     knn_squared_dist,
                     log_forest,
-                    partition_method.encode('utf-8'))
+                    ctypes.c_float(alpha_partition_selection),
+                    partition_method.encode('utf-8'),
+                    kmeans_method.encode('utf-8'))
         
         self._last_search_time = time.time() - t_init
         return knn_indices, knn_squared_dist

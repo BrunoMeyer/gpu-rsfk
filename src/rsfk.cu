@@ -47,9 +47,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define KMEANSPP 1
 #define KMEANSPP_LOGC 2
 
-// #define KMEANS_METHOD FULL_KMEANS
-// #define KMEANS_METHOD KMEANSPP
-#define KMEANS_METHOD KMEANSPP_LOGC
+// KMEANS_METHOD macro is deprecated: selection is now runtime-controlled
+// via the `kmeans_method` string parameter (e.g. "kmeanspp_logc", "kmeanspp", "full_kmeans").
+// #define KMEANS_METHOD KMEANSPP_LOGC
 
 
 #include "include/rsfk.h"
@@ -2032,7 +2032,8 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
                                std::string run_name="tree",
                                std::string partition_method="random",
-                               float alpha_partition_selection=0.5f)
+                               float alpha_partition_selection=0.5f,
+                               std::string kmeans_method="kmeanspp_logc")
 {
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -2044,6 +2045,17 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
+    if (VERBOSE > 0){
+        printf("Starting RSFK forest with %d trees using %s partition method\n", 
+               n_trees, partition_method.c_str());
+            
+        if (partition_method == "random_kmeans_prob") {
+            printf("  with alpha_partition_selection = %.2f\n", alpha_partition_selection);
+        }
+        if (partition_method == "kmeans" || partition_method == "random+kmeans" ) {
+            printf("  with kmeans method = %s\n", kmeans_method.c_str());
+        }
+    }
     for(int i=0; i < n_trees; ++i){
         // Select partition method based on parameter
         bool use_kmeans = false;
@@ -2091,7 +2103,13 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                 forest_log,
                 kmeans_total_buckets,
                 bucket_size_limit,
-                &kmeans_info
+                &kmeans_info,
+                /* max_iter */ 32,
+                /* check_method */ 2,
+                /* tolerance */ 0.01,
+                /* init_method */ 1,
+                /* t_groups */ 32,
+                kmeans_method
             );
 
         } else {
@@ -2401,7 +2419,7 @@ int main(int argc,char* argv[])
     RSFK rsfk_knn(points, nullptr, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
                   RANDOM_SEED, nn_exploring_factor, forest_log_output);
     // rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
-    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree", "kmeans", 0.5f);
+    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree", "kmeans", 0.5f, "kmeanspp_logc");
 
     return 0;
 }
