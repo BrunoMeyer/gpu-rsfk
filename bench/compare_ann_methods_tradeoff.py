@@ -56,6 +56,7 @@ def get_gpu_rsfk_results(
             min_tree_children=32,
             # min_tree_children=256,
             # max_tree_children=128,
+            # max_tree_children=256,
             max_tree_children=512,
             # max_tree_children=1024,
             # max_tree_children=2048,
@@ -95,6 +96,16 @@ def get_gpu_rsfk_results(
         model_name=mname,
         ).clean()
     kr.save()
+
+    # for alpha in [0.05, 0.1, 0.3, 0.7, 0.9, 0.95]:
+    #     kr.model_find_params['alpha_partition_selection'] = alpha
+    #     mname = knn_method_name +f" (Random+KMeans Prob-{alpha*100}%-(B{kr.model_find_params['max_tree_children']})"
+    #     kr.evaluate_parameter_list(
+    #         parameter_list,
+    #         partition_method='random_kmeans_prob',
+    #         model_name=mname,
+    #         ).clean()
+    #     kr.save()
 
     # kr.plot(
     #     [options.dataset],
@@ -238,7 +249,7 @@ def main():
                         )
     parser.add_argument('--dataset_id', type=int, default=None,
                         help='Dataset ID from OpenML to load (overrides --dataset if provided).')
-    parser.add_argument('--n_samples', type=int, default=10000,
+    parser.add_argument('--n_samples', type=int, default=0,
                         help='Number of samples for artificial dataset (default: 10000)')
     parser.add_argument('--n_features', type=int, default=128,
                         help='Number of features for artificial dataset (default: 128)')
@@ -290,7 +301,7 @@ def main():
             [args.dataset],
             args.k_neighbors,
             'nnp_rate',
-            dash_method=["Brute Force"],
+            # dash_method=["Brute Force"],
             baseline="IVFFLAT",
         )
     

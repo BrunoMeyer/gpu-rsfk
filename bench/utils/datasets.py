@@ -6,14 +6,16 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.datasets import fetch_openml
 import faiss
 import openml
-import torch
-from torchvision import transforms as T, models, datasets as tv_datasets
-from torch.utils.data import DataLoader, Subset
-from sklearn.decomposition import TruncatedSVD
 
 import time
 
 import logging
+
+import kagglehub
+from gensim.models import KeyedVectors
+
+
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
@@ -74,95 +76,138 @@ def load_dataset(
         n_samples = npoints
         n_features = ndim
         # generate uniform [0,1) float32 dataset
-        # X = np.random.default_rng(random_seed).random((n_samples, n_features), dtype=np.float32)
         X = np.random.rand(n_samples, n_features).astype('float32')
         y = None
         logger.info(f"Created artificial uniform dataset with {X.shape[0]} samples and {X.shape[1]} features.")
         with open(cache_path, "wb") as fo:
             pickle.dump(X, fo)
+
     elif name == 'IMAGENET':
-        # Load image embeddings using a pretrained ResNet50 from torchvision.
-        # dataset_id can be used to pass the path to the ImageNet root (ImageNet/ILSVRC2012-style)
-        cache_dir = os.path.join(".cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        cache_path = os.path.join(cache_dir, f"imagenet_embeddings_{npoints}_{ndim}_{random_seed}.pickle")
+        # ImageNet embeddings (128D) using pretrained ResNet + PCA
+        cache_path = os.path.join("./.cache/imagenet_128.pickle")
         if os.path.isfile(cache_path):
             with open(cache_path, "rb") as fo:
-                X, y = pickle.load(fo)
-            logger.info(f"Loaded ImageNet embeddings from cache with {X.shape[0]} samples and {X.shape[1]} features.")
-            return X, y
+                X = pickle.load(fo)
+            logger.info(f"Loaded IMAGENET (128D embeddings) dataset from cache with "
+                        f"{X.shape[0]} samples and {X.shape[1]} features.")
+            return X, None
 
-        imagenet_dir = None
-        if dataset_id is not None and isinstance(dataset_id, str) and os.path.isdir(dataset_id):
-            imagenet_dir = dataset_id
-        else:
-            imagenet_dir = os.getenv('IMAGENET_DIR')
+        import torch
+        from torch.utils.data import DataLoader, Subset
+        import torchvision
+        from torchvision import transforms
+        from sklearn.decomposition import PCA
 
-        if imagenet_dir is None:
-            raise RuntimeError("IMAGENET option requires a path to ImageNet images. Set `dataset_id` to the root path or set the IMAGENET_DIR environment variable.")
+        # Where your ImageNet-like folder lives
+        # Expecting structure: root/class_x/xxx.png etc.
+        data_root = os.environ.get("IMAGENET_ROOT", "./data/imagenet")
+        # Ensure data_root exists
+        
 
-        # reproducibility
-        np.random.seed(random_seed)
-        torch.manual_seed(random_seed)
+        if not os.path.isdir(data_root):
+            print(f"[WARNING] IMAGENET_ROOT directory {data_root} does not exist.")
 
-        # transforms matching ResNet pretrained expectations
-        transform = T.Compose([
-            T.Resize(256),
-            T.CenterCrop(224),
-            T.ToTensor(),
-            T.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transform = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            transforms.Normalize(
+                mean=[0.485, 0.456, 0.406],
+                std=[0.229, 0.224, 0.225],
+            ),
         ])
 
-        dataset = tv_datasets.ImageFolder(imagenet_dir, transform=transform)
-        total = len(dataset)
-        if total == 0:
-            raise RuntimeError(f"No images found in ImageNet directory: {imagenet_dir}")
+        # More generic than torchvision.datasets.ImageNet: works with any ImageNet-style folder
+        dataset = torchvision.datasets.ImageFolder(root=data_root, transform=transform)
 
-        if npoints and npoints > 0:
-            n_use = min(npoints, total)
-            indices = list(range(n_use))
-            dataset = Subset(dataset, indices)
-        else:
-            n_use = total
+        logger.info(f"Found {len(dataset)} ImageNet images in {data_root}.")
 
-        batch_size = 256
-        num_workers = min(4, (os.cpu_count() or 1))
-        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+        if npoints > 0 and npoints < len(dataset):
+            rng = np.random.default_rng(random_seed)
+            subset_indices = rng.choice(len(dataset), size=npoints, replace=False)
+            dataset = Subset(dataset, subset_indices)
+            logger.info(f"Subsampled ImageNet to {len(dataset)} images (npoints={npoints}).")
 
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        base_model = models.resnet50(weights=models.ResNet50_Weights.IMAGENET1K_V2 if hasattr(models, 'ResNet50_Weights') else None)
-        # strip final fc layer — get pooled features of size 2048
-        feat_extractor = torch.nn.Sequential(*list(base_model.children())[:-1])
-        feat_extractor.to(device)
-        feat_extractor.eval()
+        batch_size = 64
+        num_workers = 4
+        loader = DataLoader(dataset, batch_size=batch_size, shuffle=False,
+                            num_workers=num_workers, pin_memory=True)
 
-        embeddings = []
-        labels = []
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        # Pretrained ResNet-50 as feature extractor (2048D)
+        weights = torchvision.models.ResNet50_Weights.IMAGENET1K_V1
+        base_model = torchvision.models.resnet50(weights=weights)
+        # Replace final FC layer with identity so output is penultimate feature (2048D)
+        base_model.fc = torch.nn.Identity()
+        base_model = base_model.to(device)
+        base_model.eval()
+
+        logger.info("Extracting 2048D ResNet features from ImageNet images...")
+        feats = []
         with torch.no_grad():
-            for batch in loader:
-                imgs, labs = batch
-                imgs = imgs.to(device)
-                feats = feat_extractor(imgs)
-                feats = feats.view(feats.size(0), -1)
-                embeddings.append(feats.cpu().numpy())
-                labels.append(np.array(labs))
+            for i, (images, _) in enumerate(loader):
+                images = images.to(device, non_blocking=True)
+                out = base_model(images)
+                feats.append(out.cpu().numpy())
+                if (i + 1) % 50 == 0:
+                    logger.info(f"Processed { (i+1) * batch_size } images...")
 
-        X = np.vstack(embeddings).astype(np.float32)
-        y = np.concatenate(labels).astype(np.int32)
+        feats = np.concatenate(feats, axis=0).astype('float32')
+        logger.info(f"Extracted raw features with shape {feats.shape}.")
 
-        # Dimensionality reduction if requested
-        if ndim and ndim > 0 and ndim < X.shape[1]:
-            logger.info(f"Applying TruncatedSVD to reduce embeddings {X.shape[1]} -> {ndim}")
-            svd = TruncatedSVD(n_components=ndim, random_state=random_seed)
-            X = svd.fit_transform(X).astype(np.float32)
+        # Reduce to 128 dimensions via PCA
+        logger.info("Fitting PCA to reduce ImageNet features to 128 dimensions...")
+        pca = PCA(n_components=128, random_state=random_seed)
+        X = pca.fit_transform(feats).astype('float32')
+        y = None
+        logger.info(f"ImageNet embeddings shape after PCA: {X.shape}.")
 
-        # Cache
-        with open(cache_path, "wb") as fo:
-            pickle.dump((X, y), fo)
-        logger.info(f"Saved ImageNet embeddings to cache: {cache_path}")
+    elif name.upper() in ('GOOGLENEWS300', 'GOOGLENEWS'):
+        # GoogleNews word2vec embeddings (300D)
+        cache_path = os.path.join("./.cache/googlenews300.pickle")
+        if os.path.isfile(cache_path):
+            with open(cache_path, "rb") as fo:
+                X = pickle.load(fo)
+            logger.info(f"Loaded GoogleNews300 dataset from cache with "
+                        f"{X.shape[0]} samples and {X.shape[1]} features.")
+            return X, None
+
+        googlenews_path = kagglehub.dataset_download("leadbest/googlenewsvectorsnegative300")
+
+        googlenews_path = os.path.join(
+            googlenews_path,
+            "GoogleNews-vectors-negative300.bin"
+        )
+        if not os.path.isfile(googlenews_path):
+            raise RuntimeError(
+                f"GoogleNews300 binary not found at {googlenews_path}. "
+                "Set GOOGLENEWS_PATH to the path of GoogleNews-vectors-negative300.bin."
+            )
+
+        logger.info(f"Loading GoogleNews300 word2vec model from {googlenews_path} "
+                    "(this may take a while)...")
+        kv = KeyedVectors.load_word2vec_format(googlenews_path, binary=True)
+
+        # kv.vectors is shape (n_words, 300)
+        vectors = kv.vectors.astype('float32')
+        logger.info(f"Loaded GoogleNews word vectors with shape {vectors.shape}.")
+
+        # Optional subsampling
+        if npoints > 0 and npoints < vectors.shape[0]:
+            rng = np.random.default_rng(random_seed)
+            idx = rng.choice(vectors.shape[0], size=npoints, replace=False)
+            X = vectors[idx]
+            logger.info(f"Subsampled GoogleNews300 to {X.shape[0]} vectors (npoints={npoints}).")
+        else:
+            X = vectors
+
+        y = None
+        logger.info(f"Final GoogleNews300 dataset shape: {X.shape}.")
+
     else:
         logger.info(f"Using dataset from OpenML: {name}")
-        # Assumes it is a openml / sklearn dataset
+        # Assumes it is an openml / sklearn dataset
         lower_name = name.lower()
         cache_path = os.path.join(
             f"./.cache/{lower_name}.pickle"
@@ -172,34 +217,34 @@ def load_dataset(
                 X = pickle.load(fo)
             logger.info(f"Loaded {name} dataset from cache with {X.shape[0]} samples and {X.shape[1]} features.")
             return X, None
-        # X = fetch_openml(name, version=1)
         if dataset_id is not None:
-            # X = fetch_openml(data_id=dataset_id)
             dataset = openml.datasets.get_dataset(dataset_id)
         else:
-            # X = fetch_openml(name)
             dataset = openml.datasets.get_dataset(name)
         X, y, _, _ = dataset.get_data(dataset_format="dataframe", target=dataset.default_target_attribute)
         X = X.select_dtypes(include=[np.number]).fillna(0).astype('float32').to_numpy()
         y = y
         logger.info(f"Loaded {name} dataset with {X.shape[0]} samples and {X.shape[1]} features.")
         
-
+    # ===== Post-processing common to all datasets (except those returned early from cache) =====
     # Ensure that there isn't no duplicates nor NaNs
     # Remove them if any
     X = np.nan_to_num(X)
     _, unique_indices = np.unique(X, axis=0, return_index=True)
     X = X[unique_indices]
-    if y is not None:
-        y = y[unique_indices]
+    if 'y' in locals() and y is not None:
+        y = np.array(y)[unique_indices]
 
     # NaN check
     if np.isnan(X).any():
         logger.error("Dataset contains NaN values after cleaning. Replacing NaNs with zeros.")
         X = np.nan_to_num(X)
 
-    with open(cache_path, "wb") as fo:
-        pickle.dump(X, fo)
+    # Make sure cache_path exists for branches that should be cached
+    if 'cache_path' in locals():
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        with open(cache_path, "wb") as fo:
+            pickle.dump(X, fo)
     
     return X, y
 
@@ -233,14 +278,7 @@ def load_dataset_knn(
     res = faiss.StandardGpuResources()  # use a single GPU
     res.setTempMemory(256 * 1024 * 1024)  # 256MB, for example
 
-    # xb = np.require(dataX, np.float32, ['CONTIGUOUS', 'ALIGNED'])
-    # xq = np.require(dataX, np.float32, ['CONTIGUOUS', 'ALIGNED'])
-
-    # nq, d = xq.shape
     nq, d = dataX.shape
-
-    # nlist = int(np.sqrt(nq))
-    # logger.info(f"Using nlist={nlist} for faiss index.")
 
     init_t = time.time()
     index = faiss.IndexFlatL2(d)
@@ -251,16 +289,14 @@ def load_dataset_knn(
     index.train(dataX)
     logger.info("Adding vectors to faiss index...")
     index.add(dataX)                  # add may be a bit slower as well
-    # distances, indices = index.search(xq, max_k)     # actual search
     distances, indices = index.search(dataX, max_k)     # actual search
 
     brute_force_time = time.time()-init_t
     
     logger.info(f"Faiss knn search completed in {brute_force_time:.2f} seconds.")
 
-
-    fo = open(knn_file, "wb")
-    pickle.dump((distances,indices),fo)
+    with open(knn_file, "wb") as fo:
+        pickle.dump((distances,indices),fo)
 
     if return_brute_force_time:
         return distances, indices, brute_force_time

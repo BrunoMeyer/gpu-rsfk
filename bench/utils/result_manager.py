@@ -177,6 +177,12 @@ class KnnResult(object):
         partition_method=None,
         requires_model_inst=True
     ):
+        if verbose >=0:
+            print("Evaluating parameter list for model {} ({})".format(
+                model_name if not model_name is None else "Unnamed Model",
+                self.model.__class__.__name__
+            ))
+
         for parameter_value in parameter_list:
             if verbose >=1:
                 print("Evaluating parameter {}={}".format(
@@ -388,7 +394,10 @@ class KnnResult(object):
             ivfflat_x = None
             ivfflat_y = None
             # ax2 = ax.twinx()
-            plt_colors_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            # plt_colors_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            colors = plt.cm.get_cmap('tab20', 20).colors
+            plt_colors_cycle = [colors[i] for i in range(len(colors))]
+            
             
 
         min_x = np.inf
@@ -607,7 +616,10 @@ class KnnResult(object):
                         bbox_args = dict(boxstyle='square',
                                          facecolor='white',
                                         #  facecolor=str(plt_colors_cycle[non_baseline_count+curve_count+1]),
-                                         edgecolor=str(plt_colors_cycle[non_baseline_count+curve_count+1])
+                                        #  edgecolor=str(
+                                        #     plt_colors_cycle[non_baseline_count+curve_count+1]
+                                        #     )
+                                         edgecolor=plt_colors_cycle[non_baseline_count+curve_count+1]
                                          )
                         
                         
@@ -652,7 +664,7 @@ class KnnResult(object):
             # legend_curveslist.append(ax.plot([], [], label=" ")[0])
             # legend_curveslist.append(ax.plot([], [], label="Speedups over FAISS")[0])
             # first_legend = plt.legend(handles=legend_curveslist, loc=dataset_legend_pos_rot[dataset_count], bbox_transform=ax.transAxes, framealpha=0.5, prop={'size': 11})
-            first_legend = plt.legend(handles=legend_curveslist, bbox_to_anchor=(0, 1.0), loc='upper left', framealpha=0.5, prop={'size': 11}, ncols=3)
+            first_legend = plt.legend(handles=legend_curveslist, bbox_to_anchor=(1.0, 1.0), loc='upper left', framealpha=0.5, prop={'size': 11}, ncols=1)
 
             # Add the legend manually to the current Axes.
             plt.gca().add_artist(first_legend)
@@ -762,7 +774,10 @@ class KnnResult(object):
             ivfflat_x = None
             ivfflat_y = None
             # ax2 = ax.twinx()
-            plt_colors_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            # plt_colors_cycle = plt.rcParams['axes.prop_cycle'].by_key()['color']
+            # Get more colors if needed
+            colors = plt.cm.get_cmap('tab20', 20).colors
+            plt_colors_cycle = [colors[i] for i in range(len(colors))]
             
 
         min_x = np.inf
