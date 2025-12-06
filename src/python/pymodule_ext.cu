@@ -57,6 +57,7 @@ extern "C" {
         int* knn_indices,
         RSFK_typepoints* knn_sqr_distances,
         float* log_forest,
+        float alpha_partition_selection,
         const char* partition_method);
     
     void pymodule_rsfk_knn_ann(
@@ -136,6 +137,7 @@ void pymodule_rsfk_knn(int n_trees,
                        int* knn_indices,
                        RSFK_typepoints* knn_sqr_distances,
                        float* log_forest_output,
+                       float alpha_partition_selection,
                        const char* partition_method)
 {
     std::string run_name="run";
@@ -146,7 +148,8 @@ void pymodule_rsfk_knn(int n_trees,
                   log_forest_output);
 
     rsfk_knn.knn_gpu_rsfk_forest(n_trees, num_neighbors, N, D, VERBOSE,
-                                 run_name, partition_method_str);
+                                 run_name, partition_method_str,
+                                 alpha_partition_selection);
 }
 
 void pymodule_rsfk_knn_ann(

@@ -48,8 +48,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define KMEANSPP_LOGC 2
 
 // #define KMEANS_METHOD FULL_KMEANS
-#define KMEANS_METHOD KMEANSPP
-// #define KMEANS_METHOD KMEANSPP_LOGC
+// #define KMEANS_METHOD KMEANSPP
+#define KMEANS_METHOD KMEANSPP_LOGC
 
 
 #include "include/rsfk.h"
@@ -119,10 +119,10 @@ void print_int_array(int* arr, int N, bool print_index=true){
 void RSFK::knn_gpu_rsfk_forest_ann(int n_trees,
                                    int K, int N, int NQ, int D, int VERBOSE,
                                    std::string run_name)
-{   
+{
     Cron allocate_copy_points, allocate_copy_knn, copy_knn, total_ann;
     total_ann.start();
-
+         
     allocate_copy_points.start();
     thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
     thrust::device_vector<RSFK_typepoints> device_query_points(query_points, query_points+NQ*D);
@@ -2031,7 +2031,8 @@ void RSFK::update_knn_indice_with_buckets(
 void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                int K, int N, int D, int VERBOSE,
                                std::string run_name="tree",
-                               std::string partition_method="random")
+                               std::string partition_method="random",
+                               float alpha_partition_selection=0.5f)
 {
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -2049,8 +2050,11 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if (partition_method == "kmeans") {
             use_kmeans = true;
         } else if (partition_method == "random+kmeans") {
-            // use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
-            use_kmeans = (i < 1); // First tree use kmeans, rest use random
+            use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
+        } else if (partition_method == "random_kmeans_prob") {
+            // Stochastic choice per tree: choose kmeans with probability alpha_partition_selection
+            float r = ((float)rand()) / (float)RAND_MAX;
+            use_kmeans = (r < alpha_partition_selection);
         }
         // else partition_method == "random" or default, use_kmeans stays false
         
@@ -2062,15 +2066,15 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
 
         // int kmeans_total_buckets = N / ((MAX_TREE_CHILD-MIN_TREE_CHILD)/2);
         int kmeans_total_buckets = N / MAX_TREE_CHILD;
-        #if KMEANS_METHOD==KMEANSPP
-            int total_buckets = N / 1024;
-        #elif KMEANS_METHOD==KMEANSPP_LOGC
-            int total_buckets = N / 128;
-        #else // FULL_KMEANS
-            int total_buckets = N / 1024; 
-        #endif
+        // #if KMEANS_METHOD==KMEANSPP
+        //     int total_buckets = N / 1024;
+        // #elif KMEANS_METHOD==KMEANSPP_LOGC
+        //     int total_buckets = N / 128;
+        // #else // FULL_KMEANS
+        //     int total_buckets = N / 1024; 
+        // #endif
 
-        int bucket_size_limit = 1024;
+        int bucket_size_limit = 1024; // HARD-CODED because of shared memory limits in GPU
         KMeansInfo kmeans_info(
             thrust::raw_pointer_cast(device_points.data()), 
             N, 
@@ -2397,7 +2401,7 @@ int main(int argc,char* argv[])
     RSFK rsfk_knn(points, nullptr, knn_indices, knn_sqr_distances, K+1, 2*(K+1), MAX_DEPTH,
                   RANDOM_SEED, nn_exploring_factor, forest_log_output);
     // rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree");
-    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree", "kmeans");
+    rsfk_knn.knn_gpu_rsfk_forest(5, K, N, D, VERBOSE, "tree", "kmeans", 0.5f);
 
     return 0;
 }

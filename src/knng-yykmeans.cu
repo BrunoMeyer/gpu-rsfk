@@ -133,7 +133,9 @@ struct BucketSplitResult {
 BucketSplitResult enforce_bucket_size_limit_host(
     thrust::host_vector<uint>& h_labels,
     int N,
-    int bucket_size_limit)
+    int bucket_size_limit,
+    int VERBOSE = 1
+)
 {
     assert(N >= 0);
     assert(bucket_size_limit > 0);
@@ -218,6 +220,16 @@ BucketSplitResult enforce_bucket_size_limit_host(
             for (int idx = start_second_half; idx < b.start + b.len; ++idx) {
                 h_labels[idx] = new_label;
             }
+        }
+
+        if (need_split && VERBOSE > 0){
+            std::cerr << "[WARNING] Some buckets exceeded the size limit of "
+                      << bucket_size_limit
+                      << " and were split. New max bucket size is "
+                      << max_bucket_size
+                      << ", new total buckets is "
+                      << (max_label + 1)
+                      << ".\n";
         }
         // Loop again if needed: now h_labels has more labels, but is still
         // grouped contiguously by label (old_label or new_label).
