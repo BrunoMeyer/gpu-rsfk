@@ -30,7 +30,8 @@ def get_gpu_rsfk_results(
     # parameter_list = [1, 5, 10, 20, 30, 100, 200]
     # parameter_list = [1, 5, 10, 20, 30, 40, 50]
     # parameter_list = [1, 5, 10]
-    parameter_list = [1, 2, 3, 4, 5, 8, 16]
+    parameter_list = [1, 2, 3, 4, 5, 8, 16, 32, 64, 128]
+    # parameter_list = [1]
     # parameter_list = [1, 2, 4]
     # parameter_list = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20, 25, 30, 40, 50]
     # parameter_list = [1, 2, 4, 8, 16, 32, 64, 128]
@@ -65,6 +66,8 @@ def get_gpu_rsfk_results(
             # random_motion_force=0.01,
             # nn_exploring_factor=2,
             nn_exploring_factor=False,
+            kmeans_method="kmeanspp_logc",
+            alpha_partition_selection=0.3,
 
             # verbose=0,
             verbose=1,
@@ -75,48 +78,57 @@ def get_gpu_rsfk_results(
         ),
         save_after_add=False)
     
-    for kmeans_method in ["kmeanspp_logc", "kmeanspp", "kmeans"]:
-        kr.model_find_params['kmeans_method'] = kmeans_method
-        mname = knn_method_name +f" ({kmeans_method}-(B{kr.model_find_params['max_tree_children']}) Partitioning)"
+    # for run_id in [0, 1, 2, 3]:
+    for run_id in [0, 1, 2, 3]:
+        default_alpha = kr.model_find_params['alpha_partition_selection']
+        model_name_prefix = f"[{run_id}] " if run_id > 0 else ""
+        # for alpha in [0.0, 1.0]:
+        for alpha in [0.1, 0.3, 0.5, 0.7, 0.9]:
+            kr.model_find_params['alpha_partition_selection'] = alpha
+            mname = knn_method_name +f" (Random+KMeans Prob-{alpha*100}%-(B{kr.model_find_params['max_tree_children']})"
+            kr.evaluate_parameter_list(
+                parameter_list,
+                partition_method='random_kmeans_prob',
+                model_name=model_name_prefix + mname,
+                ).clean()
+            kr.save()
+        kr.model_find_params['alpha_partition_selection'] = default_alpha
+
+        default_kmeans_method = kr.model_find_params['kmeans_method']
+        # for kmeans_method in ["kmeanspp_logc", "kmeanspp", "kmeans"]:
+        for kmeans_method in ["kmeanspp_logc"]:
+            kr.model_find_params['kmeans_method'] = kmeans_method
+            mname = knn_method_name +f" ({kmeans_method}-(B{kr.model_find_params['max_tree_children']}) Partitioning)"
+            kr.evaluate_parameter_list(
+                parameter_list,
+                partition_method='kmeans',
+                model_name=model_name_prefix + mname,
+                ).clean()
+            kr.save()
+        kr.model_find_params['kmeans_method'] = default_kmeans_method
+
+        mname = knn_method_name +f" (Random Partitioning-(B{kr.model_find_params['max_tree_children']})"
         kr.evaluate_parameter_list(
             parameter_list,
-            partition_method='kmeans',
+            partition_method='random',
             model_name=mname,
             ).clean()
         kr.save()
 
-    mname = knn_method_name +f" (Random Partitioning-(B{kr.model_find_params['max_tree_children']})"
-    kr.evaluate_parameter_list(
-        parameter_list,
-        partition_method='random',
-        model_name=mname,
-        ).clean()
-    kr.save()
+        mname = knn_method_name +f" (Random+KMeans Partitioning-(B{kr.model_find_params['max_tree_children']})"
+        kr.evaluate_parameter_list(
+            parameter_list,
+            partition_method='random+kmeans',
+            model_name=model_name_prefix + mname,
+            ).clean()
+        kr.save()
 
-    mname = knn_method_name +f" (Random+KMeans Partitioning-(B{kr.model_find_params['max_tree_children']})"
-    kr.evaluate_parameter_list(
-        parameter_list,
-        partition_method='random+kmeans',
-        model_name=mname,
-        ).clean()
-    kr.save()
-
-    # for alpha in [0.05, 0.1, 0.3, 0.7, 0.9, 0.95]:
-    #     kr.model_find_params['alpha_partition_selection'] = alpha
-    #     mname = knn_method_name +f" (Random+KMeans Prob-{alpha*100}%-(B{kr.model_find_params['max_tree_children']})"
-    #     kr.evaluate_parameter_list(
-    #         parameter_list,
-    #         partition_method='random_kmeans_prob',
-    #         model_name=mname,
-    #         ).clean()
-    #     kr.save()
-
-    # kr.plot(
-    #     [options.dataset],
-    #     options.k_neighbors,
-    #     'nnp_rate',
-    #     # baseline="Brute Force",
-    # )
+        # kr.plot(
+        #     [options.dataset],
+        #     options.k_neighbors,
+        #     'nnp_rate',
+        #     # baseline="Brute Force",
+        # )
     return kr
 
 def get_faiss_ivfflat_results(
@@ -266,6 +278,10 @@ def main():
                         help='Run Faiss IVFFLAT experiments instead of RSFK experiments')
     parser.add_argument('--run_rsfk', action='store_true',
                         help='Run RSFK experiments (default: True)')
+    parser.add_argument('--plot_lines', type=str,
+                        default=[], nargs='+',
+                        help='List of method names to plot as lines (default: empty list)')
+                
     
     args = parser.parse_args()
 
@@ -307,6 +323,7 @@ def main():
             'nnp_rate',
             # dash_method=["Brute Force"],
             baseline="IVFFLAT",
+            plot_lines=args.plot_lines,
         )
     
     

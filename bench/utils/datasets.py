@@ -21,6 +21,170 @@ logging.basicConfig(level=logging.INFO)
 
 KNN_CACHE_DIR = "./.cache/knn/"
 ARTIFICIAL_DATASET_DIR_CACHE = "./.cache/artificial_datasets/"
+DATASET_PATH = os.environ.get("DATASET_PATH", "./data/datasets/")
+
+# https://github.com/ZJULearning/AtSNE?tab=readme-ov-file
+ATSNE_DATASETS = {
+    'CIFAR10': {
+        'dim': 1024,
+        'npoints': 60000,
+        'ncats': 10,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/cifar10_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/cifar10_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/cifar10_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/cifar10_label.txt.ivecs',
+    },
+    'CIFAR100': {
+        'dim': 1024,
+        'npoints': 60000,
+        'ncats': 100,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/cifar100_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/cifar100_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/cifar100_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/cifar100_label.txt.ivecs',
+    },
+    'MNIST': {
+        'dim': 784,
+        'npoints': 70000,
+        'ncats': 10,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/mnist_vec784D_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/mnist_vec784D_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/mnist_vec784D_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/mnist_vec784D_label.txt.ivecs',
+    },
+    'Fashion-MNIST': {
+        'dim': 784,
+        'npoints': 70000,
+        'ncats': 10,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/fashion_mnist_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/fashion_mnist_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/fashion_mnist_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/fashion_mnist_label.txt.ivecs',
+    },
+    'AG’s News': {
+        'dim': 100,
+        'npoints': 120000,
+        'ncats': 4,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/agnews_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/agnews_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/agnews_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/agnews_label.txt.ivecs',
+    },
+    'DBPedia': {
+        'dim': 100,
+        'npoints': 560000,
+        'ncats': 14,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/dbpedia_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/dbpedia_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/dbpedia_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/dbpedia_label.txt.ivecs',
+    },
+    'ImageNet': {
+        'dim': 128,
+        'npoints': 1281167,
+        'ncats': 1000,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/imagenet_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/imagenet_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/imagenet_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/imagenet_label.txt.ivecs',
+    },
+    'Yahoo': {
+        'dim': 100,
+        'npoints': 1400000,
+        'ncats': 10,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/yahoo_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/yahoo_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/yahoo_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/yahoo_label.txt.ivecs',
+    },
+    'Crawl': {
+        'dim': 300,
+        'npoints': 200000,
+        'ncats': 10,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/crawl_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/crawl_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/crawl_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/crawl_label.txt.ivecs',
+    },
+    'Amazon3M': {
+        'dim': 100,
+        'npoints': 3000000,
+        'ncats': 5,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/amazon_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/amazon_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/amazon_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/amazon_label.txt.ivecs',
+    },
+    'Amazon20M': {
+        'dim': 96,
+        'npoints': 19531329,
+        'ncats': 5,
+        'data_txt': 'http://downloads.zjulearning.org.cn/atsne/amazon_reviews_us_Books_data.txt',
+        'data_fvecs': 'http://downloads.zjulearning.org.cn/atsne/amazon_reviews_us_Books_data.txt.fvecs',
+        'label_txt': 'http://downloads.zjulearning.org.cn/atsne/amazon_reviews_us_Books_label.txt',
+        'label_ivecs': 'http://downloads.zjulearning.org.cn/atsne/amazon_reviews_us_Books_label.txt.ivecs',
+    },
+}
+
+def read_fvecs(filepath, name):
+    with open(filepath, 'rb') as f:
+        # Read dimensionality
+        dim = np.fromfile(f, dtype=np.int32, count=1)[0]
+
+        # Calculate total number of floats and read vector data
+        # (file size - 4 bytes for dim) / 4 bytes per float
+        num_vectors = (f.seek(0, 2) - 4) // (dim * 4) 
+        f.seek(4) # Go back after reading dim
+        
+        vectors = np.fromfile(f, dtype=np.float32, count=dim * num_vectors)
+        
+        # Reshape into a 2D array
+        vectors = vectors.reshape(-1, dim)
+        return vectors
+
+def read_ivecs(fname, name):
+    with open(fname, 'rb') as f:
+        # Read dimensionality
+        dim = np.fromfile(f, dtype=np.int32, count=1)[0]
+
+        # Calculate total number of integers and read vector data
+        # (file size - 4 bytes for dim) / 4 bytes per int
+        num_vectors = (f.seek(0, 2) - 4) // (dim * 4) 
+        f.seek(4) # Go back after reading dim
+        
+        vectors = np.fromfile(f, dtype=np.int32, count=dim * num_vectors)
+        
+        # Reshape into a 2D array
+        vectors = vectors.reshape(-1, dim)
+        return vectors
+
+def load_atsne_dataset(name, download_path=DATASET_PATH):
+    '''
+    Load dataset from AtSNE repository (download if needed)
+    '''
+    # Ensure download_path exists
+    os.makedirs(download_path, exist_ok=True)
+    if name not in ATSNE_DATASETS:
+        raise ValueError(f"Dataset {name} not found in AtSNE datasets.")
+    dataset_info = ATSNE_DATASETS[name]
+    data_fvecs_url = dataset_info['data_fvecs']
+    label_ivecs_url = dataset_info['label_ivecs']
+    data_fvecs_path = os.path.join(download_path, f"{name}_data.fvecs")
+    label_ivecs_path = os.path.join(download_path, f"{name}_label.ivecs")
+
+    # Download if not exists
+    if not os.path.isfile(data_fvecs_path):
+        import urllib.request
+        logger.info(f"Downloading {name} data fvecs from {data_fvecs_url}...")
+        urllib.request.urlretrieve(data_fvecs_url, data_fvecs_path)
+    if not os.path.isfile(label_ivecs_path):
+        import urllib.request
+        logger.info(f"Downloading {name} label ivecs from {label_ivecs_url}...")
+        urllib.request.urlretrieve(label_ivecs_url, label_ivecs_path)
+    # Load fvecs and ivecs
+    X = read_fvecs(data_fvecs_path, name)
+    y = read_ivecs(label_ivecs_path, name).flatten()
+    return X, y
 
 def unpickle(file):
     '''Load byte data from file'''
@@ -205,6 +369,12 @@ def load_dataset(
         y = None
         logger.info(f"Final GoogleNews300 dataset shape: {X.shape}.")
 
+    elif name.upper().startswith('ATSNE_'):
+        atsne_name = name[6:]  # Remove 'ATSNE_' prefix
+        logger.info(f"Using dataset from AtSNE repository: {atsne_name}")
+        X, y = load_atsne_dataset(atsne_name)
+        logger.info(f"Loaded {atsne_name} dataset with {X.shape[0]} samples and {X.shape[1]} features.")
+        return X, y
     else:
         logger.info(f"Using dataset from OpenML: {name}")
         # Assumes it is an openml / sklearn dataset

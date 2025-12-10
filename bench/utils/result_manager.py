@@ -361,7 +361,8 @@ class KnnResult(object):
         ignore_outliers=True,
         baseline=None,
         method_list=None,
-        export_data_to_sheet="plot_data.csv"
+        export_data_to_sheet="plot_data.csv",
+        plot_lines=[]
     ):
         
         font_default = {
@@ -380,8 +381,7 @@ class KnnResult(object):
         assert (type(dataset_list) == str) or (type(dataset_list) == list)
         if type(dataset_list) is str:
             dataset_list = [dataset_list]
-
-
+        
         
         if fig_name is None:
             fig_name = "{}_{}".format(quality_metric,"_".join(dataset_list))+str(self._experiment_name)+"_K{}.pdf".format(K)
@@ -440,6 +440,10 @@ class KnnResult(object):
                 if baseline in method_list:
                     method_list.remove(baseline)
                     method_list = [baseline]+method_list
+            
+            if len(plot_lines) > 0:
+                method_list = [m for m in method_list if m in plot_lines]
+            
             for knn_method_name in method_list:
                 
                 for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
@@ -534,6 +538,7 @@ class KnnResult(object):
                         method_list.remove(baseline)
                         method_list = [baseline]+method_list
                 curve_count = 0
+                
                 for knn_method_name in method_list:
                     for parameter_name in self.data[dataset_name][str(K)][knn_method_name]:
                         # if knn_method_name =="IVFFLAT" or knn_method_name in dash_method:
