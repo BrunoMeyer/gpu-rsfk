@@ -161,6 +161,8 @@ BucketSplitResult enforce_bucket_size_limit_host(
     bool need_split = true;
     int max_bucket_size = 0;
 
+    int split_count = 0;
+
     while (need_split) {
         need_split = false;
 
@@ -221,20 +223,23 @@ BucketSplitResult enforce_bucket_size_limit_host(
                 h_labels[idx] = new_label;
             }
         }
-
-        if (need_split && VERBOSE > 0){
-            std::cerr << "[WARNING] Some buckets exceeded the size limit of "
-                      << bucket_size_limit
-                      << " and were split. New max bucket size is "
-                      << max_bucket_size
-                      << ", new total buckets is "
-                      << (max_label + 1)
-                      << ".\n";
-        }
+        split_count++;
         // Loop again if needed: now h_labels has more labels, but is still
         // grouped contiguously by label (old_label or new_label).
     }
 
+    if (split_count && VERBOSE > 1){
+        std::cerr << "[WARNING] Some buckets exceeded the size limit of "
+                << bucket_size_limit
+                << " and were split."
+                << "Total splits performed: "
+                << split_count
+                << ". New max bucket size is "
+                << max_bucket_size
+                << ", new total buckets is "
+                << (max_label + 1)
+                << ".\n";
+    }
     BucketSplitResult res;
     res.max_bucket_size = max_bucket_size;
     res.total_buckets   = static_cast<int>(max_label) + 1; // labels assumed 0..max_label

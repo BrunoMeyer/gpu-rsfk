@@ -1996,7 +1996,9 @@ void RSFK::update_knn_indice_with_buckets(
     gpuErrchk( cudaPeekAtLastError() );
     // compute_knn_from_buckets_perblock_coalesced_symmetric_dividek<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile_coalesced_symmetric<<<total_leaves,32>>>(
-    compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
+
+    // compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
+    compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,512>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,32>>>(
@@ -2062,11 +2064,16 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if (partition_method == "kmeans") {
             use_kmeans = true;
         } else if (partition_method == "random+kmeans") {
-            use_kmeans = (i % 2 == 1);  // Alternate: even indices use random, odd use kmeans
+            use_kmeans = (i % 2 == 0);  // Alternate: even indices use random, odd use kmeans
         } else if (partition_method == "random_kmeans_prob") {
             // Stochastic choice per tree: choose kmeans with probability alpha_partition_selection
             float r = ((float)rand()) / (float)RAND_MAX;
             use_kmeans = (r < alpha_partition_selection);
+        }
+
+        if (VERBOSE > 0){
+            std::cout << "Creating partition " << (i+1) << "/" << n_trees 
+                      << " using " << (use_kmeans ? "kmeans" : "random") << " method." << std::endl;
         }
         // else partition_method == "random" or default, use_kmeans stays false
         
@@ -2232,7 +2239,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         device_old_knn_indices.shrink_to_fit();
     }
     cron_nearest_neighbors_exploring.stop();
-    if(VERBOSE >= 1){
+    if(VERBOSE >= 1 && nn_exploring_factor > 0){
         printf("Nearest Neighbors Exploring computation Kernel takes %lf seconds\n", cron_nearest_neighbors_exploring.t_total/1000);
     }
 
@@ -2270,21 +2277,21 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
     log_forest_output[16*n_trees] = forest_log.rsfk_total_cron;
     log_forest_output[16*n_trees + 1] = forest_log.nn_exploration_cron;
     
-    printf("RSFK forest KNN finished.\n");
-    printf("Cleaning device_points...\n");
+    if (VERBOSE > 1) printf("RSFK forest KNN finished.\n");
+    if (VERBOSE > 1) printf("Cleaning device_points...\n");
     device_points.clear();
     device_points.shrink_to_fit();
-    printf("Cleaning device_knn_indices...\n");
+    if (VERBOSE > 1) printf("Cleaning device_knn_indices...\n");
     device_knn_indices.clear();
     device_knn_indices.shrink_to_fit();
-    printf("Cleaning device_knn_sqr_distances...\n");
+    if (VERBOSE > 1) printf("Cleaning device_knn_sqr_distances...\n");
     device_knn_sqr_distances.clear();
     device_knn_sqr_distances.shrink_to_fit();
     
-    printf("Freeing forest_log...\n");
+    if (VERBOSE > 1) printf("Freeing forest_log...\n");
     forest_log.free();
 
-    printf("RSFK KNN process done.\n");
+    if (VERBOSE > 1) printf("RSFK KNN process done.\n");
 
 }
 
