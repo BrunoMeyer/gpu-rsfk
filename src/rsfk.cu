@@ -1998,9 +1998,11 @@ void RSFK::update_knn_indice_with_buckets(
     // compute_knn_from_buckets_pertile_coalesced_symmetric<<<total_leaves,32>>>(
 
     // compute_knn_from_buckets_predist_nolock<<<total_leaves,NT>>>(
-    compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,512>>>(
+    compute_knn_from_buckets_pertile<<<total_leaves,NT>>>(
+    // compute_knn_from_buckets_pertile<<<total_leaves,512>>>(
+        // compute_knn_from_buckets_pertile<<<total_leaves,128>>>(
     // compute_knn_from_buckets_pertile<<<total_leaves,32>>>(
     // compute_knn_from_buckets_pertile<<<1,32>>>(
         thrust::raw_pointer_cast(device_points.data()),
@@ -2035,7 +2037,9 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                std::string run_name="tree",
                                std::string partition_method="random",
                                float alpha_partition_selection=0.5f,
-                               std::string kmeans_method="kmeanspp_logc")
+                               std::string kmeans_method="kmeanspp_logc",
+                               int kmeans_run_frequency=7
+)
 {
     Cron forest_total_cron;
     forest_total_cron.start();
@@ -2064,7 +2068,8 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if (partition_method == "kmeans") {
             use_kmeans = true;
         } else if (partition_method == "random+kmeans") {
-            use_kmeans = (i % 2 == 0);  // Alternate: even indices use random, odd use kmeans
+            // use_kmeans = (i % 2 == 0);  // Alternate: even indices use random, odd use kmeans
+            use_kmeans = (i % kmeans_run_frequency == 0);  // Alternate: even indices use random, odd use kmeans
         } else if (partition_method == "random_kmeans_prob") {
             // Stochastic choice per tree: choose kmeans with probability alpha_partition_selection
             float r = ((float)rand()) / (float)RAND_MAX;
@@ -2072,8 +2077,24 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         }
 
         if (VERBOSE > 0){
+            // Print progress bar
+            int percent = (int)(((float)(i+1)/(float)n_trees)*100.0f);
+            if (VERBOSE == 1) {
+                std::cout << "[";
+                int barWidth = 50;
+                int pos = barWidth * percent / 100;
+                for (int j = 0; j < barWidth; ++j) {
+                    if (j < pos) std::cout << "=";
+                    else if (j == pos) std::cout << ">";
+                    else std::cout << " ";
+                }
+                std::cout << "] " << percent << " %   |   ";
+            }
+
             std::cout << "Creating partition " << (i+1) << "/" << n_trees 
-                      << " using " << (use_kmeans ? "kmeans" : "random") << " method." << std::endl;
+                      << " using " << (use_kmeans ? "kmeans" : "random") << " method.";
+            if (VERBOSE == 1 && i < n_trees - 1) printf("\r");
+            else std::cout << std::endl;;
         }
         // else partition_method == "random" or default, use_kmeans stays false
         
@@ -2139,7 +2160,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         if (VERBOSE > 1){
             printf("Partition %d/%d created with %d buckets using %s method\n", 
                    i+1, n_trees, tinfo.total_leaves, use_kmeans ? "kmeans" : "random");
-            printf("Updating KNN indices with buckets from tree %d/%d\n", i+1, n_trees);
+            printf("Updating KNN indices with buckets from tree %d/%d", i+1, n_trees);
         }
 
 
