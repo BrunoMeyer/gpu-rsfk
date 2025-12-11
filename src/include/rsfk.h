@@ -509,7 +509,9 @@ public:
                              std::string run_name,
                              std::string partition_method,
                              float alpha_partition_selection,
-                             std::string kmeans_method);
+                             std::string kmeans_method,
+                             int kmeans_run_frequency
+    );
 
     // Run n_tree times the add_random_projection_tree procedure and the nearest
     // neighbors exploring if necessary
