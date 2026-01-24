@@ -37,11 +37,11 @@ void label_first_centroid_kmeanspp_logc(float* dataset, uint dataset_size,
 		float new_dist;
 		if constexpr (IS_DATA_ALIGNED){
 			// aligned data
-			new_dist = euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
+			new_dist = warp_euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
 		}
 		else{
 			// unaligned data
-			new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
+			new_dist = warp_euclidean_distance_sqrd(&dataset[i*dim], &centroids[cent*dim], dim, laneIdx);
 		}
 
         // upperbounds[i] == min dist
@@ -102,15 +102,15 @@ void find_new_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
 		if(labels_count[cent] >= max_bucket_size){
 			int new_cent = chosen_centroids[cent];
 
-			// float new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			// float new_dist = warp_euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
 			float new_dist;
 			if constexpr (IS_DATA_ALIGNED){
 				// aligned data
-				new_dist = euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+				new_dist = warp_euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
 			}
 			else{
 				// unaligned data
-				new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+				new_dist = warp_euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
 			}
 
 			// if(threadIdx.x == 0 && blockIdx.x == 0 ||
@@ -262,16 +262,16 @@ void label_last_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
 		// 	if(laneIdx == 0)
 		// 		printf("Error: point %u has label %d greater than n_max_centroids %d \n",i,new_cent,n_max_centroids);
 			
-        // float new_dist = euclidean_distance_sqrd(&dataset[i*dim], 
+        // float new_dist = warp_euclidean_distance_sqrd(&dataset[i*dim], 
 				// &centroids[new_cent*dim], dim, laneIdx);
 		float new_dist;
 		if constexpr (IS_DATA_ALIGNED){
 			// aligned data
-			new_dist = euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			new_dist = warp_euclidean_distance_sqrd_float4(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
 		}
 		else{
 			// unaligned data
-			new_dist = euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
+			new_dist = warp_euclidean_distance_sqrd(&dataset[i*dim], &centroids[new_cent*dim], dim, laneIdx);
 		}
 
 
@@ -293,16 +293,6 @@ void label_last_centroids_kmeanspp_logc(float* dataset, uint dataset_size,
 
     }
        
-}
-
-__global__
-void initialize_with_given_cent(
-		float* dataset, uint dataset_size, uint dim,
-		float* centroids, uint first_centroid_idx
-){
-	for(uint i = threadIdx.x; i < dim; i+=blockDim.x){
-		centroids[i] = dataset[first_centroid_idx*dim + i];
-	}
 }
 
 int ___kmeanslogc__it = 0;

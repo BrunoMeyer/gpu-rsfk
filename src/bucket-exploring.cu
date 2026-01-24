@@ -190,7 +190,7 @@ void bucket_exploring_kernel(
         int i = ii + wid;
         int bte = -1;
         if(i < total_buckets && i != blockIdx.x){
-                RSFK_typepoints bcenter_dist = euclidean_distance_sqr(
+                RSFK_typepoints bcenter_dist = warp_euclidean_distance_sqrd(
                     &bucket_centroids[i*D],
                     &bucket_centroids[blockIdx.x*D],
                     D,lane);
@@ -299,7 +299,7 @@ void bucket_exploring_kernel(
                         #if COUNT_FILTER_EFFECTIVENESS
                             total_filter_tests[2]++;
                         #endif
-                        RSFK_typepoints p1_pb_centroid_dist = euclidean_distance_sqr(
+                        RSFK_typepoints p1_pb_centroid_dist = warp_euclidean_distance_sqrd(
                             &points[real_p1*D],
                             &bucket_centroids[pb*D],
                             D,lane);
@@ -397,7 +397,7 @@ void bucket_exploring_kernel(
                         //     if(lane == 0)
                         //         printf("DEBUG_BUCKET_EXPLORING in %s %d: Not skipping distance calculation for points %d and %d\n", __FILE__,__LINE__, real_p1, real_p2 );
                         // #endif
-                        RSFK_typepoints p1_p2_dist = euclidean_distance_sqr(
+                        RSFK_typepoints p1_p2_dist = warp_euclidean_distance_sqrd(
                             &points[real_p1*D],
                             &points[real_p2*D],
                             D,lane);

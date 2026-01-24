@@ -1,3 +1,6 @@
+#ifndef KMEANS_CHECK_CONVERGENCE_CU
+#define KMEANS_CHECK_CONVERGENCE_CU
+
 __global__
 void check_convergence(float* centroids, float* new_centroids, 
                         uint dim, uint k, float* sqrdNormError){
@@ -49,3 +52,5 @@ __global__ void sumReduce(float* in, uint size, float* out){
     }
     atomicAdd(out,sum);
 }
+
+#endif // KMEANS_CHECK_CONVERGENCE_CU

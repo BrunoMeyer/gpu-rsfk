@@ -1,4 +1,25 @@
+#ifndef KMEANS_INITIALIZE_CU
+#define KMEANS_INITIALIZE_CU
+
 #include <curand_kernel.h>
+
+template <bool INDIRECT_POINTS=false>
+__global__
+void initialize_with_given_cent(
+		float* dataset, uint dataset_size, uint dim,
+		float* centroids, uint first_centroid_idx, 
+        int* indexes = nullptr
+){
+    uint idx;
+    if constexpr (INDIRECT_POINTS){
+        idx = indexes[first_centroid_idx];
+    } else{
+        idx = first_centroid_idx;
+    }
+	for(uint i = threadIdx.x + blockIdx.x*blockDim.x; i < dim; i+=blockDim.x*gridDim.x){
+		centroids[i] = dataset[idx*dim + i];
+	}
+}
 
 __global__
 void initialize(float* dataset, uint dataset_size, 
@@ -28,3 +49,4 @@ void initialize(float* dataset, uint dataset_size,
 }
         // printf("bid = %i, r = %u, dim=%u\n",blockIdx.x,r,dim);
 
+#endif // KMEANS_INITIALIZE_CU

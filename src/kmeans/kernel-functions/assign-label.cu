@@ -1,5 +1,9 @@
+#ifndef ASSIGN_LABEL_CU
+
+#define ASSIGN_LABEL_CU
+
 #include "gpu-utils.cu"
-#define SUPER_DEBUG 1
+// #define SUPER_DEBUG 1
 
 __global__
 void assign_label(float* dataset, uint dataset_size, 
@@ -29,7 +33,7 @@ void assign_label(float* dataset, uint dataset_size,
     for(uint ii = (warpIdx+blockIdx.x*nwarps)*warpSize; ii < dataset_size; ii += nwarps*gridDim.x*warpSize){
         // GLOBAL FILTER
         uint to_be_updated = 33;
-        if(ii < dataset_size){
+        if(ii+laneIdx < dataset_size){
             if(lower_bound[ii+laneIdx] < upper_bound[ii+laneIdx]){
                 to_be_updated=laneIdx;
             }
@@ -48,31 +52,37 @@ void assign_label(float* dataset, uint dataset_size,
             ////////////////////////
             // CALCULATE DISTANCE //
             ////////////////////////
-            float4 a,b;
-            float s = 0.0f;
-            uint nf = dim/4;
-            for(uint d=laneIdx; d < nf; d+=warpSize){
-                a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-                b = reinterpret_cast<float4*>(centroids)[near_cent*nf+d];
-                float4 diff;
-                diff.x = a.x - b.x;
-                diff.y = a.y - b.y;
-                diff.z = a.z - b.z;
-                diff.w = a.w - b.w;
-                s+=diff.x*diff.x;
-                s+=diff.y*diff.y;
-                s+=diff.z*diff.z;
-                s+=diff.w*diff.w;
-            }
-            s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-            float new_dist = s;
+            // float4 a,b;
+            // float s = 0.0f;
+            // uint nf = dim/4;
+            // for(uint d=laneIdx; d < nf; d+=warpSize){
+            //     a = reinterpret_cast<float4*>(dataset)[i*nf+d];
+            //     b = reinterpret_cast<float4*>(centroids)[near_cent*nf+d];
+            //     float4 diff;
+            //     diff.x = a.x - b.x;
+            //     diff.y = a.y - b.y;
+            //     diff.z = a.z - b.z;
+            //     diff.w = a.w - b.w;
+            //     s+=diff.x*diff.x;
+            //     s+=diff.y*diff.y;
+            //     s+=diff.z*diff.z;
+            //     s+=diff.w*diff.w;
+            // }
+            // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
+            // float new_dist = s;
+            float new_dist = warp_euclidean_distance_float4(
+                                &dataset[i*dim], 
+                                &centroids[near_cent*dim], 
+                                dim, 
+                                laneIdx);
             //////////////////////
             //////////////////////
-            upper_bound[i] = new_dist;
+            if(laneIdx == 0)
+                upper_bound[i] = new_dist;
             // float new_dist = upper_bound[i];
             if(lower_bound[i] < new_dist){ 
                 //continue to group filter
@@ -125,28 +135,29 @@ void assign_label(float* dataset, uint dataset_size,
                         ////////////////////////
                         // CALCULATE DISTANCE //
                         ////////////////////////
-                        float4 a,b;
-                        float s = 0.0f;
-                        uint nf = dim/4;
-                        for(uint d=laneIdx; d < nf; d+=warpSize){
-                            a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-                            b = reinterpret_cast<float4*>(centroids)[cent_from_group*nf+d];
-                            float4 diff;
-                            diff.x = a.x - b.x;
-                            diff.y = a.y - b.y;
-                            diff.z = a.z - b.z;
-                            diff.w = a.w - b.w;
-                            s+=diff.x*diff.x;
-                            s+=diff.y*diff.y;
-                            s+=diff.z*diff.z;
-                            s+=diff.w*diff.w;
-                        }
-                        s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-                        s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-                        s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-                        s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-                        s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-                        float new_dist = s;
+                        // float4 a,b;
+                        // float s = 0.0f;
+                        // uint nf = dim/4;
+                        // for(uint d=laneIdx; d < nf; d+=warpSize){
+                        //     a = reinterpret_cast<float4*>(dataset)[i*nf+d];
+                        //     b = reinterpret_cast<float4*>(centroids)[cent_from_group*nf+d];
+                        //     float4 diff;
+                        //     diff.x = a.x - b.x;
+                        //     diff.y = a.y - b.y;
+                        //     diff.z = a.z - b.z;
+                        //     diff.w = a.w - b.w;
+                        //     s+=diff.x*diff.x;
+                        //     s+=diff.y*diff.y;
+                        //     s+=diff.z*diff.z;
+                        //     s+=diff.w*diff.w;
+                        // }
+                        // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+                        // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+                        // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+                        // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+                        // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
+                        // float new_dist = s;
+                        float new_dist = warp_euclidean_distance_float4(&dataset[i*dim], &centroids[cent_from_group*dim], dim, laneIdx);
                         ////////////////////////
                         ////////////////////////
 
@@ -448,3 +459,5 @@ void assign_label(float* dataset, uint dataset_size,
 //         }
 //     }
 // }
+
+#endif // ASSIGN_LABEL_CU

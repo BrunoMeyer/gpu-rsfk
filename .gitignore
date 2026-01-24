@@ -13,3 +13,6 @@ python/build/
 python/dist/
 python/*.egg-info/
 *.egg-info/
+
+*.pdf
+*.json

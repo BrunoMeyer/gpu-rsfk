@@ -42,7 +42,8 @@ void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size,
 // and update its label, upper bound, and lower bound accordingly
 // Also, find the point with the maximum distance to its nearest centroid
 // to be used as the next centroid
-// TODO: it is possible to optimize the search for the next centroid using atomics
+// TODO: it is possible to optimize the search for the next centroid using atomics.
+template <bool CALC_SQRT=false, bool INDIRECT_POINTS=false>
 __global__
 void find_new_centroid_kmeanspp(float* dataset, uint dataset_size, 
         float* centroids, 
@@ -51,7 +52,8 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
         uint* labels,
         float* upperbounds, float* lowerbounds,
         uint* chosen_centroids,
-        uint* candidates, float* max_min_cent_dist
+        uint* candidates, float* max_min_cent_dist,
+        int* indexes=nullptr
 ){
 
     // initialize variables
@@ -65,31 +67,48 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
 
     // for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*blockDim.x){
     for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
+        int idx = INDIRECT_POINTS ? indexes[i] : i;
         ////////////////////////
         // CALCULATE DISTANCE //
         ////////////////////////
-        float4 a,b;
-        float s = 0.0f;
-        uint nf = dim/4;
-        for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
-            a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-            b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
-            float4 diff;
-            diff.x = a.x - b.x;
-            diff.y = a.y - b.y;
-            diff.z = a.z - b.z;
-            diff.w = a.w - b.w;
-            s+=diff.x*diff.x;
-            s+=diff.y*diff.y;
-            s+=diff.z*diff.z;
-            s+=diff.w*diff.w;
+        // float4 a,b;
+        // float s = 0.0f;
+        // uint nf = dim/4;
+        // for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
+        //     a = reinterpret_cast<float4*>(dataset)[i*nf+d];
+        //     b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
+        //     float4 diff;
+        //     diff.x = a.x - b.x;
+        //     diff.y = a.y - b.y;
+        //     diff.z = a.z - b.z;
+        //     diff.w = a.w - b.w;
+        //     s+=diff.x*diff.x;
+        //     s+=diff.y*diff.y;
+        //     s+=diff.z*diff.z;
+        //     s+=diff.w*diff.w;
+        // }
+        // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
+        // float new_dist = s;
+        float new_dist; 
+        if constexpr (CALC_SQRT == false) {
+            new_dist = warp_euclidean_distance_sqrd_float4( 
+                &dataset[idx*dim], 
+                &centroids[cent*dim], 
+                dim, 
+                laneIdx
+            );
+        } else {
+            new_dist = warp_euclidean_distance_float4( 
+                &dataset[idx*dim], 
+                &centroids[cent*dim], 
+                dim, 
+                laneIdx
+            );
         }
-        s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-        float new_dist = s;
         ////////////////////////
         ////////////////////////
 
@@ -130,11 +149,13 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
 // and append it to the centroids list
 // (following the KMeans++ initialization method (Arthur and Vassilvitskii, 2007))
 // This kernel is launched with a single block
+template <bool INDIRECT_POINTS=false>
 __global__
 void append_centroid_kmeanspp(float* dataset, uint dataset_size, 
         float* centroids, uint n_chosen_centroids, uint dim,
         uint* chosen_centroids,
-        uint* candidates, float* max_min_cent_dist, int total_candidates
+        uint* candidates, float* max_min_cent_dist, int total_candidates,
+        int* indexes=nullptr
 ){
     __shared__ float sh_max_dist[MAX_THREADS];
     __shared__ uint sh_next_cent[MAX_THREADS];
@@ -166,16 +187,18 @@ void append_centroid_kmeanspp(float* dataset, uint dataset_size,
         chosen_centroids[n_chosen_centroids] = new_cent;
     }
     for(int i = threadIdx.x; i < dim; i+=blockDim.x){
-        centroids[i+n_chosen_centroids*dim] = dataset[i+new_cent*dim];
+        int idx = INDIRECT_POINTS ? indexes[new_cent] : new_cent;
+        centroids[i+n_chosen_centroids*dim] = dataset[i+idx*dim];
     }
 }
 
-
+template <bool CALC_SQRT=false, bool INDIRECT_POINTS=false>
 __global__
 void label_last_centroid_kmeanspp(float* dataset, uint dataset_size, 
         float* centroids, uint k, uint dim, 
         uint* labels,
-        float* upperbounds, float* lowerbounds
+        float* upperbounds, float* lowerbounds,
+        int* indexes=nullptr
 ){
 
     // initialize variables
@@ -189,30 +212,47 @@ void label_last_centroid_kmeanspp(float* dataset, uint dataset_size,
         ////////////////////////
         // CALCULATE DISTANCE //
         ////////////////////////
-        float4 a,b;
-        float s = 0.0f;
-        uint nf = dim/4;
-        for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
-            a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-            b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
-            float4 diff;
-            diff.x = a.x - b.x;
-            diff.y = a.y - b.y;
-            diff.z = a.z - b.z;
-            diff.w = a.w - b.w;
-            s+=diff.x*diff.x;
-            s+=diff.y*diff.y;
-            s+=diff.z*diff.z;
-            s+=diff.w*diff.w;
+        // float4 a,b;
+        // float s = 0.0f;
+        // uint nf = dim/4;
+        // for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
+        //     a = reinterpret_cast<float4*>(dataset)[i*nf+d];
+        //     b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
+        //     float4 diff;
+        //     diff.x = a.x - b.x;
+        //     diff.y = a.y - b.y;
+        //     diff.z = a.z - b.z;
+        //     diff.w = a.w - b.w;
+        //     s+=diff.x*diff.x;
+        //     s+=diff.y*diff.y;
+        //     s+=diff.z*diff.z;
+        //     s+=diff.w*diff.w;
+        // }
+        // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+        // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
+        // float new_dist = s;
+        ////////////////////////
+        ////////////////////////
+        float new_dist;
+        int idx = INDIRECT_POINTS ? indexes[i] : i;
+        if constexpr (CALC_SQRT == false) {
+            new_dist = warp_euclidean_distance_sqrd_float4( 
+                &dataset[idx*dim], 
+                &centroids[cent*dim], 
+                dim, 
+                laneIdx
+            );
+        } else {
+            new_dist = warp_euclidean_distance_float4( 
+                &dataset[idx*dim], 
+                &centroids[cent*dim], 
+                dim, 
+                laneIdx
+            );
         }
-        s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-        s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-        float new_dist = s;
-        ////////////////////////
-        ////////////////////////
 
         // upperbounds[i] == min dist
         // lowerbounds[i] == sec min dist

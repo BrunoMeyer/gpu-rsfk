@@ -1,4 +1,5 @@
-
+#ifndef KMEANS_UTILS_CU
+#define KMEANS_UTILS_CU
 __global__
 void count_labels_kernel(const uint* labels, int* label_counts, int num_points, int num_clusters) {
     extern __shared__ int shared_counts[];
@@ -19,3 +20,4 @@ void count_labels_kernel(const uint* labels, int* label_counts, int num_points, 
         atomicAdd(&label_counts[i], shared_counts[i]);
     }
 }
+#endif

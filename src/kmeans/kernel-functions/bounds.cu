@@ -1,3 +1,6 @@
+#ifndef KMEANS_KERNEL_BOUNDS_CU
+#define KMEANS_KERNEL_BOUNDS_CU
+
 #include "gpu-utils.cu"
 
 __global__
@@ -46,31 +49,31 @@ void init_bounds_and_assign_labels(float* dataset, uint dataset_size,
             ////////////////////////
             // CALCULATE DISTANCE //
             ////////////////////////
-    		float4 a,b;
-    		float s = 0.0f;
-            uint nf = dim/4;
-	    	for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
-               a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-                b = reinterpret_cast<float4*>(centroids)[j*nf+d];
-                float4 diff;
-                diff.x = a.x - b.x;
-                diff.y = a.y - b.y;
-                diff.z = a.z - b.z;
-                diff.w = a.w - b.w;
-                s+=diff.x*diff.x;
-                s+=diff.y*diff.y;
-                s+=diff.z*diff.z;
-                s+=diff.w*diff.w;
-            }
-            s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-            s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-            float new_dist = s;
+    		// float4 a,b;
+    		// float s = 0.0f;
+            // uint nf = dim/4;
+	    	// for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
+            //    a = reinterpret_cast<float4*>(dataset)[i*nf+d];
+            //     b = reinterpret_cast<float4*>(centroids)[j*nf+d];
+            //     float4 diff;
+            //     diff.x = a.x - b.x;
+            //     diff.y = a.y - b.y;
+            //     diff.z = a.z - b.z;
+            //     diff.w = a.w - b.w;
+            //     s+=diff.x*diff.x;
+            //     s+=diff.y*diff.y;
+            //     s+=diff.z*diff.z;
+            //     s+=diff.w*diff.w;
+            // }
+            // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
+            // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
+            // float new_dist = s;
             ////////////////////////
             ////////////////////////
-            // float new_dist = euclidean_distance_sqr(&dataset[i],&centroids[j],dim,laneIdx);
+            float new_dist = warp_euclidean_distance_float4(&dataset[i],&centroids[j],dim,laneIdx);
 
             if(new_dist < secmin_dist){
                 if(new_dist < min_dist){
@@ -140,3 +143,5 @@ void update_bounds(
     }
 
 }
+
+#endif // KMEANS_KERNEL_BOUNDS_CU

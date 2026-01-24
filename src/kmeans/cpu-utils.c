@@ -3,6 +3,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <string>
+#include <cstdlib>
+#include <algorithm>
 
 #define CREATEDATA_RAND_MAX 10000000
 

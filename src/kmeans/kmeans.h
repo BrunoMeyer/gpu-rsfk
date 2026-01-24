@@ -7,11 +7,13 @@
 #include "kernel-functions/align-memory.cu"
 #include "kernel-functions/kmeans-utils.cu"
 
-class KMeansInfo {
+class KMeansGPU {
 private:
     bool need_align = true;
     GpuPtr<int> labels_counts;
     int max_shared_mem = 0;
+
+    
 
 public:
     int devUsed = 0;
@@ -29,7 +31,7 @@ public:
     uint logic_dim = 0;
     uint n_clusters = 0;
 
-    KMeansInfo(float* raw_points, uint n_points, uint dim, uint n_clusters)
+    KMeansGPU(float* raw_points, uint n_points, uint dim, uint n_clusters)
         : n_points(n_points),
         dim(dim),
         logic_dim((dim + 3) / 4 * 4),   // align to 4
@@ -85,11 +87,11 @@ public:
     }
 
     // disable copy constructor and copy assignment
-    KMeansInfo(const KMeansInfo&) = delete;
-    KMeansInfo& operator=(const KMeansInfo&) = delete;
+    KMeansGPU(const KMeansGPU&) = delete;
+    KMeansGPU& operator=(const KMeansGPU&) = delete;
 
     // move constructor
-    KMeansInfo(KMeansInfo&& other) noexcept
+    KMeansGPU(KMeansGPU&& other) noexcept
         : points(std::move(other.points)),
         labels(std::move(other.labels)),
         centroids(std::move(other.centroids)),
@@ -106,7 +108,7 @@ public:
     }
 
     // move assignment
-    KMeansInfo& operator=(KMeansInfo&& other) noexcept {
+    KMeansGPU& operator=(KMeansGPU&& other) noexcept {
         if (this != &other) {
             points = std::move(other.points);
             labels = std::move(other.labels);
@@ -127,18 +129,11 @@ public:
     }
 
     // destructor (default is enough)
-    ~KMeansInfo() = default;
+    ~KMeansGPU() = default;
+
 };
 
-// void kmeansGpu(float* d_dataset, uint dataset_size, 
-//     uint dim, uint k, 
-// 	uint max_it, 
-// 	uint check_method, float tolerance, 
-// 	uint initialization_method, //0 - random, 1 - from cpu
-// 	uint t_groups,
-// 	uint verbosity,
-//     uint* d_labels, float* d_centroids // <-- outputs
-// );
+using KMeansInfo = KMeansGPU;
 
 #include "./kmeans.cu"
 

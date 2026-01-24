@@ -3,6 +3,14 @@
 #include <cstdio>
 #include <cstdlib>
 
+
+template <typename T>
+__global__ void fillSequential_kernel(T* data, size_t n) {
+    size_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < n)
+        data[i] = static_cast<T>(i);
+}
+
 template <typename T>
 class GpuPtr {
 private:
@@ -155,6 +163,12 @@ public:
         }
     }
 
+    void fillSequential() {
+        constexpr int BLOCK = 256;
+        int grid = (count + BLOCK - 1) / BLOCK;
+        fillSequential_kernel<<<grid, BLOCK>>>(raw_ptr, count);
+    }  
+
     // -----------------------------
     // Copying Device -> Device
     // -----------------------------
@@ -165,6 +179,16 @@ public:
             exit(EXIT_FAILURE);
         }
     }
+
+
+    void copyFromDevice(const T* d_data, size_t n) {
+        cudaError_t err = cudaMemcpy(raw_ptr, d_data, n * sizeof(T), cudaMemcpyDeviceToDevice);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "cudaMemcpy D2D failed (%s)\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+    }
+
 
     // -----------------------------
     // Copying Host -> Device
@@ -177,11 +201,28 @@ public:
         }
     }
 
+
+    void copyFromHost(const T* h_data, size_t n) {
+        cudaError_t err = cudaMemcpy(raw_ptr, h_data, n * sizeof(T), cudaMemcpyHostToDevice);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "cudaMemcpy H2D failed (%s)\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+    }
+
     // -----------------------------
     // Copying Device -> Host
     // -----------------------------
     void copyToHost(T* h_data) const {
         cudaError_t err = cudaMemcpy(h_data, raw_ptr, count * sizeof(T), cudaMemcpyDeviceToHost);
+        if (err != cudaSuccess) {
+            fprintf(stderr, "cudaMemcpy D2H failed (%s)\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    void copyToHost(T* h_data, size_t n) const {
+        cudaError_t err = cudaMemcpy(h_data, raw_ptr, n * sizeof(T), cudaMemcpyDeviceToHost);
         if (err != cudaSuccess) {
             fprintf(stderr, "cudaMemcpy D2H failed (%s)\n", cudaGetErrorString(err));
             exit(EXIT_FAILURE);

@@ -1,3 +1,6 @@
+#ifndef KMEANS_UPDATE_CU
+#define KMEANS_UPDATE_CU
+
 __global__
 void update_centroids(float* centroids,  
         uint dim, uint k, 
@@ -50,7 +53,7 @@ void update_label_count_and_centroid_shift(float* centroids,
         //////////////////////////////////
         //   calculate centroid shift   //
         //////////////////////////////////
-        float shift = euclidean_distance_sqr(
+        float shift = warp_euclidean_distance_float4(
             &new_centroids[i*dim],
             &centroids[i*dim],
             dim,
@@ -166,3 +169,5 @@ void update_label_count_and_centroid_shift(float* centroids,
 //     // if(threadIdx.x == 0 && blockIdx.x == 0){
 //     //     printf("%f\n",centroid[warpIdx*dim]);
 //     // }
+
+#endif // KMEANS_UPDATE_CU

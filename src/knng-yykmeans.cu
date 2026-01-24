@@ -40,6 +40,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "kmeans/kmeans.h"
 #include "kmeans/chrono.c"
 #include "kmeans/kmeanspp_logc.cu"
+// #include "kmeans/hierarchical_kmeans.cu"
+
+#include "kmeans/recursive_kmeans.cu"
 
 #include <vector>
 #include <cassert>
@@ -161,8 +164,6 @@ BucketSplitResult enforce_bucket_size_limit_host(
     bool need_split = true;
     int max_bucket_size = 0;
 
-    int split_count = 0;
-
     while (need_split) {
         need_split = false;
 
@@ -223,54 +224,26 @@ BucketSplitResult enforce_bucket_size_limit_host(
                 h_labels[idx] = new_label;
             }
         }
-        split_count++;
+
+        if (need_split && VERBOSE > 0){
+            std::cerr << "[WARNING] Some buckets exceeded the size limit of "
+                      << bucket_size_limit
+                      << " and were split. New max bucket size is "
+                      << max_bucket_size
+                      << ", new total buckets is "
+                      << (max_label + 1)
+                      << ".\n";
+        }
         // Loop again if needed: now h_labels has more labels, but is still
         // grouped contiguously by label (old_label or new_label).
     }
 
-    if (split_count && VERBOSE > 1){
-        std::cerr << "[WARNING] Some buckets exceeded the size limit of "
-                << bucket_size_limit
-                << " and were split."
-                << "Total splits performed: "
-                << split_count
-                << ". New max bucket size is "
-                << max_bucket_size
-                << ", new total buckets is "
-                << (max_label + 1)
-                << ".\n";
-    }
     BucketSplitResult res;
     res.max_bucket_size = max_bucket_size;
     res.total_buckets   = static_cast<int>(max_label) + 1; // labels assumed 0..max_label
 
     return res;
 }
-
-// ============================================================================
-// RECURSIVE KMEANS
-// ============================================================================
-// void rec_kmeans(
-//     KmeansInfo& kinfo,
-//     int K, //                               number of clusters per call
-//     int n_calls,
-//     int max_calls,
-//     int bucket_size_limit,
-//     int& out_max_bucket_size,
-//     int VERBOSE
-// ){
-//     kmeanspp(
-//         kinfo.points.ptr(),
-//         N, D, K,
-//         VERBOSE,
-//         kinfo.centroids.ptr(),
-//         kinfo.labels.ptr(),
-//         kinfo.dist_to_centroids.ptr()
-//     );
-//     // Count labels
-//     kinfo.countLabels();
-    
-// }
 
 // ============================================================================
 // MAIN FUNCTION: create_bucket_from_yykmeans
@@ -281,7 +254,7 @@ TreeInfo create_bucket_from_yykmeans(
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
     int total_buckets=128,
-    int bucket_size_limit =1024,
+    int bucket_size_limit =256,
     KMeansInfo* kinfo = nullptr,
     int max_iter = 32,
     int check_method = 2,
@@ -294,6 +267,7 @@ TreeInfo create_bucket_from_yykmeans(
     std::string kmeans_method = "kmeanspp_logc"
     )
 {
+    VERBOSE = 3;  //force verbose for debug
     // Initial number of clusters for k-means
 
     forest_log.count_tree += 1;
@@ -325,6 +299,7 @@ TreeInfo create_bucket_from_yykmeans(
     // Run the requested KMeans implementation at runtime based on the
     // `kmeans_method` string. This replaces the old compile-time
     // #if KMEANS_METHOD blocks so the method can be chosen from Python.
+
     if(kmeans_method == "kmeanspp_logc"){
         int n_buckets = 0;
         if(D > 96){
@@ -376,7 +351,53 @@ TreeInfo create_bucket_from_yykmeans(
                 ,kinfo->points.ptr()
         );
     } else if(kmeans_method == "recursive_kmeans"){
-        // placeholder for recursive kmeans if implemented in future
+        //     TreeInfo recursive_kmeans(
+        // GpuPtr<float> points,
+        // int n_points,
+        // int dim,
+        // int k,
+        // int max_depth,
+        // int max_bucket_size
+
+        int max_depth = 10; //arbitrary
+        int k = 32; //arbitrary
+        // int k = 2; //arbitrary
+        // int bucket_size_limit = 1024;
+        int bucket_size_limit = 512;
+        // printf("Running recursive_kmeans with k=%d, max_depth=%d, bucket_size_limit=%d\n",
+        //         k, max_depth, bucket_size_limit);
+
+        TreeInfo tinfo = recursive_kmeans(
+            kinfo->points.ptr(),
+            N,
+            // D,
+            kinfo->logic_dim,
+            k,
+            max_depth,
+            bucket_size_limit
+        );
+
+        chrono_stop(&ch_kmeans);
+        double kmeans_sec = (double)chrono_gettotal(&ch_kmeans)/(1000*1000*1000); 
+
+        tinfo.print_info();
+        printf("Recursive KMeans (k=%d maxdepth=%d) time: %.6f sec\n",k,max_depth, kmeans_sec);
+
+        return tinfo;
+
+    // } else if(kmeans_method == "hierarchical_kmeans"){
+        // int n_buckets = 0;
+        // hierarchical_kmeans(
+        //     thrust::raw_pointer_cast(device_points.data()),
+        //     N, D, total_buckets,
+        //     VERBOSE,
+        //     kinfo->centroids.ptr(),
+        //     (int*)kinfo->labels.ptr(),
+        //     &n_buckets,
+        //     bucket_size_limit,
+        //     nullptr
+        // );
+        // total_buckets = n_buckets;
     } else {
         // fallback to default method (kmeanspp_logc)
         int n_buckets = 0;
