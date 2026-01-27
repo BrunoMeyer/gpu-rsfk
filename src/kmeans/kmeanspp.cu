@@ -1,378 +1,541 @@
 #ifndef KMEANSPP_CU
 #define KMEANSPP_CU
 
-__global__
-void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size, 
-        uint dim,
-        float* centroids, uint* chosen_centroids, unsigned long long seed){
-    
-    __shared__ uint r;
+#include "kernel-functions/gpu-utils.cu"
+#include "kernel-functions/kmeanspp_kernels.cu"
 
-    //Initialize the centroids with the first K points
-
-    if(threadIdx.x == 0){
-        curandStateMRG32k3a_t  state;
-        curand_init(seed+blockIdx.x,
-            0,
-            0,
-            &state);
-        
-        r = curand(&state) % dataset_size;
-        chosen_centroids[0] = r;
-    }
-    __syncthreads();
-    
-    for(int i = threadIdx.x; i < dim; i+=blockDim.x){
-        // printf("bid = %i, c[%i] = %f\n",r,threadIdx.x,dataset[i+r*dim]);
-        centroids[i] = dataset[i+r*dim];
-    }
-}
-
-__global__
-void initialize_first_cent_kmeanspp(float* dataset, uint dataset_size, 
-        uint dim,
-        float* centroids, uint* chosen_centroids){
-    chosen_centroids[0] = 0;
-    for(int i = threadIdx.x; i < dim; i+=blockDim.x){
-        centroids[i] = dataset[i];
-    }
-}
-
-// For each point in the dataset, compute its distance to the newly added centroid,
-// and update its label, upper bound, and lower bound accordingly
-// Also, find the point with the maximum distance to its nearest centroid
-// to be used as the next centroid
-// TODO: it is possible to optimize the search for the next centroid using atomics.
-template <bool CALC_SQRT=false, bool INDIRECT_POINTS=false>
-__global__
-void find_new_centroid_kmeanspp(float* dataset, uint dataset_size, 
-        float* centroids, 
-        uint k, // current number of centroids 
-        uint dim, 
-        uint* labels,
-        float* upperbounds, float* lowerbounds,
-        uint* chosen_centroids,
-        uint* candidates, float* max_min_cent_dist,
-        int* indexes=nullptr
+/////////////////////////
+//      K-MEANS++      //
+/////////////////////////
+// Note: kmeanspp does not need to take sqrd distances into account, 
+// as it only uses distances to choose centroids.
+template <bool INDIRECT_POINTS = false>
+static inline
+void kmeanspp_workflow_async(
+	float* d_dataset, uint dataset_size, 
+	uint dim, uint k,
+	//OUTPUTS
+	float* d_centroids,
+	uint* d_labels,
+	float* d_upperbounds,
+	float* d_lowerbounds,
+	uint* d_chosen_centroids,
+	uint* d_candidates_to_nextcent,
+	float* d_max_min_cent_dist,
+	//KERNEL PARAMS
+	int max_threads,
+	int nthreads,
+	int nblocks,
+	//OPTIONAL
+	int* points_indexes = NULL,
+    cudaStream_t stream = 0
 ){
+	int nwarps = nthreads / WARP_SIZE;
+    //WARNING: max_threads has to be power of 2
+    if((max_threads & (max_threads - 1)) != 0)
+        printf("WARNING: max_threads has to be power of 2\n");
 
-    // initialize variables
-    uint warpIdx = threadIdx.x / WARP_SIZE;
-    uint laneIdx = threadIdx.x % WARP_SIZE;
-    uint cent = k-1; // index of the last centroid added
 
-    uint candidate_to_centroid = 0; // point that has the farthest nearest centroid
-    float max_dist = -1.0; // distance to farthest nearest centroid
-    int nwarps = blockDim.x / WARP_SIZE;
+	//---
+	//initialize first centroid at random and set bounds as max float
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads,0,stream>>>(d_upperbounds,dataset_size);
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads,0,stream>>>(d_lowerbounds,dataset_size);
+	
+	// RANDOM FIRST CENTROID 
+	static unsigned long long seed = time(NULL);
+	// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+	// 	d_dataset,dataset_size,dim,
+	// 	d_centroids, d_chosen_centroids, seed);
+	// seed+=1;
 
-    // for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*blockDim.x){
-    for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
-        int idx = INDIRECT_POINTS ? indexes[i] : i;
-        ////////////////////////
-        // CALCULATE DISTANCE //
-        ////////////////////////
-        // float4 a,b;
-        // float s = 0.0f;
-        // uint nf = dim/4;
-        // for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
-        //     a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-        //     b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
-        //     float4 diff;
-        //     diff.x = a.x - b.x;
-        //     diff.y = a.y - b.y;
-        //     diff.z = a.z - b.z;
-        //     diff.w = a.w - b.w;
-        //     s+=diff.x*diff.x;
-        //     s+=diff.y*diff.y;
-        //     s+=diff.z*diff.z;
-        //     s+=diff.w*diff.w;
-        // }
-        // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-        // float new_dist = s;
-        float new_dist; 
-        if constexpr (CALC_SQRT == false) {
-            new_dist = warp_euclidean_distance_sqrd_float4( 
-                &dataset[idx*dim], 
-                &centroids[cent*dim], 
-                dim, 
-                laneIdx
-            );
-        } else {
-            new_dist = warp_euclidean_distance_float4( 
-                &dataset[idx*dim], 
-                &centroids[cent*dim], 
-                dim, 
-                laneIdx
-            );
-        }
-        ////////////////////////
-        ////////////////////////
+	int first_cent = rand_r((unsigned int*)&seed) % dataset_size;
+	// printf("K-means++ LOGC first centroid index: %d \n",first_cent);
+	initialize_with_given_cent<INDIRECT_POINTS><<<1,max_threads,0,stream>>>(
+		d_dataset,dataset_size,dim,
+		d_centroids, first_cent, points_indexes);
 
-        // upperbounds[i] is the distance from the point 'i' to its nearest centroid
-        // lowerbounds[i] The lowerbound is the distance from the point 'i' to its second nearest centroid
-        if(new_dist < lowerbounds[i]){
-            if(new_dist < upperbounds[i]){
-                lowerbounds[i] = upperbounds[i];
-                upperbounds[i] = new_dist;
-                labels[i] = cent;
-            }
-            else
-                lowerbounds[i] = new_dist;
-        }
-        if(upperbounds[i] > max_dist){
-            // uint not_chosen = 1;
-            // for(uint l=laneIdx; l < k; l+=WARP_SIZE){
-            //     if(chosen_centroids[l] == i){
-            //         not_chosen = 0;
-            //     }
-            // }
-            // if(__all_sync(FULL, not_chosen)){
-                max_dist = upperbounds[i];
-                candidate_to_centroid=i; //i is candidate to next centroid
-            // }
-        }
 
-    }
-    if(laneIdx == 0){
-        // printf("%u %f\n",candidate_to_centroid,max_dist);
-        max_min_cent_dist[blockIdx.x*nwarps+warpIdx] = max_dist;
-        candidates[blockIdx.x*nwarps+warpIdx] = candidate_to_centroid;
-    }
-       
+	// GET FIRST POINT TO BE THE FIRST CENTROID
+	// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+	// 	d_dataset,dataset_size,logic_dim,
+	// 	d_centroids, d_chosen_centroids);
+	
+	// cudaDeviceSynchronize();
+	// gpuErrchk( cudaPeekAtLastError() );
+
+	for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
+		find_new_centroid_kmeanspp<false, INDIRECT_POINTS><<<nblocks,nthreads,0,stream>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_labels,
+			d_upperbounds,d_lowerbounds,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist,
+			points_indexes
+		);
+		// cudaDeviceSynchronize();
+		// gpuErrchk( cudaPeekAtLastError() );
+
+        int shmem_append_centroids = max_threads*sizeof(int)+max_threads*sizeof(float) ;
+		append_centroid_kmeanspp<INDIRECT_POINTS><<<1,max_threads,shmem_append_centroids,stream>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist, nblocks*nwarps,
+			points_indexes
+		);
+		// cudaDeviceSynchronize();
+		// gpuErrchk( cudaPeekAtLastError() );
+
+		#if DEBUG_KMEANSPP_WRITE_FILES 
+			char filename[100];
+			
+			sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_centroids,
+				n_chosen_centroids+1,
+				dim,
+				filename
+			);
+
+			sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_lowerbounds,
+				dataset_size,
+				1,
+				filename
+			);
+		#endif
+
+
+	}
+
+	#if DEBUG_KMEANSPP_WRITE_FILES 
+		char filename[100];
+		sprintf(filename,"./out/kmeanspp-chosen_centroids.txt");
+		write_data_from_device(
+			(int*)d_chosen_centroids,
+			k,
+			1,
+			filename
+		);
+
+		sprintf(filename,"./out/points.txt");
+		write_data_from_device(
+			d_dataset,
+			dataset_size,
+			dim,
+			filename
+		);
+	#endif
+	label_last_centroid_kmeanspp<false, INDIRECT_POINTS><<<nblocks,nthreads,0,stream>>>(
+		d_dataset,dataset_size,
+		d_centroids,k,
+		dim,
+		d_labels,
+		d_upperbounds,d_lowerbounds,
+		points_indexes
+	);
+
+	// cudaDeviceSynchronize();
+	// gpuErrchk( cudaPeekAtLastError() );
 }
 
-// Find the point with the maximum distance to its nearest centroid
-// and append it to the centroids list
-// (following the KMeans++ initialization method (Arthur and Vassilvitskii, 2007))
-// This kernel is launched with a single block
-template <bool INDIRECT_POINTS=false>
-__global__
-void append_centroid_kmeanspp(float* dataset, uint dataset_size, 
-        float* centroids, uint n_chosen_centroids, uint dim,
-        uint* chosen_centroids,
-        uint* candidates, float* max_min_cent_dist, int total_candidates,
-        int* indexes=nullptr
+template <bool INDIRECT_POINTS = false>
+static inline
+void kmeanspp_workflow(
+	float* d_dataset, uint dataset_size, 
+	uint dim, uint k, 
+	//OUTPUTS
+	float* d_centroids,
+	uint* d_labels,
+	float* d_upperbounds,
+	float* d_lowerbounds,
+	uint* d_chosen_centroids,
+	uint* d_candidates_to_nextcent,
+	float* d_max_min_cent_dist,
+	//KERNEL PARAMS
+	int max_threads,
+	int nthreads,
+	int nblocks,
+	//OPTIONAL
+	int* points_indexes = NULL
 ){
-    __shared__ float sh_max_dist[MAX_THREADS];
-    __shared__ uint sh_next_cent[MAX_THREADS];
-    
-    float max = -1.0;
-    uint next_cent=0;
-    for(int i = threadIdx.x; i < total_candidates; i+=blockDim.x){
-        if(max < max_min_cent_dist[i]){
-            max = max_min_cent_dist[i];
-            next_cent = candidates[i];
-        }
-    }
-    sh_max_dist[threadIdx.x]=max;
-    sh_next_cent[threadIdx.x]=next_cent;
-    __syncthreads();
-
-    for (uint s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s) {
-            if(sh_max_dist[threadIdx.x] < sh_max_dist[threadIdx.x + s]){
-                sh_max_dist[threadIdx.x] = sh_max_dist[threadIdx.x + s];
-                sh_next_cent[threadIdx.x] = sh_next_cent[threadIdx.x + s];
-            }
-        }
-        __syncthreads();
-    }
-    uint new_cent = sh_next_cent[0];
-    if(threadIdx.x == 0){
-        // printf("new cent == %u dist == %f\n",sh_next_cent[0],sh_max_dist[0]);
-        chosen_centroids[n_chosen_centroids] = new_cent;
-    }
-    for(int i = threadIdx.x; i < dim; i+=blockDim.x){
-        int idx = INDIRECT_POINTS ? indexes[new_cent] : new_cent;
-        centroids[i+n_chosen_centroids*dim] = dataset[i+idx*dim];
-    }
+	kmeanspp_workflow_async<INDIRECT_POINTS>(
+		d_dataset, dataset_size,
+		dim, k,
+		//OUTPUTS
+		d_centroids,
+		d_labels,
+		d_upperbounds,
+		d_lowerbounds,
+		d_chosen_centroids,
+		d_candidates_to_nextcent,
+		d_max_min_cent_dist,
+		//KERNEL PARAMS
+		max_threads,
+		nthreads,
+		nblocks,
+		//OPTIONAL
+		points_indexes
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
 }
 
-template <bool CALC_SQRT=false, bool INDIRECT_POINTS=false>
-__global__
-void label_last_centroid_kmeanspp(float* dataset, uint dataset_size, 
-        float* centroids, uint k, uint dim, 
-        uint* labels,
-        float* upperbounds, float* lowerbounds,
-        int* indexes=nullptr
-){
 
-    // initialize variables
-    uint warpIdx = threadIdx.x / WARP_SIZE;
-    uint laneIdx = threadIdx.x % WARP_SIZE;
-    uint cent = k-1;
-
-    uint nwarps = blockDim.x / WARP_SIZE;
-
-    for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
-        ////////////////////////
-        // CALCULATE DISTANCE //
-        ////////////////////////
-        // float4 a,b;
-        // float s = 0.0f;
-        // uint nf = dim/4;
-        // for(uint d=laneIdx; d < nf; d+=WARP_SIZE){
-        //     a = reinterpret_cast<float4*>(dataset)[i*nf+d];
-        //     b = reinterpret_cast<float4*>(centroids)[cent*nf+d];
-        //     float4 diff;
-        //     diff.x = a.x - b.x;
-        //     diff.y = a.y - b.y;
-        //     diff.z = a.z - b.z;
-        //     diff.w = a.w - b.w;
-        //     s+=diff.x*diff.x;
-        //     s+=diff.y*diff.y;
-        //     s+=diff.z*diff.z;
-        //     s+=diff.w*diff.w;
-        // }
-        // s += __shfl_xor_sync( 0xffffffff, s,  1); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s,  2); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s,  4); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s,  8); // assuming warpSize=32
-        // s += __shfl_xor_sync( 0xffffffff, s, 16); // assuming warpSize=32	
-        // float new_dist = s;
-        ////////////////////////
-        ////////////////////////
-        float new_dist;
-        int idx = INDIRECT_POINTS ? indexes[i] : i;
-        if constexpr (CALC_SQRT == false) {
-            new_dist = warp_euclidean_distance_sqrd_float4( 
-                &dataset[idx*dim], 
-                &centroids[cent*dim], 
-                dim, 
-                laneIdx
-            );
-        } else {
-            new_dist = warp_euclidean_distance_float4( 
-                &dataset[idx*dim], 
-                &centroids[cent*dim], 
-                dim, 
-                laneIdx
-            );
-        }
-
-        // upperbounds[i] == min dist
-        // lowerbounds[i] == sec min dist
-        if(new_dist < lowerbounds[i]){
-            if(new_dist < upperbounds[i]){
-                lowerbounds[i] = upperbounds[i];
-                upperbounds[i] = new_dist;
-                labels[i] = cent;
-            }
-            else{
-                lowerbounds[i] = new_dist;
-            }
-        }
-    }
-}
-
-__global__
-void sum_all_points_to_centroid(
-        float* dataset, uint dataset_size, 
-        float* centroids, uint k, uint dim, 
-        uint* labels,
-        uint* label_count,
-        float* new_centroids
-    ){
-    uint tid = threadIdx.x + blockDim.x*blockIdx.x;
-    if(tid < dataset_size*dim){
-        uint p = tid / dim;
-        uint d = tid % dim;
-        uint c = labels[p];
-        if(d == 0){
-            atomicAdd(&label_count[c],1);
-        }
-        atomicAdd(&new_centroids[c*dim+d],dataset[tid]);
-    }
-}
-
-__global__
-void divide_sum_by_count(
-        float* new_centroids, uint k, uint dim,
-        uint* label_count
-    ){
-    uint tid = threadIdx.x + blockDim.x*blockIdx.x;
-    if(tid < k*dim){
-        uint c = tid / dim;
-        uint d = label_count[c];
-        new_centroids[tid]=new_centroids[tid]/d;
-    }
-}
-
-__global__
-void calculate_centroid_shift(
-        float* centroids, 
-        float* new_centroids, 
+template <bool INDIRECT_POINTS = false>
+void kmeanspp(float* d_dataset, uint dataset_size, 
         uint dim, uint k, 
-        float* centroid_shift, float* max_centroid_shift
-    ){
-    __shared__ float sm_centshift;
-    //////////////////////////////////
-    //   calculate centroid shift   //
-    //////////////////////////////////
-    float4 a,b;
-    float s = 0.0f;
-    uint nf = dim/4;
-    for(uint t=threadIdx.x; t < nf; t+=blockDim.x){
-        a = reinterpret_cast<float4*>(new_centroids)[blockIdx.x*nf+t];
-        b = reinterpret_cast<float4*>(centroids)[blockIdx.x*nf+t];
-        float4 diff;
-        diff.x = a.x - b.x;
-        diff.y = a.y - b.y;
-        diff.z = a.z - b.z;
-        diff.w = a.w - b.w;
-        s+=diff.x*diff.x;
-        s+=diff.y*diff.y;
-        s+=diff.z*diff.z;
-        s+=diff.w*diff.w;
-    }
-    atomicAdd(&sm_centshift,s);
-    __syncthreads();
+		uint verbosity,
+		//OUTPUTS
+		float* d_centroids,
+        uint* d_labels,
+		float* d_upperbounds_out = NULL,
+		int* points_indexes = NULL
+){
 
-    if(threadIdx.x == 0){
-        centroid_shift[blockIdx.x]=sm_centshift;
-        atomicMaxFloat(max_centroid_shift,sm_centshift);
-    }
+	// ALLOC MEMORY
+	cudaError_t err = cudaSuccess;
+	int devUsed = 0;
+	cudaSetDevice(devUsed);
+	cudaDeviceProp deviceProp;
+	cudaGetDeviceProperties(&deviceProp, devUsed);
+
+	int max_threads = deviceProp.maxThreadsPerBlock;
+	if(max_threads > MAX_THREADS && verbosity){
+		printf("WA in %s %d: The macro MAX_THREADS (%d) is lower than the device max threads per block (%d). \n", __FILE__,__LINE__, MAX_THREADS,max_threads);
+		max_threads = MAX_THREADS;
+	}
+	int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
+	if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
+	int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
+	int nwarps = nthreads / WARP_SIZE;
+
+	float *d_lowerbounds = NULL;
+	err = cudaMalloc((void **)&d_lowerbounds, sizeof(float)*dataset_size);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+
+	float *d_upperbounds = NULL;
+	if(d_upperbounds_out != NULL){
+		d_upperbounds = d_upperbounds_out;
+	}
+	else{
+		err = cudaMalloc((void **)&d_upperbounds, sizeof(float)*dataset_size);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to allocate device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	uint *d_chosen_centroids = NULL;
+	err = cudaMalloc((void **)&d_chosen_centroids, sizeof(uint)*k);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	float *d_max_min_cent_dist = NULL; 
+	err = cudaMalloc((void **)&d_max_min_cent_dist, sizeof(float)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	uint *d_candidates_to_nextcent = NULL; 
+	err = cudaMalloc((void **)&d_candidates_to_nextcent, sizeof(uint)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+
+	kmeanspp_workflow<INDIRECT_POINTS>(
+		d_dataset, dataset_size,
+		dim, k,
+		//OUTPUTS
+		d_centroids,
+		d_labels,
+		d_upperbounds,
+		d_lowerbounds,
+		d_chosen_centroids,
+		d_candidates_to_nextcent,
+		d_max_min_cent_dist,
+		//KERNEL PARAMS
+		max_threads,
+		nthreads,
+		nblocks,
+		//OPTIONAL
+		points_indexes
+	);
+
+	err = cudaFree(d_lowerbounds);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_lowerbounds (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+
+	if(d_upperbounds_out == NULL){
+		err = cudaFree(d_upperbounds);
+		if (err != cudaSuccess){
+			fprintf(stderr, "Failed to free device vector d_upperbounds (error code %s)!\n", cudaGetErrorString(err));
+			exit(EXIT_FAILURE);
+		}
+	}
+
+	err = cudaFree(d_chosen_centroids);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_max_min_cent_dist);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_candidates_to_nextcent);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
 }
 
+void kmeansppAndBoundsInitialization(float* d_dataset, uint dataset_size, 
+        uint dim, uint k, 
+		uint max_it, 
+		uint verbosity,
+		//OUTPUTS
+		float* d_centroids,
+        uint* d_labels,
+		float* d_upperbounds,
+		float* d_lowerbounds,
+		float* d_new_centroids,
+		uint* d_labels_count,
+		float* d_centroid_shift,
+		float* d_max_centroid_shift
+){
+
+	if(verbosity > 2){
+		printf("/////////////////////////\n");
+		printf("//      K-MEANS++      //\n");
+		printf("/////////////////////////\n");
+	}
+	// ALLOC MEMORY
+	cudaError_t err = cudaSuccess;
+	int devUsed = 0;
+	cudaSetDevice(devUsed);
+	cudaDeviceProp deviceProp;
+	cudaGetDeviceProperties(&deviceProp, devUsed);
+
+	int max_threads = deviceProp.maxThreadsPerBlock;
+	if(max_threads > MAX_THREADS){
+		printf("WA in %s %d: The macro MAX_THREADS (%d) is lower than the device max threads per block (%d). \n", __FILE__,__LINE__, MAX_THREADS,max_threads);
+		max_threads = MAX_THREADS;
+	}
+	int nthreads = deviceProp.maxThreadsPerMultiProcessor / 2;
+	if(nthreads > deviceProp.maxThreadsPerBlock) nthreads = deviceProp.maxThreadsPerBlock;
+	int nblocks = deviceProp.multiProcessorCount*(deviceProp.maxThreadsPerMultiProcessor/nthreads);
+	int nwarps = nthreads / WARP_SIZE;
 
 
-__global__
-void update_global_bounds(
-        uint* labels, uint dataset_size,
-        float* lowerbounds, float* upperbounds, 
-        float* centroid_shift, float* gm_max_centroid_shift
-    ){
-    float max_centroid_shift = *gm_max_centroid_shift;
+	uint *d_chosen_centroids = NULL;
+	err = cudaMalloc((void **)&d_chosen_centroids, sizeof(uint)*k);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	float *d_max_min_cent_dist = NULL; 
+	err = cudaMalloc((void **)&d_max_min_cent_dist, sizeof(float)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	uint *d_candidates_to_nextcent = NULL; 
+	err = cudaMalloc((void **)&d_candidates_to_nextcent, sizeof(uint)*nblocks*nwarps);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to allocate device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	//---
+	//initialize first centroid at random and set bounds as max float
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_upperbounds,dataset_size);
+	setMaxFloat<<<ceil((float)dataset_size/(float)nthreads),nthreads>>>(d_lowerbounds,dataset_size);
+	
+	// RANDOM FIRST CENTROID 
+	static unsigned long long seed = time(NULL);
+	initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+		d_dataset,dataset_size,dim,
+		d_centroids, d_chosen_centroids, seed);
+	seed+=1;
 
-    for(uint i=threadIdx.x+blockDim.x*blockIdx.x;
-            i<dataset_size;
-            i+=blockDim.x*gridDim.x){
-        lowerbounds[i]-=max_centroid_shift;
-        uint nearest = labels[i];
-        upperbounds[i]+=centroid_shift[nearest];
-    }
+	// GET FIRST POINT TO BE THE FIRST CENTROID
+	// initialize_first_cent_kmeanspp<<<1,max_threads>>>(
+	// 	d_dataset,dataset_size,logic_dim,
+	// 	d_centroids, d_chosen_centroids);
+	
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
 
+	for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
+		find_new_centroid_kmeanspp<true><<<nblocks,nthreads>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_labels,
+			d_upperbounds,d_lowerbounds,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist
+		);
+		cudaDeviceSynchronize();
+		gpuErrchk( cudaPeekAtLastError() );
+
+		//WARNING: max_threads has to be power of 2
+		append_centroid_kmeanspp<<<1,max_threads>>>(
+			d_dataset,dataset_size,
+			d_centroids,n_chosen_centroids,
+			dim,
+			d_chosen_centroids,
+			d_candidates_to_nextcent, d_max_min_cent_dist, nblocks*nwarps
+		);
+		cudaDeviceSynchronize();
+		gpuErrchk( cudaPeekAtLastError() );
+
+		#if DEBUG_KMEANSPP_WRITE_FILES 
+			char filename[100];
+			sprintf(filename,"./out/centroids-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_centroids,
+				n_chosen_centroids+1,
+				dim,
+				filename
+			);
+
+			sprintf(filename,"./out/labels-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				(int*)d_labels,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/upperbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_upperbounds,
+				dataset_size,
+				1,
+				filename
+			);
+
+
+			sprintf(filename,"./out/lowerbound-kmeanspp-it-%03u.txt",n_chosen_centroids);
+			write_data_from_device(
+				d_lowerbounds,
+				dataset_size,
+				1,
+				filename
+			);
+		#endif
+
+
+	}
+
+	#if DEBUG_KMEANSPP_WRITE_FILES 
+		char filename[100];
+		sprintf(filename,"./out/chosen_centroids.txt",d_chosen_centroids);
+		write_data_from_device(
+			(int*)d_chosen_centroids,
+			k,
+			1,
+			filename
+		);
+	#endif
+	
+	label_last_centroid_kmeanspp<true><<<nblocks,nthreads>>>(
+		d_dataset,dataset_size,
+		d_centroids,k,
+		dim,
+		d_labels,
+		d_upperbounds,d_lowerbounds
+	);
+
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	cudaMemset(d_labels_count, 0, sizeof(uint)*k);	
+	cudaMemset(d_new_centroids, 0, sizeof(float)*k*dim);	
+	sum_all_points_to_centroid<<<ceil(dataset_size*dim/(float)nthreads),nthreads>>>(
+		d_dataset,dataset_size,
+		d_centroids,k,
+		dim,
+		d_labels,
+		d_labels_count,
+		d_new_centroids
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	divide_sum_by_count<<<ceil(k*dim/(float)nthreads),nthreads>>>(
+		d_new_centroids, k, dim,
+		d_labels_count
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	cudaMemset(d_max_centroid_shift, 0, sizeof(float));	
+	calculate_centroid_shift<<<k,nthreads>>>(
+		d_centroids,
+		d_new_centroids, 
+		dim,k,
+		d_centroid_shift,d_max_centroid_shift
+	);
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	update_global_bounds<<<nblocks,nthreads>>>(
+		d_labels,
+		dataset_size,
+		d_lowerbounds,d_upperbounds,
+		d_centroid_shift,d_max_centroid_shift
+	);      
+	cudaDeviceSynchronize();
+	gpuErrchk( cudaPeekAtLastError() );
+
+	err = cudaFree(d_chosen_centroids);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_chosen_centroids (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_max_min_cent_dist);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_max_min_cent_dist (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
+	err = cudaFree(d_candidates_to_nextcent);
+	if (err != cudaSuccess){
+		fprintf(stderr, "Failed to free device vector d_candidates_to_nextcent (error code %s)!\n", cudaGetErrorString(err));
+		exit(EXIT_FAILURE);
+	}
 }
-    // __shared__ float sh_sqrdNormError;
-    // float local_sqrdNormError;
-    // if(threadIdx.x == 0)
-    //     sh_sqrdNormError = 0;
-    
-    // __syncthreads();
 
-    // if( tid < k*dim){
-    //     local_sqrdNormError = centroids[tid] - new_centroids[tid];
-    //     local_sqrdNormError = local_sqrdNormError*local_sqrdNormError;
-    //     atomicAdd(&sh_sqrdNormError,local_sqrdNormError);
-    // }
-
-    // __syncthreads();
-
-    // if(threadIdx.x == 0)
-    //     atomicAdd(sqrdNormError,local_sqrdNormError);
-
-#endif // KMEANSPP_CU
+#endif
