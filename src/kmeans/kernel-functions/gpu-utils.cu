@@ -284,4 +284,27 @@ T warp_reduction(
     // return the result
 	return local_val;
 }
+
+void write_data_from_device(float* d_data, uint n, uint d, char* filename) {
+
+	thrust::host_vector<float> h_data(d*n);
+	cudaMemcpy(thrust::raw_pointer_cast(h_data.data()), d_data, sizeof(float)*d*n, cudaMemcpyDeviceToHost);
+	write_data(
+		filename,
+		n,
+		d,
+		thrust::raw_pointer_cast(h_data.data()));
+}
+
+void write_data_from_device(int* d_data, uint n, uint d, char* filename) {
+
+	thrust::host_vector<int> h_data(d*n);
+	cudaMemcpy(thrust::raw_pointer_cast(h_data.data()), d_data, sizeof(int)*d*n, cudaMemcpyDeviceToHost);
+	write_data(
+		filename,
+		n,
+		d,
+		thrust::raw_pointer_cast(h_data.data()));
+}
+
 #endif

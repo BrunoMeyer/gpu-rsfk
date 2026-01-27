@@ -9,7 +9,7 @@
 
 #include "kernel-functions/gpu-utils.cu"
 
-#include "kernel-functions/kmeanspp.cu"
+#include "kmeanspp.cu"
 
 
 //FIRST ITERATION 

@@ -117,6 +117,65 @@ void copy_and_pad_kernel(
 
 }
 
+TreeInfo build_treeinfo(
+    int* clusters_starts,
+    int* clusters_sizes,
+    int finished_clusters,
+    int not_finished_clusters,
+    int* indexes,
+    int n_points,
+    int max_bucket_size
+) {
+    int total_buckets = finished_clusters + not_finished_clusters;
+
+    printf("Finished clusters: %d\n", finished_clusters);
+    printf("Not finished clusters: %d\n", not_finished_clusters);
+
+    thrust::device_vector<int> d_nodes_bucket(total_buckets * max_bucket_size, -1);
+    thrust::device_vector<int> d_bucket_size(total_buckets, 0);
+
+    GpuPtr<int> clusters_starts_gpu(total_buckets);
+    GpuPtr<int> clusters_sizes_gpu(total_buckets);
+
+    clusters_starts_gpu.copyFromHost(clusters_starts, finished_clusters);
+    clusters_sizes_gpu.copyFromHost(clusters_sizes, finished_clusters);
+
+    cudaDeviceProp deviceProp;
+    cudaGetDeviceProperties(&deviceProp, 0);
+
+    int max_threads = deviceProp.maxThreadsPerBlock;
+    int nthreads = max_threads / 2;
+    int nblocks =
+        deviceProp.multiProcessorCount * (max_threads / nthreads);
+
+    split_clusters_kernel<<<1, max_threads>>>(
+        clusters_starts_gpu.ptr(),
+        clusters_sizes_gpu.ptr(),
+        finished_clusters,
+        max_bucket_size
+    );
+
+    copy_and_pad_kernel<<<nblocks, nthreads>>>(
+        indexes,
+        thrust::raw_pointer_cast(d_nodes_bucket.data()),
+        thrust::raw_pointer_cast(d_bucket_size.data()),
+        clusters_starts_gpu.ptr(),
+        clusters_sizes_gpu.ptr(),
+        total_buckets,
+        max_bucket_size
+    );
+
+    cudaDeviceSynchronize();
+    gpuErrchk( cudaPeekAtLastError() );
+
+    return TreeInfo(
+        total_buckets,
+        max_bucket_size,
+        d_nodes_bucket,
+        d_bucket_size
+    );
+}
+
 //////////////////////
 // RECURSIVE KMEANS //
 //////////////////////
@@ -276,49 +335,15 @@ TreeInfo recursive_kmeans(
         &not_finished_clusters
     );
 
-    int total_buckets = finished_clusters + not_finished_clusters;
-
-    //debug print finished and not finished clusters
-    printf("Finished clusters: %d\n", finished_clusters);
-    printf("Not finished clusters: %d\n", not_finished_clusters);
-
-    thrust::device_vector<int> d_nodes_bucket(total_buckets * max_bucket_size, -1);
-    thrust::device_vector<int> d_bucket_size(total_buckets, 0);
-
-    GpuPtr<int> clusters_starts_gpu(total_buckets);
-    GpuPtr<int> clusters_sizes_gpu(total_buckets);
-    clusters_starts_gpu.copyFromHost(clusters_starts, finished_clusters);
-    clusters_sizes_gpu.copyFromHost(clusters_sizes, finished_clusters);
-
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
-
-    int max_threads = deviceProp.maxThreadsPerBlock;
-    int nthreads = max_threads/2;
-    int nblocks = deviceProp.multiProcessorCount*(max_threads/nthreads);
-
-    split_clusters_kernel<<<1, max_threads>>>(
-        clusters_starts_gpu.ptr(),
-        clusters_sizes_gpu.ptr(),
+    TreeInfo tinfo = build_treeinfo(
+        clusters_starts,
+        clusters_sizes,
         finished_clusters,
-        max_bucket_size
-    );
-
-    copy_and_pad_kernel<<<nblocks, nthreads>>>(
+        not_finished_clusters,
         indexes.ptr(),
-        thrust::raw_pointer_cast(d_nodes_bucket.data()),
-        thrust::raw_pointer_cast(d_bucket_size.data()),
-        clusters_starts_gpu.ptr(),
-        clusters_sizes_gpu.ptr(),
-        total_buckets,
+        n_points,
         max_bucket_size
     );
-
-    cudaDeviceSynchronize();
-
-    TreeInfo tinfo = TreeInfo(total_buckets, max_bucket_size,
-                              d_nodes_bucket, d_bucket_size);
-
 
     // tinfo.print_info();
     // tinfo.print_buckets();
@@ -328,5 +353,445 @@ TreeInfo recursive_kmeans(
 
     return tinfo;
 }
+
+//====================================================================
+// KMEANS RECURSIVE SPLITTING GPU RESOURCES VERSION
+class KMeansStream {
+public:
+    bool initialized{false};
+
+    //kernel launch parameters
+    cudaStream_t stream{nullptr};
+    int nthreads;
+    int maxthreads;
+    int maxblocks;
+    int maxwarps;
+    int max_shared_mem;
+
+    //data pointers
+    float* points;      // dataset N × D (not owned)
+    int* indexes;     // indexes of points in the dataset (not owned)
+
+    //parameters
+    int max_points;
+    int dim;
+    int k;
+
+    //working space
+    int wsstart;
+    int wssize;
+
+    //outputs
+    GpuPtr<int> labels_count;  // K
+
+    //cpu output buffers
+    int* clusters_sizes{nullptr}; // K
+
+    // working memory: device memory allocated to run kmeans, 
+    // but nothing is stored here after the call (all results are in )
+    GpuPtr<int> workmem_labels;     // N 
+    GpuPtr<float> workmem_centroids;   // K × D
+    GpuPtr<float> workmem_dist_to_centroids;   // N
+    GpuPtr<float> workmem_sec_dist_to_centroids;   // N
+    GpuPtr<int> workmem_chosen_centroids; // K
+    GpuPtr<int> workmem_candidates_to_nextcent; // max warps 
+    GpuPtr<float> workmem_max_min_cent_dist;   // max warps
+
+    //====================================================================
+    // class constructors
+
+    //default constructor
+    KMeansStream() = default;
+
+    void init(
+        float* d_points,
+        int* d_indexes,
+        int max_points_,
+        int dim_,
+        int k_,
+        int nthreads_=0,
+        int maxthreads_=0,
+        int maxblocks_=0
+    ) {
+        if(initialized) {
+            printf("WARNING: KMeansStream already initialized.\n");
+            return;
+        }
+
+        points = d_points;
+        indexes = d_indexes;
+        max_points = max_points_;
+        dim = dim_;
+        k = k_;
+        wsstart = 0;
+        wssize = 0;
+        nthreads = nthreads_;
+        maxthreads = maxthreads_;
+        maxblocks = maxblocks_;
+        
+        //get device properties
+        cudaDeviceProp deviceProp;
+        cudaGetDeviceProperties(&deviceProp, 0);
+        if(maxthreads == 0) maxthreads = deviceProp.maxThreadsPerBlock;
+        if(nthreads == 0) nthreads = maxthreads / 2;
+        if(maxblocks == 0) {
+            maxblocks = deviceProp.multiProcessorCount * (maxthreads / nthreads);
+        }
+        max_shared_mem = deviceProp.sharedMemPerBlock;
+
+        //shared memory size for counting labels
+        int shared_mem_size = nthreads * sizeof(int);
+        if(shared_mem_size > max_shared_mem) {
+            printf("Warning: shared memory size (%d) is larger than the device max shared memory per block (%d).", shared_mem_size, max_shared_mem);
+        }
+        cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+
+        //allocate output memory on gpu
+        labels_count.allocate(k);
+
+        //allocate working memory on gpu
+        workmem_labels.allocate(max_points);
+        workmem_centroids.allocate(k * dim);
+        workmem_dist_to_centroids.allocate(max_points);
+        workmem_sec_dist_to_centroids.allocate(max_points);
+        workmem_chosen_centroids.allocate(k);
+
+        maxwarps = maxblocks * nthreads / 32;
+        workmem_candidates_to_nextcent.allocate(maxwarps);
+        workmem_max_min_cent_dist.allocate(maxwarps);
+        
+        clusters_sizes  = (int*)malloc(k * sizeof(int));
+        
+        initialized = true;
+    }
+
+    KMeansStream(
+        float* d_points,
+        int* d_indexes,
+        int max_points_,
+        int dim_,
+        int k_,
+        int nthreads=0,
+        int maxthreads=0,
+        int maxblocks=0
+    ){
+        init(
+            d_points,
+            d_indexes,
+            max_points_,
+            dim_,
+            k_,
+            nthreads,
+            maxthreads,
+            maxblocks
+        );
+    }
+
+    //====================================================================
+    // class methods
+
+    void run_async(
+            int wsstart,
+            int wssize,
+            int nblocks=-1,
+            int nthreads=-1
+    ) {
+        this->wsstart = wsstart;
+        this->wssize = wssize;
+
+        if(wssize > max_points) {
+            printf("Warning: wssize (%d) is larger than max_points (%d). Setting wssize to max_points.\n", wssize, max_points);
+            this->wssize = max_points;
+            //resize working memory (costly but needed)
+            workmem_labels.resize(max_points);
+            workmem_dist_to_centroids.resize(max_points);
+            workmem_sec_dist_to_centroids.resize(max_points);
+        }
+
+        if(nblocks > maxblocks || nthreads > maxthreads) {
+            int needed_warps = nblocks * nthreads / 32;
+            if(needed_warps > maxwarps) {
+                printf("Warning: needed working memory is larger than the allocated at the initialization time (%d warps > %d warps). Resizing working memory.\n", needed_warps, maxwarps);
+                maxwarps = needed_warps;
+                workmem_candidates_to_nextcent.resize(maxwarps);
+                workmem_max_min_cent_dist.resize(maxwarps);
+            }
+        }
+
+        if(nblocks == -1) nblocks = this->maxblocks;
+        if(nthreads == -1) nthreads = this->nthreads;
+        //--- Run kmeans++ to assign labels
+        kmeanspp_workflow_async<true>(
+            points,
+            wssize,
+            dim,
+            k,
+            //OUTPUTS
+            workmem_centroids.ptr(),
+            (uint*)workmem_labels.ptr(),
+            workmem_dist_to_centroids.ptr(),
+            workmem_sec_dist_to_centroids.ptr(),
+            (uint*)workmem_chosen_centroids.ptr(),
+            (uint*)workmem_candidates_to_nextcent.ptr(),
+            workmem_max_min_cent_dist.ptr(),
+            //KERNEL PARAMS
+            maxthreads,
+            nthreads,
+            nblocks,
+            //OPTIONAL
+            indexes + wsstart,
+            stream
+        );
+
+        //count labels
+        cudaMemsetAsync(labels_count.ptr(), 0, k * sizeof(int), stream);
+
+        //--- Launch kernel to count labels
+        int shared_mem_size = nthreads * sizeof(int);
+        count_labels_kernel<<<nblocks, nthreads, shared_mem_size, stream>>>(
+            workmem_labels.ptr(), 
+            labels_count.ptr(), 
+            wssize, 
+            k
+        );
+
+        // copy labells count to clusters_sizes
+        cudaMemcpyAsync(
+            clusters_sizes, 
+            labels_count.ptr(), 
+            k * sizeof(int), 
+            cudaMemcpyDeviceToHost,
+            stream
+        );
+    }
+
+    void sync() {
+        cudaStreamSynchronize(stream);
+
+        //debug:
+        if(wsstart + wssize > max_points) {
+            printf("ERROR: OUT OF RANGE!!! wsstart (%d) + wssize (%d) > max_points (%d)\n", wsstart, wssize, max_points);
+            exit(1);
+        }
+        
+        // sort out indexes for each cluster
+        sort_labels_indexes(workmem_labels.ptr(), indexes + wsstart, wssize);
+    }
+
+    void cpy_results(
+        int* out_clusters_sizes
+    ) {
+        memcpy(
+            out_clusters_sizes,
+            clusters_sizes,
+            k * sizeof(int)
+        );
+    }
+
+    void sync_and_cpy_results(
+        int* out_clusters_sizes
+    ) {
+        sync();
+        cpy_results(
+            out_clusters_sizes
+        );
+    }
+    //====================================================================
+    // class properties and destructor
+    ~KMeansStream() {
+        if (stream) cudaStreamDestroy(stream);
+        if (clusters_sizes) free(clusters_sizes);
+    }
+
+    KMeansStream(const KMeansStream&) = delete;
+    KMeansStream& operator=(const KMeansStream&) = delete;
+
+    KMeansStream(KMeansStream&&) noexcept = default;
+    KMeansStream& operator=(KMeansStream&&) noexcept = default;
+
+};
+
+void stream_recursive_call(
+    std::vector<KMeansStream>& streams,
+    int* indexes,
+    float* points,
+    int dim,
+    int k,
+    int max_depth,
+    int max_bucket_size,
+    int depth,
+    int my_offset,
+
+    int* upper_level_clusters_sizes,
+
+    int* final_clusters_starts,
+    int* final_clusters_sizes,
+    int* finished_clusters, 
+    int* not_finished_clusters,
+
+    int upper_level_points
+){
+    // int n_streams = streams.size();
+    // printf("Depth %d: processing %d clusters with %d streams.\n", depth, k, n_streams);
+
+    // For each cluster in this level, check if we need to recurse
+    int offset = my_offset;
+    for (int cluster_id = 0; cluster_id < k; ++cluster_id) {
+        int count = upper_level_clusters_sizes[cluster_id];
+
+        int maxblocks = streams[cluster_id].maxblocks;
+        // int maxpoints = streams[cluster_id].max_points;
+        int nblocks = maxblocks;
+
+        // int nblocks = round((double)count/upper_level_points * maxblocks);
+        nblocks = min(nblocks, maxblocks);
+
+        if (count >= max_bucket_size && depth < max_depth) {
+            //run kmeans in the stream
+            // int stream_id = cluster_id % n_streams;
+            int stream_id = cluster_id;
+            streams[stream_id].run_async(
+                offset,
+                count,
+                nblocks
+            );
+        } else {
+            // Mark cluster as finished
+            int finished_index = (*finished_clusters)++;
+            final_clusters_starts[finished_index] = offset;
+            final_clusters_sizes[finished_index] = count;
+
+            //since all clusters has to be smaller than max_bucket_size
+            //the number of not finished clusters is count / max_bucket_size
+            //Note: this happens when max depth is reached and cluster is still too big
+            (*not_finished_clusters) += count / max_bucket_size;
+        }
+        offset += count;
+    }
+
+    //allocate memory for next level clusters sizes
+    int* level_clusters_sizes = (int*)malloc(k * k * sizeof(int));
+
+    //sync all streams and get 
+    for (int cluster_id = 0; cluster_id < k; ++cluster_id) {
+        int count = upper_level_clusters_sizes[cluster_id];
+        if (count >= max_bucket_size && depth < max_depth) {
+            // int stream_id = cluster_id % n_streams;
+            int stream_id = cluster_id;
+            streams[stream_id].sync_and_cpy_results(
+                &level_clusters_sizes[cluster_id*k]
+            );
+        }
+    }
+    
+    offset = my_offset;
+    for (int cluster_id = 0; cluster_id < k; ++cluster_id) {
+        int count = upper_level_clusters_sizes[cluster_id];
+        if (count >= max_bucket_size && depth < max_depth) {
+            stream_recursive_call(
+                streams,
+                indexes,
+                points,
+                dim,
+                k,
+                max_depth,
+                max_bucket_size,
+                depth + 1,
+                offset,
+
+                &level_clusters_sizes[cluster_id*k],
+
+                final_clusters_starts,
+                final_clusters_sizes,
+                finished_clusters,
+                not_finished_clusters,
+                count
+            );
+        }
+        offset += count;
+    }
+    free(level_clusters_sizes);
+}
+
+TreeInfo stream_recursive_kmeans(
+    float* points,
+    int n_points,
+    int dim,
+    int k,
+    int max_depth,
+    int max_bucket_size
+){
+    int finished_clusters = 0;
+    int not_finished_clusters = 0;
+    
+    int* final_clusters_starts = (int*)malloc(n_points * sizeof(int));
+    int* final_clusters_sizes  = (int*)malloc(n_points * sizeof(int));
+
+    GpuPtr<int> indexes(n_points);
+    indexes.fillSequential();
+
+    std::vector<KMeansStream> streams(k);
+    for(int i = 0; i < k; ++i) {
+        streams[i].init(
+            points,
+            indexes.ptr(),
+            n_points,
+            dim,
+            k
+        );
+    }
+
+    //run the first kmeans on the whole dataset in the first stream
+    streams[0].run_async(
+        0,
+        n_points
+    );
+    int* level_clusters_sizes  = (int*)malloc(k * sizeof(int));
+
+    //wait for the first kmeans to finish
+    streams[0].sync_and_cpy_results(
+        level_clusters_sizes
+    );
+
+    stream_recursive_call(
+        streams,
+        indexes.ptr(),
+        points,
+        dim,
+        k,
+        max_depth,
+        max_bucket_size,
+        0,
+        0,
+
+        level_clusters_sizes,
+
+        final_clusters_starts,
+        final_clusters_sizes,
+        &finished_clusters,
+        &not_finished_clusters,
+        n_points
+    );
+
+    TreeInfo tinfo = build_treeinfo(
+        final_clusters_starts,
+        final_clusters_sizes,
+        finished_clusters,
+        not_finished_clusters,
+        indexes.ptr(),
+        n_points,
+        max_bucket_size
+    );
+    
+    // tinfo.print_info();
+    // tinfo.print_buckets();
+    
+    free(level_clusters_sizes);
+    free(final_clusters_starts);
+    free(final_clusters_sizes);
+
+    return tinfo;
+}
+
 
 #endif // RECURSIVE_KMEANS_CU

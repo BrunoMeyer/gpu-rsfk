@@ -1,7 +1,8 @@
 #ifndef KMEANS_UTILS_CU
 #define KMEANS_UTILS_CU
+template <typename T>
 __global__
-void count_labels_kernel(const uint* labels, int* label_counts, int num_points, int num_clusters) {
+void count_labels_kernel(T* labels, int* label_counts, int num_points, int num_clusters) {
     extern __shared__ int shared_counts[];
     for (int i = threadIdx.x; i < num_clusters; i += blockDim.x) {
         shared_counts[i] = 0;

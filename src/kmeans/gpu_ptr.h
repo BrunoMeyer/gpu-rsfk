@@ -18,7 +18,7 @@ private:
     size_t count;
     bool owning;
 
-    void allocate(size_t n) {
+    void _allocate(size_t n) {
         if (n == 0) return;
         cudaError_t err = cudaMalloc(&raw_ptr, n * sizeof(T));
         if (err != cudaSuccess) {
@@ -36,7 +36,7 @@ public:
     GpuPtr() : raw_ptr(nullptr), count(0), owning(false) {}
 
     explicit GpuPtr(size_t n) : raw_ptr(nullptr), count(0), owning(true) {
-        allocate(n);
+        _allocate(n);
     }
 
     // Wrap existing pointer on creation (non-owning)
@@ -59,8 +59,12 @@ public:
             cudaFree(raw_ptr);
         }
         count = n;
-        allocate(n);
+        _allocate(n);
         owning = true;
+    }
+
+    void allocate(size_t n) {
+        alloc(n);
     }
 
     // --- attach external memory ---
@@ -83,7 +87,7 @@ public:
         }
         raw_ptr = nullptr;
         count = 0;
-        allocate(n);
+        _allocate(n);
         owning = true;
     }
 
@@ -139,7 +143,7 @@ public:
         if (raw_ptr) cudaFree(raw_ptr);
         raw_ptr = nullptr;
         count = 0;
-        allocate(n);
+        _allocate(n);
     }
 
     // -----------------------------
