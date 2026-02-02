@@ -378,6 +378,7 @@ TreeInfo create_bucket_from_kmeans(
                 // D,
                 kinfo->logic_dim,
                 k,
+                32,
                 max_depth,
                 bucket_size_limit
             );

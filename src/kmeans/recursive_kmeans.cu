@@ -743,6 +743,7 @@ void stream_recursive_call(
     int dim,
     int k,
     int max_depth,
+    int min_bucket_size,
     int max_bucket_size,
     int depth,
     int my_offset,
@@ -759,6 +760,50 @@ void stream_recursive_call(
     // int n_streams = streams.size();
     // printf("Depth %d: processing %d clusters with %d streams.\n", depth, k, n_streams);
 
+    // Guarantee that all clusters have at least min_bucket_size elements.
+    for (int cluster_id = 0; cluster_id < k; ++cluster_id) {
+        int count = upper_level_clusters_sizes[cluster_id];
+        if (count < min_bucket_size) {
+            if (count == 0){
+                continue;
+            }
+            // Join cluster i with cluster i + 1.
+            for(int next_id = cluster_id+1; next_id < k; ++next_id){
+                int next_count = upper_level_clusters_sizes[next_id];
+                count+=next_count;
+                upper_level_clusters_sizes[cluster_id]=count;
+                upper_level_clusters_sizes[next_id]=0;
+                if(count >= min_bucket_size) break;
+            }
+            if(count < min_bucket_size) {
+                // If i cannot be joined with i + 1 (i + 1 > k), then join cluster i with i - 1.
+                for(int previous_id = cluster_id-1; previous_id >= 0; --previous_id){
+                    int previous_count = upper_level_clusters_sizes[previous_id];
+                    count+=previous_count;
+                    upper_level_clusters_sizes[previous_id]=count;
+                    upper_level_clusters_sizes[previous_id+1]=0;
+                    if(count >= min_bucket_size) break;
+                }
+                // If all clusters are joined, give up: the cluster is equal to the upper-level cluster.
+                if(upper_level_clusters_sizes[0] == upper_level_points){
+                    // Mark cluster as finished
+                    int finished_index = (*finished_clusters)++;  
+                    final_clusters_starts[finished_index] = my_offset;
+                    final_clusters_sizes[finished_index] = upper_level_clusters_sizes[0];
+                    
+                    //since all clusters has to be smaller than max_bucket_size
+                    //the number of not finished clusters is count / max_bucket_size
+                    //Note: this happens when max depth is reached and cluster is still too big
+                    (*not_finished_clusters) += upper_level_clusters_sizes[0] / max_bucket_size;
+                    
+                    printf("WARNING DEBUG: KMEANS PRODUCED THE SAME CLUSTERING TWICE\n");
+                    return;
+                }
+                break;
+            }
+        }
+    }
+    
     // For each cluster in this level, check if we need to recurse
     int offset = my_offset;
     for (int cluster_id = 0; cluster_id < k; ++cluster_id) {
@@ -769,7 +814,7 @@ void stream_recursive_call(
         int nblocks = maxblocks;
 
         // int nblocks = round((double)count/upper_level_points * maxblocks);
-        nblocks = min(nblocks, maxblocks);
+        // nblocks = min(nblocks, maxblocks);
 
         if (count >= max_bucket_size && depth < max_depth) {
             //run kmeans in the stream
@@ -823,6 +868,7 @@ void stream_recursive_call(
                 dim,
                 k,
                 max_depth,
+                min_bucket_size,
                 max_bucket_size,
                 depth + 1,
                 offset,
@@ -847,6 +893,7 @@ TreeInfo stream_recursive_kmeans_core(
     int dim,
     int k,
     int max_depth,
+    int min_bucket_size,
     int max_bucket_size,
     int* indexes,
     std::vector<KMeansStream>& streams,
@@ -866,6 +913,7 @@ TreeInfo stream_recursive_kmeans_core(
         dim,
         k,
         max_depth,
+        min_bucket_size,
         max_bucket_size,
         0,
         0,
@@ -902,6 +950,7 @@ TreeInfo stream_recursive_kmeans(
     int dim,
     int k,
     int max_depth,
+    int min_bucket_size,
     int max_bucket_size
 ){
     GpuPtr<int> indexes(n_points);
@@ -936,6 +985,7 @@ TreeInfo stream_recursive_kmeans(
         dim,
         k,
         max_depth,
+        min_bucket_size,
         max_bucket_size,
         indexes.ptr(),
         streams,
@@ -1108,6 +1158,7 @@ public:
 
     TreeInfo run_kmeans(
             int max_depth,
+            int min_bucket_size,
             int max_bucket_size_,
             int k
     ) {
@@ -1148,6 +1199,7 @@ public:
             dim,
             k,
             max_depth,
+            min_bucket_size,
             max_bucket_size,
             0,
             0,
@@ -1271,11 +1323,13 @@ public:
     
     TreeInfo create_bucket_kmeans(
         int max_depth,
+        int min_bucket_size,
         int max_bucket_size_,
         int k
     ) {
         run_kmeans(
             max_depth,
+            min_bucket_size,
             max_bucket_size_,
             k
         );
@@ -1291,6 +1345,7 @@ public:
 
     TreeInfo run_hybrid(
         int max_depth,
+        int min_bucket_size,
         int max_bucket_size,
         int k
     ) {
@@ -1333,6 +1388,23 @@ public:
 
         int* level_clusters_sizes  = (int*)malloc(k * sizeof(int));
         for(int i = 0; i < nclusters; ++i) {
+            int count = cpu_bucket_sizes[i];
+            int offset = i*maxclustersize;
+            if (count < max_bucket_size) {
+                if(count > 0) {   
+                    // Mark cluster as finished
+                    int finished_index = finished_clusters++;  
+                    
+                    final_clusters_starts[finished_index] = offset;
+                    final_clusters_sizes[finished_index] = count;
+                    
+                    //since all clusters has to be smaller than max_bucket_size
+                    //the number of not finished clusters is count / max_bucket_size
+                    //Note: this happens when max depth is reached and cluster is still too big
+                    not_finished_clusters += count / max_bucket_size;
+                }
+                continue;
+            }
             // streams[0].check_inputs(
             //     i*maxclustersize,
             //     cpu_bucket_sizes[i],
@@ -1359,6 +1431,7 @@ public:
                 dim,
                 k,
                 max_depth,
+                min_bucket_size,
                 max_bucket_size,
                 0,
                 i*maxclustersize,

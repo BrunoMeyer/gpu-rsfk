@@ -2040,7 +2040,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                std::string partition_method="random",
                                float alpha_partition_selection=0.5f,
                                std::string kmeans_method="kmeanspp_logc",
-                               int kmeans_run_frequency=1000
+                               int kmeans_run_frequency=7
 )
 {
     printf("kmeans_run_frequency = %d\n", kmeans_run_frequency);
@@ -2164,13 +2164,14 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                 forest_log.count_tree += 1;
 
                 // kmeans parameters
-                int kmeans_k = 4; //max k
+                int kmeans_k = 32; //max k
                 int kmeans_max_depth = 1000;
+                int kmeans_min_bucket_size = K;
                 int kmeans_max_bucket_size = 1024;
                 
                 //rsfk parameters
                 int rsfk_min_cluster_size = K;
-                int rsfk_max_cluster_size = 64000;
+                int rsfk_max_cluster_size = 32*1024;
                 int rsfk_max_depth = kmeans_max_depth;
                 //print all parameters
                 // printf("RSFK Recursive KMeans parameters:\n");
@@ -2199,6 +2200,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                 }
                 tinfo = hkmeans.run_hybrid(
                     kmeans_max_depth,
+                    kmeans_min_bucket_size,
                     kmeans_max_bucket_size,
                     kmeans_k
                 );
