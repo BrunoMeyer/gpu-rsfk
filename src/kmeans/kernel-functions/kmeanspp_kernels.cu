@@ -67,7 +67,15 @@ void find_new_centroid_kmeanspp(float* dataset, uint dataset_size,
 
     // for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*blockDim.x){
     for(uint i = warpIdx+blockIdx.x*nwarps; i < dataset_size; i += nwarps*gridDim.x){
-        int idx = INDIRECT_POINTS ? indexes[i] : i;
+        // int idx = INDIRECT_POINTS ? indexes[i] : i;
+        int idx;
+        if constexpr (INDIRECT_POINTS == false) {
+            idx = i;
+        } else {
+            idx = indexes[i];
+            if(idx == -1)
+                continue;
+        }
         ////////////////////////
         // CALCULATE DISTANCE //
         ////////////////////////
@@ -191,7 +199,15 @@ void append_centroid_kmeanspp(float* dataset, uint dataset_size,
         chosen_centroids[n_chosen_centroids] = new_cent;
     }
     for(int i = threadIdx.x; i < dim; i+=blockDim.x){
-        int idx = INDIRECT_POINTS ? indexes[new_cent] : new_cent;
+        // int idx = INDIRECT_POINTS ? indexes[new_cent] : new_cent;
+        int idx;
+        if constexpr (INDIRECT_POINTS == false) {
+            idx = new_cent;
+        } else {
+            idx = indexes[new_cent];
+            if(idx == -1)
+                continue;
+        }
         centroids[i+n_chosen_centroids*dim] = dataset[i+idx*dim];
     }
 }
@@ -241,7 +257,15 @@ void label_last_centroid_kmeanspp(float* dataset, uint dataset_size,
         ////////////////////////
         ////////////////////////
         float new_dist;
-        int idx = INDIRECT_POINTS ? indexes[i] : i;
+        // int idx = INDIRECT_POINTS ? indexes[i] : i;
+        int idx;
+        if constexpr (INDIRECT_POINTS == false) {
+            idx = i;
+        } else {
+            idx = indexes[i];
+            if(idx == -1)
+                continue;
+        }
         if constexpr (CALC_SQRT == false) {
             new_dist = warp_euclidean_distance_sqrd_float4( 
                 &dataset[idx*dim], 

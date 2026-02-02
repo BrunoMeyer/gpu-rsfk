@@ -91,6 +91,15 @@ public:
         owning = true;
     }
 
+    void createFromHost(const T* h_data, size_t n) {
+        if (raw_ptr && owning) {
+            cudaFree(raw_ptr);
+        }
+        _allocate(n);
+        owning = true;
+        copyFromHost(h_data, n);
+    }
+
     // -----------------------------
     // DISABLE COPY (prevents double free)
     // -----------------------------
@@ -171,6 +180,12 @@ public:
         constexpr int BLOCK = 256;
         int grid = (count + BLOCK - 1) / BLOCK;
         fillSequential_kernel<<<grid, BLOCK>>>(raw_ptr, count);
+        cudaDeviceSynchronize();
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            fprintf(stderr, "fillSequential_kernel launch failed (%s)\n", cudaGetErrorString(err));
+            exit(EXIT_FAILURE);
+        }
     }  
 
     // -----------------------------
@@ -186,6 +201,9 @@ public:
 
 
     void copyFromDevice(const T* d_data, size_t n) {
+        if(n > count) {
+            realloc(n);
+        }
         cudaError_t err = cudaMemcpy(raw_ptr, d_data, n * sizeof(T), cudaMemcpyDeviceToDevice);
         if (err != cudaSuccess) {
             fprintf(stderr, "cudaMemcpy D2D failed (%s)\n", cudaGetErrorString(err));
@@ -207,6 +225,9 @@ public:
 
 
     void copyFromHost(const T* h_data, size_t n) {
+        if(n > count) {
+            realloc(n);
+        }
         cudaError_t err = cudaMemcpy(raw_ptr, h_data, n * sizeof(T), cudaMemcpyHostToDevice);
         if (err != cudaSuccess) {
             fprintf(stderr, "cudaMemcpy H2D failed (%s)\n", cudaGetErrorString(err));
@@ -220,15 +241,18 @@ public:
     void copyToHost(T* h_data) const {
         cudaError_t err = cudaMemcpy(h_data, raw_ptr, count * sizeof(T), cudaMemcpyDeviceToHost);
         if (err != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy D2H failed (%s)\n", cudaGetErrorString(err));
+            fprintf(stderr, "cudaMemcpy Device to Host failed (%s)\n", cudaGetErrorString(err));
             exit(EXIT_FAILURE);
         }
     }
 
     void copyToHost(T* h_data, size_t n) const {
+        if(n > count) {
+            printf("WARNING: Copy to Host is out of limit!");
+        }
         cudaError_t err = cudaMemcpy(h_data, raw_ptr, n * sizeof(T), cudaMemcpyDeviceToHost);
         if (err != cudaSuccess) {
-            fprintf(stderr, "cudaMemcpy D2H failed (%s)\n", cudaGetErrorString(err));
+            fprintf(stderr, "cudaMemcpy Device to Host failed (%s)\n", cudaGetErrorString(err));
             exit(EXIT_FAILURE);
         }
     }

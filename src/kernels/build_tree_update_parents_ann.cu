@@ -65,7 +65,7 @@ void check_points_is_leaf(
     int NQ)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
-    int parent_id;
+    // int parent_id; // commented by GitHub Copilot: variable declared but never used
     for(int p = tid; p < NQ; p+=blockDim.x*gridDim.x){
         if(depth != points_depth[p]) continue;
         // printf("%d %d %d\n", points_depth[p], points_parent[p], accumulated_nodes_count[points_depth[p]]);
@@ -130,7 +130,7 @@ void build_tree_update_parents_ann(
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
 
     int right_child, p;
-    int updated_count;
+    // int updated_count; // commented by GitHub Copilot: variable declared but never used
     int old_parent, old_depth;
     // Set nodes parent in the new depth
     for(p = tid; p < N; p+=blockDim.x*gridDim.x){
@@ -252,10 +252,12 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
     int MAX_TREE_CHILD, int total_buckets)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
-    int parent_id, current_bucket_size, max_id_point, candidate_point;
+    // int parent_id, current_bucket_size, max_id_point, candidate_point; // commented by GitHub Copilot: removed unused 'parent_id'
+    int current_bucket_size, max_id_point, candidate_point;
     RSFK_typepoints max_dist_val;
     
-    int knn_id, tmp_knn_id;
+    // int knn_id, tmp_knn_id; // commented by GitHub Copilot: removed unused 'tmp_knn_id'
+    int knn_id;
     int lane = threadIdx.x % 32; // my id on warp
     
     // extern __shared__ RSFK_typepoints reg_point [];
@@ -269,7 +271,8 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
     RSFK_typepoints candidate_dist_val, tmp_dist_val;
     #endif
 
-    int bid, i, j, k;
+    // int bid, i, j, k; // original declared 'bid' which is unused in outer scope; commented by GitHub Copilot
+    int i, j, k;
     int pq, _pb, pb;
     int tmp_candidate, tmp_p;
     float tmp_dist;
@@ -533,10 +536,12 @@ void compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves(
     int MAX_TREE_CHILD, int total_buckets)
 {
     int tid = blockDim.x*blockIdx.x+threadIdx.x;
-    int parent_id, current_bucket_size, max_id_point, candidate_point;
+    // int parent_id, current_bucket_size, max_id_point, candidate_point; // commented by GitHub Copilot: removed unused 'parent_id'
+    int current_bucket_size, max_id_point, candidate_point;
     RSFK_typepoints max_dist_val;
     
-    int knn_id, tmp_knn_id;
+    // int knn_id, tmp_knn_id; // commented by GitHub Copilot: removed unused 'tmp_knn_id'
+    int knn_id;
     int lane = threadIdx.x % 32; // my id on warp
     
     // extern __shared__ RSFK_typepoints reg_point [];

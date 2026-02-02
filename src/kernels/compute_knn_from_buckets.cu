@@ -1499,11 +1499,13 @@ compute_knn_from_buckets_pertile(
     }
     __syncthreads();
 
-    int padding_tile_x, padding_tile_y, limit_tile_x, limit_tile_y;
+    // int padding_tile_x, padding_tile_y, limit_tile_x, limit_tile_y;
+    // Original line commented and altered by GitHub Copilot: removed unused padding_tile_x/padding_tile_y
+    int limit_tile_x = 0, limit_tile_y = 0;
     // int tile_width = RSFK_TILE_SIZE;
     // int tile_height = RSFK_TILE_SIZE;
-    padding_tile_x = 0;
-    padding_tile_y = 0;
+    // padding_tile_x = 0; // commented out by GitHub Copilot: padding_tile_x unused
+    // padding_tile_y = 0; // commented out by GitHub Copilot: padding_tile_y unused
     
     
     int total_tile_workers = blockDim.x/RSFK_WarpSize;

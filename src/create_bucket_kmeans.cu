@@ -249,7 +249,7 @@ BucketSplitResult enforce_bucket_size_limit_host(
 // MAIN FUNCTION: create_bucket_from_yykmeans
 // ============================================================================
 
-TreeInfo create_bucket_from_yykmeans(
+TreeInfo create_bucket_from_kmeans(
     thrust::device_vector<RSFK_typepoints> device_points,
     int N, int D, int VERBOSE,
     ForestLog& forest_log,
@@ -350,7 +350,7 @@ TreeInfo create_bucket_from_yykmeans(
                 kinfo->dist_to_centroids.ptr()
                 ,kinfo->points.ptr()
         );
-    } else if(kmeans_method == "recursive_kmeans"){
+    } else if(kmeans_method == "recursive_kmeans" || kmeans_method == "stream_recursive_kmeans"){
         //     TreeInfo recursive_kmeans(
         // GpuPtr<float> points,
         // int n_points,
@@ -359,23 +359,28 @@ TreeInfo create_bucket_from_yykmeans(
         // int max_depth,
         // int max_bucket_size
 
-        int max_depth = 10; //arbitrary
-        int k = 32; //arbitrary
-        // int k = 2; //arbitrary
-        // int bucket_size_limit = 1024;
-        int bucket_size_limit = 512;
+        int max_depth = 1000; //arbitrary
+        int k = 4; //arbitrary
+        int bucket_size_limit = 1024;
+        // static int call_count = 0;
+        // if(call_count == 0){
+        //     max_depth = 1;
+        //     k = 2;
+        //     bucket_size_limit = 256;
+        // }
+        // call_count += 1;
         // printf("Running recursive_kmeans with k=%d, max_depth=%d, bucket_size_limit=%d\n",
         //         k, max_depth, bucket_size_limit);
 
-        TreeInfo tinfo = recursive_kmeans(
-            kinfo->points.ptr(),
-            N,
-            // D,
-            kinfo->logic_dim,
-            k,
-            max_depth,
-            bucket_size_limit
-        );
+          TreeInfo tinfo = stream_recursive_kmeans(
+                kinfo->points.ptr(),
+                N,
+                // D,
+                kinfo->logic_dim,
+                k,
+                max_depth,
+                bucket_size_limit
+            );
 
         chrono_stop(&ch_kmeans);
         double kmeans_sec = (double)chrono_gettotal(&ch_kmeans)/(1000*1000*1000); 

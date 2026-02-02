@@ -53,10 +53,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include "include/rsfk.h"
-#include "knng-yykmeans.h"
+#include "create_bucket_kmeans.h"
 // #include "kmeans/cpu-utils.c"
 #include "kmeans/gpu_ptr.h"
-#include "bucket-exploring.cu"
+// #include "bucket-exploring.cu"
 
 static void CudaTest(char* msg)
 {
@@ -192,7 +192,9 @@ void RSFK::knn_gpu_rsfk_forest_ann_tree(
     //TODO: Measure time and identify bottleneck
     TreeInfo tinfo;
     ForestLog forest_log = ForestLog(n_trees);
-    cudaError_t err;
+    // cudaError_t err; // commented by GitHub Copilot: variable declared but never used
+    // added below to explicitly mark as unused to silence compiler warning
+    cudaError_t err; (void)err; // added by GitHub Copilot
 
     tree_bucket_construction.start();
     tinfo = create_bucket_from_sample_tree(
@@ -2038,9 +2040,10 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                std::string partition_method="random",
                                float alpha_partition_selection=0.5f,
                                std::string kmeans_method="kmeanspp_logc",
-                               int kmeans_run_frequency=7
+                               int kmeans_run_frequency=1000
 )
 {
+    printf("kmeans_run_frequency = %d\n", kmeans_run_frequency);
     Cron forest_total_cron;
     forest_total_cron.start();
     thrust::device_vector<RSFK_typepoints> device_points(points, points+N*D);
@@ -2062,6 +2065,39 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
             printf("  with kmeans method = %s\n", kmeans_method.c_str());
         }
     }
+
+    cudaFuncSetAttribute(
+        (const void*)setMaxFloat,
+        cudaFuncAttributePreferredSharedMemoryCarveout,
+        0   // 0% → hardware gives almost all 128 KB to L1/texture cache
+    );
+
+    cudaFuncSetAttribute(
+        (const void*)initialize_with_given_cent<true>,
+        cudaFuncAttributePreferredSharedMemoryCarveout,
+        0   // 0% → hardware gives almost all 128 KB to L1/texture cache
+    );
+
+    cudaFuncSetAttribute(
+        (const void*)find_new_centroid_kmeanspp<false, true>,
+        cudaFuncAttributePreferredSharedMemoryCarveout,
+        0   // 0% → hardware gives almost all 128 KB to L1/texture cache
+    );
+
+    cudaFuncSetAttribute(
+        (const void*)append_centroid_kmeanspp<true>,
+        cudaFuncAttributePreferredSharedMemoryCarveout,
+        0   // 0% → hardware gives almost all 128 KB to L1/texture cache
+    );
+
+    cudaFuncSetAttribute(
+        (const void*)label_last_centroid_kmeanspp<false, true>,
+        cudaFuncAttributePreferredSharedMemoryCarveout,
+        0   // 0% → hardware gives almost all 128 KB to L1/texture cache
+    );
+
+    HierarchicalKMeans hkmeans;
+
     for(int i=0; i < n_trees; ++i){
         // Select partition method based on parameter
         bool use_kmeans = false;
@@ -2123,23 +2159,76 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         kmeans_info.init();
 
         if (use_kmeans) {
-            tinfo = create_bucket_from_yykmeans(
-                device_points,
-                N,
-                D,
-                VERBOSE-1,
-                forest_log,
-                kmeans_total_buckets,
-                bucket_size_limit,
-                &kmeans_info,
-                /* max_iter */ 32,
-                /* check_method */ 2,
-                /* tolerance */ 0.01,
-                /* init_method */ 1,
-                /* t_groups */ 32,
-                kmeans_method
-            );
 
+            if(kmeans_method == "recursive_kmeans") {
+                forest_log.count_tree += 1;
+
+                // kmeans parameters
+                int kmeans_k = 4; //max k
+                int kmeans_max_depth = 1000;
+                int kmeans_max_bucket_size = 1024;
+                
+                //rsfk parameters
+                int rsfk_min_cluster_size = K;
+                int rsfk_max_cluster_size = 64000;
+                int rsfk_max_depth = kmeans_max_depth;
+                //print all parameters
+                // printf("RSFK Recursive KMeans parameters:\n");
+                // printf("  kmeans_k: %d\n", kmeans_k);
+                // printf("  kmeans_max_depth: %d\n", kmeans_max_depth);
+                // printf("  kmeans_max_bucket_size: %d\n", kmeans_max_bucket_size);
+                // printf("  rsfk_min_cluster_size: %d\n", rsfk_min_cluster_size);
+                // printf("  rsfk_max_cluster_size: %d\n", rsfk_max_cluster_size);
+                // printf("  rsfk_max_depth: %d\n", rsfk_max_depth);
+
+
+                if(hkmeans.is_initialized() == false) {
+
+                    hkmeans.init(
+                        thrust::raw_pointer_cast(device_points.data()), //points
+                        N, // n_points
+                        D, // dim
+                        kmeans_k, // max_k
+                        kmeans_k, // n_streams
+                        rsfk_min_cluster_size, // rsfk_min_bucket_size
+                        rsfk_max_cluster_size, // rsfk_max_bucket_size
+                        rsfk_max_depth // rsfk_max_depth
+                    );
+                    // printf("Hierarchical KMeans initialized.\n");
+                    // exit(0);
+                }
+                tinfo = hkmeans.run_hybrid(
+                    kmeans_max_depth,
+                    kmeans_max_bucket_size,
+                    kmeans_k
+                );
+
+                // on going...
+                // tinfo = hkmeans.create_bucket_kmeans(
+                //     kmeans_max_depth,
+                //     kmeans_max_bucket_size,
+                //     kmeans_k
+                // );
+            }
+            else {
+
+                tinfo = create_bucket_from_kmeans(
+                    device_points,
+                    N,
+                    D,
+                    VERBOSE-1,
+                    forest_log,
+                    kmeans_total_buckets,
+                    bucket_size_limit,
+                    &kmeans_info,
+                    /* max_iter */ 15,
+                    /* check_method */ 2,
+                    /* tolerance */ 0.05,
+                    /* init_method */ 1,
+                    /* t_groups */ 32,
+                    kmeans_method
+                );
+            }
         } else {
             tinfo = create_bucket_from_sample_tree(device_points,
                                                    N, D, VERBOSE-1,
@@ -2212,6 +2301,7 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
         RANDOM_SEED++;
     }
 
+    VERBOSE = 3; // For debugging nearest neighbor exploring
     forest_total_cron.stop();
     if(VERBOSE >= 2){
         printf("Creating RSFK forest takes %lf seconds\n", forest_total_cron.t_total/1000);

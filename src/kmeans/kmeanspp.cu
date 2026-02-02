@@ -49,7 +49,6 @@ void kmeanspp_workflow_async(
 	// seed+=1;
 
 	int first_cent = rand_r((unsigned int*)&seed) % dataset_size;
-	// printf("K-means++ LOGC first centroid index: %d \n",first_cent);
 	initialize_with_given_cent<INDIRECT_POINTS><<<1,max_threads,0,stream>>>(
 		d_dataset,dataset_size,dim,
 		d_centroids, first_cent, points_indexes);
@@ -60,8 +59,10 @@ void kmeanspp_workflow_async(
 	// 	d_dataset,dataset_size,logic_dim,
 	// 	d_centroids, d_chosen_centroids);
 	
+	//REMOVE SYNCHRONIZATION FOR ASYNC VERSION
 	// cudaDeviceSynchronize();
 	// gpuErrchk( cudaPeekAtLastError() );
+	// printf("KMeans++: First centroid initialized at index %d\n", first_cent);
 
 	for(uint n_chosen_centroids = 1; n_chosen_centroids < k; n_chosen_centroids++){
 		find_new_centroid_kmeanspp<false, INDIRECT_POINTS><<<nblocks,nthreads,0,stream>>>(
