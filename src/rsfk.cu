@@ -2015,7 +2015,7 @@ void RSFK::update_knn_indice_with_buckets(
         N, D, max_child, K, MAX_TREE_CHILD, total_leaves);
     cudaDeviceSynchronize();
     // printf("%s\n", cudaGetErrorString(cudaPeekAtLastError()));
-    // printf("%s\n", cudaGetErrorString(cudaThreadSynchronize()));
+    // printf("%s\n", cudaGetErrorString(cudaDeviceSynchronize()));
     CudaTest((char *)"compute_knn_from_buckets Kernel failed!");
     cron_knn.stop();    
 
@@ -2124,9 +2124,9 @@ void RSFK::knn_gpu_rsfk_forest(int n_trees,
                                                    N, D, K);
             cudaDeviceSynchronize();
             // printf("%s\n", cudaGetErrorString(cudaPeekAtLastError()));
-            // printf("%s\n", cudaGetErrorString(cudaThreadSynchronize()));
+            // printf("%s\n", cudaGetErrorString(cudaDeviceSynchronize()));
             cudaGetErrorString(cudaPeekAtLastError());
-            cudaGetErrorString(cudaThreadSynchronize());
+            cudaGetErrorString(cudaDeviceSynchronize());
             CudaTest((char *)"nearest_neighbors_exploring Kernel failed!");
             if(VERBOSE >= 2) std::cout << "\e[ANearest Neighbor Exploring: " << (i+1) << "/" << nn_exploring_factor << std::endl;
         }

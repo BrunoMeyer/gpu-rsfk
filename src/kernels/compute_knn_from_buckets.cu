@@ -287,7 +287,7 @@ void compute_knn_from_buckets_perwarp_coalesced(
     
     for(bid = tid/32; bid < total_buckets; bid+=blockDim.x*gridDim.x/32){
         current_bucket_size = bucket_size[bid];
-        for(_p = lane; __any_sync(__activemask(),_p < current_bucket_size); _p+=32){
+        for(_p = lane; __any_sync(0xffffffffu,_p < current_bucket_size); _p+=32){
             if(_p < current_bucket_size){
                 p = nodes_bucket[bid*max_bucket_size + _p];
                 knn_id = p*K;

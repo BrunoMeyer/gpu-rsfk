@@ -63,7 +63,7 @@ void nearest_neighbors_exploring(RSFK_typepoints* points,
 
 
 
-    for(p = tid; __any_sync(__activemask(), p < N); p+=blockDim.x*gridDim.x){
+    for(p = tid; __any_sync(0xffffffffu, p < N); p+=blockDim.x*gridDim.x){
         if(p < N){
             knn_id = p*K;
 
@@ -102,9 +102,9 @@ void nearest_neighbors_exploring(RSFK_typepoints* points,
 
                 __syncthreads();
                 for(j=0; j < 32; ++j){
-                    tmp_candidate = __shfl_sync(__activemask(), p_neigh_neigh, j);
+                    tmp_candidate = __shfl_sync(0xffffffffu, p_neigh_neigh, j);
                     if(tmp_candidate == -1) continue;
-                    tmp_p = __shfl_sync(__activemask(), p, j);
+                    tmp_p = __shfl_sync(0xffffffffu, p, j);
                     #if EUCLIDEAN_DISTANCE_VERSION!=EDV_NOATOMIC_NOSHM && EUCLIDEAN_DISTANCE_VERSION!=EDV_WARP_REDUCE_XOR_NOSHM
                     euclidean_distance_sqr_coalesced(tmp_candidate, tmp_p, points, D, N,
                                                      lane, &candidate_dist_val[init_warp_on_block+j]);
