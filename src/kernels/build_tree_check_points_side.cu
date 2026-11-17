@@ -114,14 +114,14 @@ void build_tree_check_points_side(RSFK_typepoints* tree,
     int k;
 
     // Set nodes parent in the new depth
-    for(i = tid; __any_sync(__activemask(), i < *active_points_count); i+=blockDim.x*gridDim.x){
+    for(i = tid; __any_sync(0xffffffffu, i < *active_points_count); i+=blockDim.x*gridDim.x){
         p = -1;
         __syncthreads();
         if(i < *active_points_count) p = active_points[i];
         __syncthreads();
         
         for(j=0; j < 32; ++j){
-            tmp_p = __shfl_sync(__activemask(), p, j);
+            tmp_p = __shfl_sync(0xffffffffu, p, j);
             if(tmp_p == -1) continue;
             
             // tmp_product = check_hyperplane_side(points_parent[tmp_p], tmp_p, tree, points, D, N,

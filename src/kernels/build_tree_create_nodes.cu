@@ -75,7 +75,7 @@ void build_tree_create_nodes(RSFK_typepoints* tree_new_depth,
 
     // Create new nodes
     // for(node_thread = tid; node_thread < depth_level_count[*actual_depth-1]; node_thread+=blockDim.x*gridDim.x){
-    for(node_thread = tid; __any_sync(__activemask(), node_thread < depth_level_count[*actual_depth-1]); node_thread+=blockDim.x*gridDim.x){
+    for(node_thread = tid; __any_sync(0xffffffffu, node_thread < depth_level_count[*actual_depth-1]); node_thread+=blockDim.x*gridDim.x){
         for(int is_right=0; is_right < 2; ++is_right){
             p1 = -1;
             is_leaf_node = 1;
@@ -108,10 +108,10 @@ void build_tree_create_nodes(RSFK_typepoints* tree_new_depth,
             // create_node(node_thread, is_right, tree_new_depth, tree_parents_new_depth,
             //             tree_children, tree_count, count_new_nodes, p1, p2, points, D, N);node_thread
             for(i=0; i < 32; ++i){
-                tmp_p1 = __shfl_sync(__activemask(), p1, i);
+                tmp_p1 = __shfl_sync(0xffffffffu, p1, i);
                 if(tmp_p1 == -1) continue;
-                tmp_p2 = __shfl_sync(__activemask(), p2, i);
-                tmp_node_idx = __shfl_sync(__activemask(), node_idx, i);
+                tmp_p2 = __shfl_sync(0xffffffffu, p2, i);
+                tmp_node_idx = __shfl_sync(0xffffffffu, node_idx, i);
                 // printf("%d %d %d\n", tmp_p1, tmp_2, tmp_node_idx)
                 create_node(tree_new_depth, tree_parents_new_depth,
                             tree_children, tree_count, count_new_nodes, tmp_p1, tmp_p2, points, D, N, tmp_node_idx, tidw);
@@ -166,7 +166,7 @@ void project_active_points(RSFK_typepoints* projection_values,
     __shared__ RSFK_typepoints product_threads[1024];
     int init_warp_on_block = threadIdx.x-tidw;
 
-    for(i = tid; __any_sync(__activemask(), i < *active_points_count); i+=blockDim.x*gridDim.x){
+    for(i = tid; __any_sync(0xffffffffu, i < *active_points_count); i+=blockDim.x*gridDim.x){
         __syncthreads();
         
         p = -1;
@@ -181,7 +181,7 @@ void project_active_points(RSFK_typepoints* projection_values,
         
         __syncthreads();
         for(j=0; j < 32; ++j){
-            tmp_p = __shfl_sync(__activemask(), p, j);
+            tmp_p = __shfl_sync(0xffffffffu, p, j);
             if(tmp_p == -1) continue;
             __syncthreads();
             for(k=tidw; k < D; k+=32){

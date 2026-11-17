@@ -349,7 +349,7 @@ void compute_knn_from_buckets_perwarp_coalesced_ann(
 
 
 
-        for(_pb = lane; __any_sync(__activemask(), _pb < current_bucket_size); _pb+=32){
+        for(_pb = lane; __any_sync(0xffffffffu, _pb < current_bucket_size); _pb+=32){
             candidate_point = -1;
 
             if(_pb < current_bucket_size){
@@ -641,7 +641,7 @@ void compute_knn_from_buckets_perwarp_coalesced_ann_block_leaves(
 
 
 
-        for(_pb = lane; __any_sync(__activemask(), _pb < current_bucket_size); _pb+=32){
+        for(_pb = lane; __any_sync(0xffffffffu, _pb < current_bucket_size); _pb+=32){
             candidate_point = -1;
 
             if(_pb < current_bucket_size){
